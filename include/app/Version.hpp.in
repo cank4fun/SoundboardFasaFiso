@@ -1,0 +1,11 @@
+#pragma once
+
+#include <string_view>
+
+namespace AppVersion
+{
+    inline constexpr unsigned int Major = @PROJECT_VERSION_MAJOR@;
+    inline constexpr unsigned int Minor = @PROJECT_VERSION_MINOR@;
+    inline constexpr unsigned int Patch = @PROJECT_VERSION_PATCH@;
+    inline constexpr std::string_view String = "@PROJECT_VERSION@";
+}

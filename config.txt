@@ -1,0 +1,41 @@
+# SES ÇIKIŞLARI
+# output ana çıkıştır. VB-CABLE kullanıyorsan genellikle "CABLE Input" yazılır.
+output=CABLE Input
+output_volume=1.00
+
+# monitor kendi duyacağın çıkıştır. "default" Windows varsayılanını kullanır.
+# Monitör istemiyorsan monitor=none yazabilirsin.
+monitor=default
+monitor_volume=0.30
+
+# AUDIO GECİKME AYARLARI
+# 0 yazılırsa cihazın/Windows'un varsayılanı kullanılır.
+audio_sample_rate=48000
+audio_buffer_ms=5
+
+# KONTROLLER
+stop=F11
+output_mute=CTRL+SHIFT+F9
+monitor_mute=CTRL+SHIFT+F10
+reload=CTRL+SHIFT+F11
+exit=CTRL+SHIFT+F12
+
+# TUŞ ATAMALARI
+# Varsayılan: volume=1.00 ve mode=restart
+F1=example.wav|volume=0.80|mode=restart
+F2=example2.wav|volume=1.00|mode=toggle
+F3=example.wav|volume=0.60|mode=loop
+F4=example2.wav|volume=1.00|mode=overlap
+F5=example.mp3|volume=0.80|mode=restart
+F6=example.flac|volume=1.00|mode=overlap
+
+# MODLAR
+# restart = Her basışta sesi baştan çalar.
+# toggle  = Bir basışta çalar, tekrar basışta durdurur.
+# loop    = Döngüye alır, tekrar basışta durdurur.
+# overlap = Her basışta yeni voice açar; en fazla 8 kopya aynı anda çalar.
+
+# HOTKEY ÖRNEKLERİ
+# CTRL+F2=effects/example.wav|volume=0.50|mode=restart
+# SHIFT+F3=example.mp3|volume=1.00|mode=toggle
+# NUMPAD1=example.flac|volume=0.70|mode=loop

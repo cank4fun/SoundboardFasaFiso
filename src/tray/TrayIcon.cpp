@@ -1,0 +1,502 @@
+#include "tray/TrayIcon.hpp"
+
+#include "ResourceIds.h"
+
+#include <cwchar>
+#include <iostream>
+
+namespace
+{
+    constexpr wchar_t TrayWindowClassName[] =
+        L"SoundBoardFasaFisoTrayWindow";
+
+    HICON LoadApplicationIcon(
+        const HINSTANCE instance,
+        const int width,
+        const int height
+    )
+    {
+        return static_cast<HICON>(
+            LoadImageW(
+                instance,
+                MAKEINTRESOURCEW(IDI_APP_ICON),
+                IMAGE_ICON,
+                width,
+                height,
+                LR_DEFAULTCOLOR | LR_SHARED
+            )
+        );
+    }
+}
+
+TrayIcon::~TrayIcon()
+{
+    Shutdown();
+}
+
+bool TrayIcon::Initialize(
+    const std::wstring& tooltip,
+    const TrayCommandIds& commandIds
+)
+{
+    Shutdown();
+
+    instance_ = GetModuleHandleW(nullptr);
+    mainThreadId_ = GetCurrentThreadId();
+    taskbarCreatedMessage_ = RegisterWindowMessageW(
+        L"TaskbarCreated"
+    );
+    commandIds_ = commandIds;
+
+    if (instance_ == nullptr)
+    {
+        std::cerr
+            << "Tray icon için uygulama modülü alınamadı. "
+            << "Windows hata kodu: "
+            << GetLastError()
+            << '\n';
+
+        return false;
+    }
+
+    const HICON largeIcon = LoadApplicationIcon(
+        instance_,
+        GetSystemMetrics(SM_CXICON),
+        GetSystemMetrics(SM_CYICON)
+    );
+
+    const HICON smallIcon = LoadApplicationIcon(
+        instance_,
+        GetSystemMetrics(SM_CXSMICON),
+        GetSystemMetrics(SM_CYSMICON)
+    );
+
+    if (largeIcon == nullptr || smallIcon == nullptr)
+    {
+        std::cerr
+            << "FasaFiso uygulama ikonu yüklenemedi. "
+            << "Windows hata kodu: "
+            << GetLastError()
+            << '\n';
+
+        return false;
+    }
+
+    WNDCLASSEXW windowClass{};
+    windowClass.cbSize = sizeof(windowClass);
+    windowClass.lpfnWndProc = &TrayIcon::WindowProcedure;
+    windowClass.hInstance = instance_;
+    windowClass.hIcon = largeIcon;
+    windowClass.hIconSm = smallIcon;
+    windowClass.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
+    windowClass.lpszClassName = TrayWindowClassName;
+
+    const ATOM classAtom = RegisterClassExW(&windowClass);
+
+    if (classAtom == 0)
+    {
+        const DWORD errorCode = GetLastError();
+
+        if (errorCode != ERROR_CLASS_ALREADY_EXISTS)
+        {
+            std::cerr
+                << "Tray icon pencere sınıfı oluşturulamadı. "
+                << "Windows hata kodu: "
+                << errorCode
+                << '\n';
+
+            return false;
+        }
+    }
+    else
+    {
+        classRegistered_ = true;
+    }
+
+    window_ = CreateWindowExW(
+        0,
+        TrayWindowClassName,
+        L"SoundBoardFasaFiso Tray",
+        WS_OVERLAPPED,
+        0,
+        0,
+        0,
+        0,
+        nullptr,
+        nullptr,
+        instance_,
+        this
+    );
+
+    if (window_ == nullptr)
+    {
+        std::cerr
+            << "Tray icon gizli penceresi oluşturulamadı. "
+            << "Windows hata kodu: "
+            << GetLastError()
+            << '\n';
+
+        Shutdown();
+        return false;
+    }
+
+    iconData_ = {};
+    iconData_.cbSize = sizeof(iconData_);
+    iconData_.hWnd = window_;
+    iconData_.uID = 1;
+    iconData_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    iconData_.uCallbackMessage = TrayCallbackMessage;
+    iconData_.hIcon = smallIcon;
+
+    if (iconData_.hIcon == nullptr)
+    {
+        std::cerr
+            << "Tray icon simgesi yüklenemedi. "
+            << "Windows hata kodu: "
+            << GetLastError()
+            << '\n';
+
+        Shutdown();
+        return false;
+    }
+
+    wcsncpy_s(
+        iconData_.szTip,
+        tooltip.c_str(),
+        _TRUNCATE
+    );
+
+    if (!AddNotificationIcon())
+    {
+        std::cerr
+            << "Tray icon görev çubuğuna eklenemedi. "
+            << "Windows hata kodu: "
+            << GetLastError()
+            << '\n';
+
+        Shutdown();
+        return false;
+    }
+
+    SendMessageW(
+        window_,
+        WM_SETICON,
+        ICON_BIG,
+        reinterpret_cast<LPARAM>(largeIcon)
+    );
+
+    SendMessageW(
+        window_,
+        WM_SETICON,
+        ICON_SMALL,
+        reinterpret_cast<LPARAM>(smallIcon)
+    );
+
+    const HWND consoleWindow = GetConsoleWindow();
+
+    if (consoleWindow != nullptr)
+    {
+        SendMessageW(
+            consoleWindow,
+            WM_SETICON,
+            ICON_BIG,
+            reinterpret_cast<LPARAM>(largeIcon)
+        );
+
+        SendMessageW(
+            consoleWindow,
+            WM_SETICON,
+            ICON_SMALL,
+            reinterpret_cast<LPARAM>(smallIcon)
+        );
+    }
+
+    return true;
+}
+
+void TrayIcon::Shutdown()
+{
+    if (iconAdded_ && iconData_.hWnd != nullptr)
+    {
+        Shell_NotifyIconW(NIM_DELETE, &iconData_);
+    }
+
+    iconAdded_ = false;
+
+    iconData_ = {};
+
+    if (window_ != nullptr)
+    {
+        DestroyWindow(window_);
+        window_ = nullptr;
+    }
+
+    if (classRegistered_ && instance_ != nullptr)
+    {
+        UnregisterClassW(TrayWindowClassName, instance_);
+    }
+
+    classRegistered_ = false;
+    instance_ = nullptr;
+    mainThreadId_ = 0;
+    taskbarCreatedMessage_ = 0;
+    commandIds_ = {};
+}
+
+bool TrayIcon::ToggleConsoleVisibility()
+{
+    const HWND consoleWindow = GetConsoleWindow();
+
+    if (consoleWindow == nullptr)
+    {
+        return false;
+    }
+
+    if (IsWindowVisible(consoleWindow) != FALSE)
+    {
+        ShowWindow(consoleWindow, SW_HIDE);
+    }
+    else
+    {
+        ShowWindow(consoleWindow, SW_SHOW);
+        SetForegroundWindow(consoleWindow);
+    }
+
+    return true;
+}
+
+bool TrayIcon::IsConsoleVisible() const
+{
+    const HWND consoleWindow = GetConsoleWindow();
+
+    return consoleWindow != nullptr &&
+        IsWindowVisible(consoleWindow) != FALSE;
+}
+
+LRESULT CALLBACK TrayIcon::WindowProcedure(
+    const HWND window,
+    const UINT message,
+    const WPARAM wParam,
+    const LPARAM lParam
+)
+{
+    TrayIcon* trayIcon = reinterpret_cast<TrayIcon*>(
+        GetWindowLongPtrW(window, GWLP_USERDATA)
+    );
+
+    if (message == WM_NCCREATE)
+    {
+        const auto* createData =
+            reinterpret_cast<const CREATESTRUCTW*>(lParam);
+
+        trayIcon = static_cast<TrayIcon*>(
+            createData->lpCreateParams
+        );
+
+        SetWindowLongPtrW(
+            window,
+            GWLP_USERDATA,
+            reinterpret_cast<LONG_PTR>(trayIcon)
+        );
+    }
+
+    if (trayIcon != nullptr)
+    {
+        return trayIcon->HandleWindowMessage(
+            window,
+            message,
+            wParam,
+            lParam
+        );
+    }
+
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+LRESULT TrayIcon::HandleWindowMessage(
+    const HWND window,
+    const UINT message,
+    const WPARAM wParam,
+    const LPARAM lParam
+)
+{
+    (void)wParam;
+
+    if (
+        taskbarCreatedMessage_ != 0 &&
+        message == taskbarCreatedMessage_
+    )
+    {
+        AddNotificationIcon();
+        return 0;
+    }
+
+    if (message == TrayCallbackMessage)
+    {
+        if (lParam == WM_RBUTTONUP || lParam == WM_CONTEXTMENU)
+        {
+            ShowContextMenu();
+            return 0;
+        }
+
+        if (lParam == WM_LBUTTONDBLCLK)
+        {
+            PostApplicationCommand(commandIds_.toggleConsole);
+            return 0;
+        }
+    }
+
+    if (message == WM_DESTROY)
+    {
+        return 0;
+    }
+
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+bool TrayIcon::AddNotificationIcon()
+{
+    if (iconData_.hWnd == nullptr || iconData_.hIcon == nullptr)
+    {
+        iconAdded_ = false;
+        return false;
+    }
+
+    iconAdded_ =
+        Shell_NotifyIconW(NIM_ADD, &iconData_) != FALSE;
+
+    return iconAdded_;
+}
+
+void TrayIcon::ShowContextMenu()
+{
+    if (window_ == nullptr)
+    {
+        return;
+    }
+
+    HMENU menu = CreatePopupMenu();
+
+    if (menu == nullptr)
+    {
+        return;
+    }
+
+    AppendMenuW(
+        menu,
+        MF_STRING,
+        MenuReload,
+        L"Config'i yeniden yükle"
+    );
+
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+
+    AppendMenuW(
+        menu,
+        MF_STRING,
+        MenuStopAll,
+        L"Tüm sesleri durdur"
+    );
+
+    AppendMenuW(
+        menu,
+        MF_STRING,
+        MenuOutputMute,
+        L"Ana çıkışı mute/unmute"
+    );
+
+    AppendMenuW(
+        menu,
+        MF_STRING,
+        MenuMonitorMute,
+        L"Monitör çıkışını mute/unmute"
+    );
+
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+
+    AppendMenuW(
+        menu,
+        MF_STRING,
+        MenuToggleConsole,
+        IsConsoleVisible()
+            ? L"Konsolu gizle"
+            : L"Konsolu göster"
+    );
+
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+
+    AppendMenuW(
+        menu,
+        MF_STRING,
+        MenuExit,
+        L"Programı kapat"
+    );
+
+    POINT cursorPosition{};
+
+    if (GetCursorPos(&cursorPosition) == FALSE)
+    {
+        DestroyMenu(menu);
+        return;
+    }
+
+    SetForegroundWindow(window_);
+
+    const UINT selectedCommand = TrackPopupMenu(
+        menu,
+        TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
+        cursorPosition.x,
+        cursorPosition.y,
+        0,
+        window_,
+        nullptr
+    );
+
+    DestroyMenu(menu);
+    PostMessageW(window_, WM_NULL, 0, 0);
+
+    switch (selectedCommand)
+    {
+        case MenuReload:
+            PostApplicationCommand(commandIds_.reload);
+            break;
+
+        case MenuStopAll:
+            PostApplicationCommand(commandIds_.stop);
+            break;
+
+        case MenuOutputMute:
+            PostApplicationCommand(commandIds_.outputMute);
+            break;
+
+        case MenuMonitorMute:
+            PostApplicationCommand(commandIds_.monitorMute);
+            break;
+
+        case MenuToggleConsole:
+            PostApplicationCommand(commandIds_.toggleConsole);
+            break;
+
+        case MenuExit:
+            PostApplicationCommand(commandIds_.exit);
+            break;
+
+        default:
+            break;
+    }
+}
+
+void TrayIcon::PostApplicationCommand(const int commandId) const
+{
+    if (mainThreadId_ == 0 || commandId <= 0)
+    {
+        return;
+    }
+
+    PostThreadMessageW(
+        mainThreadId_,
+        WM_HOTKEY,
+        static_cast<WPARAM>(commandId),
+        0
+    );
+}
