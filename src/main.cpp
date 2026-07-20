@@ -723,7 +723,8 @@ int main()
         soundsFolder,
         Audio::EnumeratePlaybackDevices(),
         Audio::EnumerateCaptureDevices(),
-        controlWindowCommandIds
+        controlWindowCommandIds,
+        &audio
     ))
     {
         controlWindow.Show();

@@ -98,7 +98,7 @@ CTRL+SHIFT+F12  : Programı kapat
 
 KONTROL PANELİ
 ---------------
-Panel modern kart düzeni ve açık/koyu tema desteği kullanır. Panelden
+Panel modern kart düzeni, açık/koyu tema desteği ve canlı sinyal göstergeleri kullanır. Panelden
 ana/monitör/mikrofon cihazı, ses seviyeleri, mikrofon yönlendirmesi,
 dil, örnekleme hızı, buffer, Windows başlangıcı, konsol başlangıcı,
 kontrol hotkey'leri ve ses atamaları düzenlenebilir. Ses ataması eklerken

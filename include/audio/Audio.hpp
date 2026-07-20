@@ -34,6 +34,17 @@ enum class MuteToggleResult
     Failed
 };
 
+struct AudioLevelSnapshot
+{
+    float output = 0.0f;
+    float monitor = 0.0f;
+    float microphone = 0.0f;
+
+    bool outputAvailable = false;
+    bool monitorAvailable = false;
+    bool microphoneAvailable = false;
+};
+
 class Audio
 {
 public:
@@ -77,6 +88,7 @@ public:
     MuteToggleResult ToggleMonitorMute();
 
     AudioRecoveryResult MaintainDeviceConnection();
+    AudioLevelSnapshot GetLevelSnapshot() const;
 
     void Shutdown();
 
@@ -250,6 +262,7 @@ private:
 
     std::atomic_bool recoveryRequested_{false};
     std::atomic_bool ignoreDeviceNotifications_{false};
+    std::atomic<float> microphonePeak_{0.0f};
 
     bool contextInitialized_ = false;
     bool desiredConfigurationSet_ = false;

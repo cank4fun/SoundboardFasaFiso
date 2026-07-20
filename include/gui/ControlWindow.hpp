@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 
+class Audio;
+
 struct ControlWindowCommandIds
 {
     int applySettings = 0;
@@ -42,7 +44,8 @@ public:
         const std::filesystem::path& soundsFolder,
         const std::vector<std::string>& playbackDevices,
         const std::vector<std::string>& captureDevices,
-        const ControlWindowCommandIds& commandIds
+        const ControlWindowCommandIds& commandIds,
+        Audio* audio
     );
 
     void Shutdown();
@@ -89,6 +92,9 @@ private:
     static constexpr int IdOpenLogs = 1021;
     static constexpr int IdThemeToggle = 1022;
 
+    static constexpr UINT_PTR LevelMeterTimerId = 1;
+    static constexpr UINT LevelMeterIntervalMilliseconds = 40;
+
     static LRESULT CALLBACK WindowProcedure(
         HWND window,
         UINT message,
@@ -115,9 +121,11 @@ private:
     void DrawCard(const DRAWITEMSTRUCT& item);
     void DrawModernButton(const DRAWITEMSTRUCT& item);
     void DrawModernSlider(HWND slider, HDC deviceContext) const;
+    void DrawLevelMeter(const DRAWITEMSTRUCT& item) const;
     void PaintWindowBackground();
     bool IsCardControl(HWND control) const;
     bool IsSliderControl(HWND control) const;
+    bool IsLevelMeterControl(HWND control) const;
     bool IsPrimaryButton(HWND control) const;
     bool IsDangerButton(HWND control) const;
     HBRUSH StaticBrushFor(HWND control) const;
@@ -128,6 +136,7 @@ private:
     void PopulateControlHotkeys();
     void UpdateVolumeLabels();
     void UpdateBindingVolumeLabel();
+    void UpdateLevelMeters();
     bool SavePendingSettings();
 
     void LoadSelectedBindingIntoEditor();
@@ -163,6 +172,7 @@ private:
     HWND window_ = nullptr;
     DWORD mainThreadId_ = 0;
     ControlWindowCommandIds commandIds_{};
+    Audio* audio_ = nullptr;
 
     std::filesystem::path configPath_;
     std::filesystem::path pendingConfigPath_;
@@ -185,16 +195,19 @@ private:
     HWND outputCombo_ = nullptr;
     HWND outputVolumeCaption_ = nullptr;
     HWND outputVolumeSlider_ = nullptr;
+    HWND outputLevelMeter_ = nullptr;
     HWND outputVolumeValue_ = nullptr;
     HWND monitorCaption_ = nullptr;
     HWND monitorCombo_ = nullptr;
     HWND monitorVolumeCaption_ = nullptr;
     HWND monitorVolumeSlider_ = nullptr;
+    HWND monitorLevelMeter_ = nullptr;
     HWND monitorVolumeValue_ = nullptr;
     HWND microphoneCaption_ = nullptr;
     HWND microphoneCombo_ = nullptr;
     HWND microphoneVolumeCaption_ = nullptr;
     HWND microphoneVolumeSlider_ = nullptr;
+    HWND microphoneLevelMeter_ = nullptr;
     HWND microphoneVolumeValue_ = nullptr;
     HWND microphoneEnabledCheck_ = nullptr;
     HWND microphoneToOutputCheck_ = nullptr;
@@ -272,6 +285,13 @@ private:
     COLORREF accentColor_ = RGB(124, 92, 255);
     COLORREF accentHoverColor_ = RGB(139, 108, 255);
     COLORREF dangerColor_ = RGB(224, 82, 82);
+
+    float outputMeterLevel_ = 0.0f;
+    float monitorMeterLevel_ = 0.0f;
+    float microphoneMeterLevel_ = 0.0f;
+    bool outputMeterAvailable_ = false;
+    bool monitorMeterAvailable_ = false;
+    bool microphoneMeterAvailable_ = false;
 
     int selectedBindingIndex_ = -1;
     bool capturingBindingHotkey_ = false;

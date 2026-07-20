@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0-alpha.8
+
+- Added live microphone peak metering to the native control panel
+- Added main-output and monitor-output activity meters beside their volume controls
+- Added fast attack and smooth decay so short sounds remain visible without flicker
+- Added theme-aware green, amber and red meter ranges
+- Kept the meters compact by placing them directly below the existing gain sliders
+- Added no new runtime or GUI dependency
+
 ## 2.0.0-alpha.7
 
 - Added persistent `theme=light` and `theme=dark` configuration

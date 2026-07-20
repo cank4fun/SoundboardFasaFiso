@@ -137,7 +137,8 @@ bool ControlWindow::Initialize(
     const std::filesystem::path& soundsFolder,
     const std::vector<std::string>& playbackDevices,
     const std::vector<std::string>& captureDevices,
-    const ControlWindowCommandIds& commandIds
+    const ControlWindowCommandIds& commandIds,
+    Audio* const audio
 )
 {
     Shutdown();
@@ -145,6 +146,7 @@ bool ControlWindow::Initialize(
     instance_ = GetModuleHandleW(nullptr);
     mainThreadId_ = GetCurrentThreadId();
     commandIds_ = commandIds;
+    audio_ = audio;
     configPath_ = configPath;
     pendingConfigPath_ = configPath;
     pendingConfigPath_ += L".pending";
@@ -266,6 +268,14 @@ bool ControlWindow::Initialize(
         clientRectangle.bottom - clientRectangle.top
     );
 
+    SetTimer(
+        window_,
+        LevelMeterTimerId,
+        LevelMeterIntervalMilliseconds,
+        nullptr
+    );
+    UpdateLevelMeters();
+
     return true;
 }
 
@@ -273,6 +283,7 @@ void ControlWindow::Shutdown()
 {
     if (window_ != nullptr)
     {
+        KillTimer(window_, LevelMeterTimerId);
         DestroyWindow(window_);
         window_ = nullptr;
     }
@@ -288,6 +299,7 @@ void ControlWindow::Shutdown()
     instance_ = nullptr;
     mainThreadId_ = 0;
     commandIds_ = {};
+    audio_ = nullptr;
     configPath_.clear();
     pendingConfigPath_.clear();
     soundsFolder_.clear();
@@ -308,16 +320,19 @@ void ControlWindow::Shutdown()
     outputCombo_ = nullptr;
     outputVolumeCaption_ = nullptr;
     outputVolumeSlider_ = nullptr;
+    outputLevelMeter_ = nullptr;
     outputVolumeValue_ = nullptr;
     monitorCaption_ = nullptr;
     monitorCombo_ = nullptr;
     monitorVolumeCaption_ = nullptr;
     monitorVolumeSlider_ = nullptr;
+    monitorLevelMeter_ = nullptr;
     monitorVolumeValue_ = nullptr;
     microphoneCaption_ = nullptr;
     microphoneCombo_ = nullptr;
     microphoneVolumeCaption_ = nullptr;
     microphoneVolumeSlider_ = nullptr;
+    microphoneLevelMeter_ = nullptr;
     microphoneVolumeValue_ = nullptr;
     microphoneEnabledCheck_ = nullptr;
     microphoneToOutputCheck_ = nullptr;
@@ -370,6 +385,13 @@ void ControlWindow::Shutdown()
     openLogsButton_ = nullptr;
     consoleButton_ = nullptr;
     exitButton_ = nullptr;
+
+    outputMeterLevel_ = 0.0f;
+    monitorMeterLevel_ = 0.0f;
+    microphoneMeterLevel_ = 0.0f;
+    outputMeterAvailable_ = false;
+    monitorMeterAvailable_ = false;
+    microphoneMeterAvailable_ = false;
 }
 
 void ControlWindow::Show()
@@ -597,6 +619,14 @@ LRESULT ControlWindow::HandleWindowMessage(
                     );
                     return CDRF_SKIPDEFAULT;
                 }
+            }
+            break;
+
+        case WM_TIMER:
+            if (wParam == LevelMeterTimerId)
+            {
+                UpdateLevelMeters();
+                return 0;
             }
             break;
 
@@ -899,6 +929,7 @@ bool ControlWindow::CreateControls()
         TBS_HORZ | TBS_NOTICKS | WS_TABSTOP,
         IdOutputVolumeSlider
     );
+    outputLevelMeter_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
     outputVolumeValue_ = createControl(L"STATIC", L"", SS_RIGHT, 0);
 
     monitorCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
@@ -916,6 +947,7 @@ bool ControlWindow::CreateControls()
         TBS_HORZ | TBS_NOTICKS | WS_TABSTOP,
         IdMonitorVolumeSlider
     );
+    monitorLevelMeter_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
     monitorVolumeValue_ = createControl(L"STATIC", L"", SS_RIGHT, 0);
 
     microphoneCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
@@ -933,6 +965,7 @@ bool ControlWindow::CreateControls()
         TBS_HORZ | TBS_NOTICKS | WS_TABSTOP,
         IdMicrophoneVolumeSlider
     );
+    microphoneLevelMeter_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
     microphoneVolumeValue_ = createControl(L"STATIC", L"", SS_RIGHT, 0);
     microphoneEnabledCheck_ = createControl(
         L"BUTTON",
@@ -1125,10 +1158,11 @@ bool ControlWindow::CreateControls()
         headerLabel_, subtitleLabel_, themeToggleButton_,
         statusCaption_, statusValue_, settingsGroup_,
         outputCaption_, outputCombo_, outputVolumeCaption_,
-        outputVolumeSlider_, outputVolumeValue_, monitorCaption_,
-        monitorCombo_, monitorVolumeCaption_, monitorVolumeSlider_,
-        monitorVolumeValue_, microphoneCaption_, microphoneCombo_,
-        microphoneVolumeCaption_, microphoneVolumeSlider_,
+        outputVolumeSlider_, outputLevelMeter_, outputVolumeValue_,
+        monitorCaption_, monitorCombo_, monitorVolumeCaption_,
+        monitorVolumeSlider_, monitorLevelMeter_, monitorVolumeValue_,
+        microphoneCaption_, microphoneCombo_, microphoneVolumeCaption_,
+        microphoneVolumeSlider_, microphoneLevelMeter_,
         microphoneVolumeValue_, microphoneEnabledCheck_,
         microphoneToOutputCheck_, microphoneToMonitorCheck_,
         sampleRateCaption_, sampleRateCombo_,
@@ -1257,6 +1291,7 @@ void ControlWindow::LayoutControls(
         const HWND combo,
         const HWND volumeCaption,
         const HWND slider,
+        const HWND levelMeter,
         const HWND volumeValue,
         const int currentY
     )
@@ -1284,9 +1319,17 @@ void ControlWindow::LayoutControls(
         MoveWindow(
             slider,
             volumeX,
-            currentY + 1,
+            currentY,
             volumeSliderWidth,
-            24,
+            20,
+            TRUE
+        );
+        MoveWindow(
+            levelMeter,
+            volumeX + 7,
+            currentY + 22,
+            std::max(1, volumeSliderWidth - 14),
+            5,
             TRUE
         );
         MoveWindow(
@@ -1301,19 +1344,20 @@ void ControlWindow::LayoutControls(
 
     layoutAudioRow(
         outputCaption_, outputCombo_, outputVolumeCaption_,
-        outputVolumeSlider_, outputVolumeValue_, rowY
+        outputVolumeSlider_, outputLevelMeter_, outputVolumeValue_, rowY
     );
     rowY += RowHeight + 6;
 
     layoutAudioRow(
         monitorCaption_, monitorCombo_, monitorVolumeCaption_,
-        monitorVolumeSlider_, monitorVolumeValue_, rowY
+        monitorVolumeSlider_, monitorLevelMeter_, monitorVolumeValue_, rowY
     );
     rowY += RowHeight + 6;
 
     layoutAudioRow(
         microphoneCaption_, microphoneCombo_, microphoneVolumeCaption_,
-        microphoneVolumeSlider_, microphoneVolumeValue_, rowY
+        microphoneVolumeSlider_, microphoneLevelMeter_,
+        microphoneVolumeValue_, rowY
     );
     rowY += RowHeight + 2;
 
@@ -2059,6 +2103,12 @@ void ControlWindow::UpdateWindowChrome()
 
 void ControlWindow::DrawOwnerDrawControl(const DRAWITEMSTRUCT& item)
 {
+    if (IsLevelMeterControl(item.hwndItem))
+    {
+        DrawLevelMeter(item);
+        return;
+    }
+
     if (IsCardControl(item.hwndItem))
     {
         DrawCard(item);
@@ -2066,6 +2116,86 @@ void ControlWindow::DrawOwnerDrawControl(const DRAWITEMSTRUCT& item)
     }
 
     DrawModernButton(item);
+}
+
+
+void ControlWindow::DrawLevelMeter(
+    const DRAWITEMSTRUCT& item
+) const
+{
+    float level = 0.0f;
+    bool available = false;
+
+    if (item.hwndItem == outputLevelMeter_)
+    {
+        level = outputMeterLevel_;
+        available = outputMeterAvailable_;
+    }
+    else if (item.hwndItem == monitorLevelMeter_)
+    {
+        level = monitorMeterLevel_;
+        available = monitorMeterAvailable_;
+    }
+    else if (item.hwndItem == microphoneLevelMeter_)
+    {
+        level = microphoneMeterLevel_;
+        available = microphoneMeterAvailable_;
+    }
+
+    RECT trackRectangle = item.rcItem;
+    trackRectangle.right -= 1;
+    trackRectangle.bottom -= 1;
+
+    const COLORREF trackColor = available
+        ? BlendColor(cardColor_, borderColor_, 58)
+        : BlendColor(cardColor_, backgroundColor_, 48);
+
+    FillRoundedRectangle(
+        item.hDC,
+        trackRectangle,
+        trackColor,
+        5
+    );
+
+    level = std::clamp(level, 0.0f, 1.0f);
+
+    if (!available || level <= 0.002f)
+    {
+        return;
+    }
+
+    COLORREF meterColor = RGB(64, 201, 126);
+
+    if (level >= 0.90f)
+    {
+        meterColor = dangerColor_;
+    }
+    else if (level >= 0.72f)
+    {
+        meterColor = RGB(236, 177, 71);
+    }
+
+    RECT fillRectangle = trackRectangle;
+    const int trackWidth = static_cast<int>(
+        trackRectangle.right - trackRectangle.left
+    );
+    fillRectangle.right = fillRectangle.left + std::max(
+        2,
+        static_cast<int>(
+            static_cast<float>(trackWidth) * level + 0.5f
+        )
+    );
+    fillRectangle.right = std::min(
+        fillRectangle.right,
+        trackRectangle.right
+    );
+
+    FillRoundedRectangle(
+        item.hDC,
+        fillRectangle,
+        meterColor,
+        5
+    );
 }
 
 void ControlWindow::DrawCard(const DRAWITEMSTRUCT& item)
@@ -2235,6 +2365,13 @@ bool ControlWindow::IsSliderControl(const HWND control) const
         control == monitorVolumeSlider_ ||
         control == microphoneVolumeSlider_ ||
         control == bindingVolumeSlider_;
+}
+
+bool ControlWindow::IsLevelMeterControl(const HWND control) const
+{
+    return control == outputLevelMeter_ ||
+        control == monitorLevelMeter_ ||
+        control == microphoneLevelMeter_;
 }
 
 void ControlWindow::DrawModernSlider(
@@ -2964,6 +3101,72 @@ void ControlWindow::UpdateVolumeLabels()
         microphoneVolumeValue_,
         std::to_wstring(microphoneVolume) + L"%"
     );
+}
+
+
+void ControlWindow::UpdateLevelMeters()
+{
+    AudioLevelSnapshot snapshot;
+
+    if (audio_ != nullptr)
+    {
+        snapshot = audio_->GetLevelSnapshot();
+    }
+
+    const auto smoothLevel = [](
+        const float current,
+        const float target
+    )
+    {
+        const float clampedTarget = std::clamp(
+            target,
+            0.0f,
+            1.0f
+        );
+        const float response = clampedTarget > current
+            ? 0.62f
+            : 0.14f;
+        const float next = current +
+            (clampedTarget - current) * response;
+
+        return next < 0.004f ? 0.0f : next;
+    };
+
+    outputMeterLevel_ = smoothLevel(
+        outputMeterLevel_,
+        snapshot.output
+    );
+    monitorMeterLevel_ = smoothLevel(
+        monitorMeterLevel_,
+        snapshot.monitor
+    );
+    microphoneMeterLevel_ = smoothLevel(
+        microphoneMeterLevel_,
+        snapshot.microphone
+    );
+
+    outputMeterAvailable_ = snapshot.outputAvailable;
+    monitorMeterAvailable_ = snapshot.monitorAvailable;
+    microphoneMeterAvailable_ = snapshot.microphoneAvailable;
+
+    const HWND meters[]{
+        outputLevelMeter_,
+        monitorLevelMeter_,
+        microphoneLevelMeter_
+    };
+
+    for (const HWND meter : meters)
+    {
+        if (meter != nullptr)
+        {
+            RedrawWindow(
+                meter,
+                nullptr,
+                nullptr,
+                RDW_INVALIDATE | RDW_UPDATENOW
+            );
+        }
+    }
 }
 
 bool ControlWindow::SavePendingSettings()

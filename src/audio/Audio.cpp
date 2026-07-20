@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -502,6 +503,23 @@ void Audio::MicrophoneDataCallback(
     {
         return;
     }
+
+    const auto* const samples =
+        static_cast<const float*>(inputFrames);
+    const std::size_t sampleCount =
+        static_cast<std::size_t>(frameCount) * 2;
+
+    float peak = 0.0f;
+
+    for (std::size_t index = 0; index < sampleCount; ++index)
+    {
+        peak = std::max(peak, std::abs(samples[index]));
+    }
+
+    instance->microphonePeak_.store(
+        std::clamp(peak, 0.0f, 1.0f),
+        std::memory_order_relaxed
+    );
 
     if (instance->microphoneToOutput_)
     {
@@ -2139,8 +2157,99 @@ AudioRecoveryResult Audio::MaintainDeviceConnection()
     return AudioRecoveryResult::Recovered;
 }
 
+AudioLevelSnapshot Audio::GetLevelSnapshot() const
+{
+    AudioLevelSnapshot snapshot;
+
+    snapshot.outputAvailable = outputEngine_.initialized;
+    snapshot.monitorAvailable = monitorEngine_.initialized;
+    snapshot.microphoneAvailable =
+        microphoneEnabled_ && microphoneCapture_.initialized;
+
+    float activeOutputSoundLevel = 0.0f;
+    float activeMonitorSoundLevel = 0.0f;
+
+    for (const auto& [soundId, loadedSound] : loadedSounds_)
+    {
+        const auto definitionIterator =
+            soundDefinitions_.find(soundId);
+
+        const float configuredLevel = definitionIterator !=
+            soundDefinitions_.end()
+                ? definitionIterator->second.volume
+                : 1.0f;
+
+        for (const Voice& voice : loadedSound.voices)
+        {
+            if (voice.outputSound &&
+                ma_sound_is_playing(voice.outputSound.get()) == MA_TRUE)
+            {
+                activeOutputSoundLevel = std::max(
+                    activeOutputSoundLevel,
+                    configuredLevel
+                );
+            }
+
+            if (voice.monitorSound &&
+                ma_sound_is_playing(voice.monitorSound.get()) == MA_TRUE)
+            {
+                activeMonitorSoundLevel = std::max(
+                    activeMonitorSoundLevel,
+                    configuredLevel
+                );
+            }
+        }
+    }
+
+    const float microphonePeak = snapshot.microphoneAvailable
+        ? std::clamp(
+            microphonePeak_.load(std::memory_order_relaxed),
+            0.0f,
+            1.0f
+        )
+        : 0.0f;
+
+    snapshot.microphone = microphonePeak;
+
+    if (microphoneToOutput_ && snapshot.microphoneAvailable)
+    {
+        activeOutputSoundLevel = std::max(
+            activeOutputSoundLevel,
+            microphonePeak * microphoneVolume_
+        );
+    }
+
+    if (microphoneToMonitor_ && snapshot.microphoneAvailable)
+    {
+        activeMonitorSoundLevel = std::max(
+            activeMonitorSoundLevel,
+            microphonePeak * microphoneVolume_
+        );
+    }
+
+    snapshot.output = snapshot.outputAvailable && !outputMuted_
+        ? std::clamp(
+            activeOutputSoundLevel * outputVolume_,
+            0.0f,
+            1.0f
+        )
+        : 0.0f;
+
+    snapshot.monitor = snapshot.monitorAvailable && !monitorMuted_
+        ? std::clamp(
+            activeMonitorSoundLevel * monitorVolume_,
+            0.0f,
+            1.0f
+        )
+        : 0.0f;
+
+    return snapshot;
+}
+
 void Audio::DestroyRuntime()
 {
+    microphonePeak_.store(0.0f, std::memory_order_relaxed);
+
     if (microphoneCapture_.initialized)
     {
         ma_device_uninit(&microphoneCapture_.device);
