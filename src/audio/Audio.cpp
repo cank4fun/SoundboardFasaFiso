@@ -218,6 +218,72 @@ namespace
         return matches.front();
     }
 
+    std::optional<ma_uint32> FindCaptureDevice(
+        const std::string& requestedDevice,
+        ma_device_info* captureDevices,
+        const ma_uint32 captureDeviceCount
+    )
+    {
+        const std::string requestedLower = ToLower(requestedDevice);
+
+        std::vector<ma_uint32> exactMatches;
+        std::vector<ma_uint32> partialMatches;
+
+        for (ma_uint32 index = 0; index < captureDeviceCount; ++index)
+        {
+            const std::string deviceName = captureDevices[index].name;
+            const std::string deviceNameLower = ToLower(deviceName);
+
+            if (deviceNameLower == requestedLower)
+            {
+                exactMatches.push_back(index);
+            }
+            else if (deviceNameLower.find(requestedLower) != std::string::npos)
+            {
+                partialMatches.push_back(index);
+            }
+        }
+
+        const auto& matches =
+            !exactMatches.empty() ? exactMatches : partialMatches;
+
+        if (matches.empty())
+        {
+            std::cerr
+                << Localization::Text(
+                    "Mikrofon cihazı bulunamadı: ",
+                    "Microphone device not found: "
+                )
+                << requestedDevice
+                << '\n';
+
+            return std::nullopt;
+        }
+
+        if (matches.size() > 1)
+        {
+            std::cerr
+                << Localization::Text(
+                    "Mikrofon adı birden fazla cihazla eşleşti: ",
+                    "The microphone name matched more than one device: "
+                )
+                << requestedDevice
+                << Localization::Text(
+                    "\nEşleşen cihazlar:\n",
+                    "\nMatching devices:\n"
+                );
+
+            for (const ma_uint32 index : matches)
+            {
+                std::cerr << "- " << captureDevices[index].name << '\n';
+            }
+
+            return std::nullopt;
+        }
+
+        return matches.front();
+    }
+
     bool PrepareSoundForPlayback(ma_sound* sound)
     {
         ma_result result = ma_sound_stop(sound);
@@ -314,6 +380,71 @@ std::vector<std::string> Audio::EnumeratePlaybackDevices()
     return deviceNames;
 }
 
+std::vector<std::string> Audio::EnumerateCaptureDevices()
+{
+    ma_context context{};
+
+    const ma_backend preferredBackends[]{
+        ma_backend_wasapi
+    };
+
+    ma_result result = ma_context_init(
+        preferredBackends,
+        1,
+        nullptr,
+        &context
+    );
+
+    if (result != MA_SUCCESS)
+    {
+        std::memset(&context, 0, sizeof(context));
+        result = ma_context_init(nullptr, 0, nullptr, &context);
+    }
+
+    if (result != MA_SUCCESS)
+    {
+        return {};
+    }
+
+    ma_device_info* captureDevices = nullptr;
+    ma_uint32 captureDeviceCount = 0;
+
+    result = ma_context_get_devices(
+        &context,
+        nullptr,
+        nullptr,
+        &captureDevices,
+        &captureDeviceCount
+    );
+
+    std::vector<std::string> deviceNames;
+
+    if (result == MA_SUCCESS)
+    {
+        deviceNames.reserve(static_cast<std::size_t>(captureDeviceCount));
+
+        for (ma_uint32 index = 0; index < captureDeviceCount; ++index)
+        {
+            const std::string deviceName = captureDevices[index].name;
+
+            if (!deviceName.empty())
+            {
+                deviceNames.push_back(deviceName);
+            }
+        }
+    }
+
+    ma_context_uninit(&context);
+
+    std::sort(deviceNames.begin(), deviceNames.end());
+    deviceNames.erase(
+        std::unique(deviceNames.begin(), deviceNames.end()),
+        deviceNames.end()
+    );
+
+    return deviceNames;
+}
+
 Audio::~Audio()
 {
     Shutdown();
@@ -347,6 +478,46 @@ void Audio::DeviceNotificationCallback(
         instance->recoveryRequested_.store(
             true,
             std::memory_order_release
+        );
+    }
+}
+
+void Audio::MicrophoneDataCallback(
+    ma_device* device,
+    void* outputFrames,
+    const void* inputFrames,
+    const ma_uint32 frameCount
+)
+{
+    static_cast<void>(outputFrames);
+
+    if (device == nullptr || inputFrames == nullptr || frameCount == 0)
+    {
+        return;
+    }
+
+    auto* const instance = static_cast<Audio*>(device->pUserData);
+
+    if (instance == nullptr)
+    {
+        return;
+    }
+
+    if (instance->microphoneToOutput_)
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneOutputRoute_,
+            inputFrames,
+            frameCount
+        );
+    }
+
+    if (instance->microphoneToMonitor_)
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneMonitorRoute_,
+            inputFrames,
+            frameCount
         );
     }
 }
@@ -535,6 +706,334 @@ bool Audio::InitializeEngine(
     return true;
 }
 
+bool Audio::InitializeMicrophoneRoute(
+    EngineState& engineState,
+    const ma_uint32 sampleRate,
+    MicrophoneRoute& route
+)
+{
+    if (!engineState.initialized || sampleRate == 0)
+    {
+        return false;
+    }
+
+    const ma_uint32 ringBufferFrames = std::max<ma_uint32>(
+        sampleRate / 4,
+        2048
+    );
+
+    ma_result result = ma_pcm_rb_init(
+        ma_format_f32,
+        2,
+        ringBufferFrames,
+        nullptr,
+        nullptr,
+        &route.ringBuffer
+    );
+
+    if (result != MA_SUCCESS)
+    {
+        return false;
+    }
+
+    route.ringBufferInitialized = true;
+    ma_pcm_rb_set_sample_rate(&route.ringBuffer, sampleRate);
+
+    result = ma_sound_init_from_data_source(
+        &engineState.engine,
+        &route.ringBuffer,
+        MA_SOUND_FLAG_NO_SPATIALIZATION,
+        nullptr,
+        &route.sound
+    );
+
+    if (result != MA_SUCCESS)
+    {
+        DestroyMicrophoneRoute(route);
+        return false;
+    }
+
+    route.soundInitialized = true;
+
+    ma_sound_set_volume(
+        &route.sound,
+        microphoneVolume_
+    );
+
+    result = ma_sound_start(&route.sound);
+
+    if (result != MA_SUCCESS)
+    {
+        DestroyMicrophoneRoute(route);
+        return false;
+    }
+
+    return true;
+}
+
+void Audio::WriteMicrophoneFrames(
+    MicrophoneRoute& route,
+    const void* inputFrames,
+    const ma_uint32 frameCount
+)
+{
+    if (!route.ringBufferInitialized || inputFrames == nullptr)
+    {
+        return;
+    }
+
+    const auto* source = static_cast<const float*>(inputFrames);
+    ma_uint32 remainingFrames = frameCount;
+    ma_uint32 sourceOffset = 0;
+
+    while (remainingFrames > 0)
+    {
+        ma_uint32 writableFrames = remainingFrames;
+        void* destination = nullptr;
+
+        const ma_result acquireResult = ma_pcm_rb_acquire_write(
+            &route.ringBuffer,
+            &writableFrames,
+            &destination
+        );
+
+        if (acquireResult != MA_SUCCESS || writableFrames == 0 ||
+            destination == nullptr)
+        {
+            break;
+        }
+
+        std::memcpy(
+            destination,
+            source + static_cast<std::size_t>(sourceOffset) * 2,
+            static_cast<std::size_t>(writableFrames) * 2 * sizeof(float)
+        );
+
+        if (ma_pcm_rb_commit_write(
+                &route.ringBuffer,
+                writableFrames
+            ) != MA_SUCCESS)
+        {
+            break;
+        }
+
+        sourceOffset += writableFrames;
+        remainingFrames -= writableFrames;
+    }
+}
+
+void Audio::DestroyMicrophoneRoute(MicrophoneRoute& route)
+{
+    if (route.soundInitialized)
+    {
+        ma_sound_uninit(&route.sound);
+    }
+
+    route.soundInitialized = false;
+    std::memset(&route.sound, 0, sizeof(route.sound));
+
+    if (route.ringBufferInitialized)
+    {
+        ma_pcm_rb_uninit(&route.ringBuffer);
+    }
+
+    route.ringBufferInitialized = false;
+    std::memset(&route.ringBuffer, 0, sizeof(route.ringBuffer));
+}
+
+bool Audio::InitializeMicrophone(
+    ma_device_info* captureDevices,
+    const ma_uint32 captureDeviceCount
+)
+{
+    microphoneCapture_.deviceName.clear();
+    microphoneCapture_.initialized = false;
+
+    ma_device_config deviceConfig =
+        ma_device_config_init(ma_device_type_capture);
+
+    deviceConfig.capture.format = ma_format_f32;
+    deviceConfig.capture.channels = 2;
+    deviceConfig.sampleRate = sampleRate_;
+    deviceConfig.periodSizeInMilliseconds = bufferMilliseconds_;
+    deviceConfig.dataCallback = &Audio::MicrophoneDataCallback;
+    deviceConfig.notificationCallback = &Audio::DeviceNotificationCallback;
+    deviceConfig.pUserData = this;
+
+    if (IsDefaultDeviceRequest(requestedMicrophoneDevice_))
+    {
+        microphoneCapture_.deviceName = Localization::Text(
+            "Windows varsayılan mikrofonu",
+            "Windows default microphone"
+        );
+    }
+    else
+    {
+        const auto selectedIndex = FindCaptureDevice(
+            requestedMicrophoneDevice_,
+            captureDevices,
+            captureDeviceCount
+        );
+
+        if (!selectedIndex.has_value())
+        {
+            return false;
+        }
+
+        microphoneCapture_.deviceId = captureDevices[*selectedIndex].id;
+        microphoneCapture_.deviceName = captureDevices[*selectedIndex].name;
+        deviceConfig.capture.pDeviceID = &microphoneCapture_.deviceId;
+    }
+
+    const auto tryInitialize = [this, &deviceConfig](
+        const ma_uint32 attemptSampleRate,
+        const ma_uint32 attemptBufferMilliseconds
+    )
+    {
+        std::memset(
+            &microphoneCapture_.device,
+            0,
+            sizeof(microphoneCapture_.device)
+        );
+
+        deviceConfig.sampleRate = attemptSampleRate;
+        deviceConfig.periodSizeInMilliseconds = attemptBufferMilliseconds;
+
+        return ma_device_init(
+            &context_,
+            &deviceConfig,
+            &microphoneCapture_.device
+        );
+    };
+
+    ma_uint32 activeSampleRate = sampleRate_;
+    ma_uint32 activeBufferMilliseconds = bufferMilliseconds_;
+
+    ma_result result = tryInitialize(
+        activeSampleRate,
+        activeBufferMilliseconds
+    );
+
+    if (result != MA_SUCCESS && activeBufferMilliseconds != 0)
+    {
+        std::cerr
+            << Localization::Text(
+                "Uyarı: Mikrofon düşük gecikme buffer'ı ile açılamadı. Windows varsayılan buffer'ı deneniyor.\n",
+                "Warning: The microphone could not open with the low-latency buffer. Retrying with the Windows default buffer.\n"
+            );
+
+        activeBufferMilliseconds = 0;
+        result = tryInitialize(activeSampleRate, activeBufferMilliseconds);
+    }
+
+    if (result != MA_SUCCESS && activeSampleRate != 0)
+    {
+        std::cerr
+            << Localization::Text(
+                "Uyarı: Mikrofon istenen örnekleme hızında açılamadı. Cihazın doğal hızı deneniyor.\n",
+                "Warning: The microphone could not open at the requested sample rate. Retrying at the device's native rate.\n"
+            );
+
+        activeSampleRate = 0;
+        activeBufferMilliseconds = 0;
+        result = tryInitialize(activeSampleRate, activeBufferMilliseconds);
+    }
+
+    if (result != MA_SUCCESS)
+    {
+        std::cerr
+            << Localization::Text(
+                "Mikrofon başlatılamadı. Hata: ",
+                "The microphone could not be initialized. Error: "
+            )
+            << result
+            << '\n';
+
+        microphoneCapture_.deviceName.clear();
+        return false;
+    }
+
+    microphoneCapture_.initialized = true;
+
+    const ma_uint32 captureSampleRate =
+        microphoneCapture_.device.sampleRate;
+
+    if (microphoneToOutput_ &&
+        !InitializeMicrophoneRoute(
+            outputEngine_,
+            captureSampleRate,
+            microphoneOutputRoute_
+        ))
+    {
+        return false;
+    }
+
+    if (microphoneToMonitor_)
+    {
+        if (!monitorEngine_.initialized)
+        {
+            std::cerr << Localization::Text(
+                "Mikrofon monitöre yönlendirildi ancak monitör çıkışı kapalı.\n",
+                "The microphone is routed to the monitor, but the monitor output is disabled.\n"
+            );
+            return false;
+        }
+
+        if (!InitializeMicrophoneRoute(
+                monitorEngine_,
+                captureSampleRate,
+                microphoneMonitorRoute_
+            ))
+        {
+            return false;
+        }
+    }
+
+    result = ma_device_start(&microphoneCapture_.device);
+
+    if (result != MA_SUCCESS)
+    {
+        std::cerr
+            << Localization::Text(
+                "Mikrofon yakalama başlatılamadı. Hata: ",
+                "Microphone capture could not be started. Error: "
+            )
+            << result
+            << '\n';
+        return false;
+    }
+
+    std::cout
+        << Localization::Text("Mikrofon: ", "Microphone: ")
+        << microphoneCapture_.deviceName
+        << Localization::Text(" | Ses: ", " | Volume: ")
+        << static_cast<int>(microphoneVolume_ * 100.0f)
+        << "% | "
+        << Localization::Text("Yönlendirme: ", "Routing: ");
+
+    if (microphoneToOutput_)
+    {
+        std::cout << Localization::Text("ana çıkış", "main output");
+    }
+
+    if (microphoneToOutput_ && microphoneToMonitor_)
+    {
+        std::cout << " + ";
+    }
+
+    if (microphoneToMonitor_)
+    {
+        std::cout << Localization::Text("monitör", "monitor");
+    }
+
+    std::cout
+        << Localization::Text(" | Örnekleme: ", " | Sample rate: ")
+        << captureSampleRate
+        << " Hz\n";
+
+    return true;
+}
+
 bool Audio::InitializeRuntime()
 {
     if (contextInitialized_)
@@ -594,14 +1093,16 @@ bool Audio::InitializeRuntime()
 
     ma_device_info* playbackDevices = nullptr;
     ma_uint32 playbackDeviceCount = 0;
+    ma_device_info* captureDevices = nullptr;
+    ma_uint32 captureDeviceCount = 0;
 
     const ma_result deviceResult =
         ma_context_get_devices(
             &context_,
             &playbackDevices,
             &playbackDeviceCount,
-            nullptr,
-            nullptr
+            &captureDevices,
+            &captureDeviceCount
         );
 
     if (deviceResult != MA_SUCCESS)
@@ -664,6 +1165,25 @@ bool Audio::InitializeRuntime()
         std::cout << Localization::Text("Monitör çıkışı: Kapalı\n", "Monitor output: Disabled\n");
     }
 
+    if (microphoneEnabled_)
+    {
+        if (!InitializeMicrophone(
+                captureDevices,
+                captureDeviceCount
+            ))
+        {
+            DestroyRuntime();
+            return false;
+        }
+    }
+    else
+    {
+        std::cout << Localization::Text(
+            "Mikrofon miksi: Kapalı\n",
+            "Microphone mix: Disabled\n"
+        );
+    }
+
     return true;
 }
 
@@ -672,6 +1192,11 @@ bool Audio::Initialize(
     const std::string& requestedMonitorDevice,
     const float outputVolume,
     const float monitorVolume,
+    const bool microphoneEnabled,
+    const std::string& requestedMicrophoneDevice,
+    const float microphoneVolume,
+    const bool microphoneToOutput,
+    const bool microphoneToMonitor,
     const unsigned int sampleRate,
     const unsigned int bufferMilliseconds
 )
@@ -704,16 +1229,28 @@ bool Audio::Initialize(
         (bufferMilliseconds >= 2 &&
             bufferMilliseconds <= 100);
 
-    if (!sampleRateIsValid || !bufferIsValid)
+    const bool microphoneSettingsAreValid =
+        !microphoneEnabled ||
+        (!requestedMicrophoneDevice.empty() &&
+            microphoneVolume >= 0.0f &&
+            microphoneVolume <= 1.0f &&
+            (microphoneToOutput || microphoneToMonitor));
+
+    if (!sampleRateIsValid || !bufferIsValid ||
+        !microphoneSettingsAreValid)
     {
         std::cerr
             << Localization::Text(
-                "Geçersiz audio gecikme ayarı. sampleRate=",
-                "Invalid audio latency setting. sampleRate="
+                "Geçersiz audio veya mikrofon ayarı. sampleRate=",
+                "Invalid audio or microphone setting. sampleRate="
             )
             << sampleRate
             << ", bufferMilliseconds="
             << bufferMilliseconds
+            << ", microphoneEnabled="
+            << (microphoneEnabled ? "true" : "false")
+            << ", microphoneVolume="
+            << microphoneVolume
             << '\n';
 
         return false;
@@ -721,8 +1258,13 @@ bool Audio::Initialize(
 
     requestedOutputDevice_ = requestedOutputDevice;
     requestedMonitorDevice_ = requestedMonitorDevice;
+    requestedMicrophoneDevice_ = requestedMicrophoneDevice;
     outputVolume_ = outputVolume;
     monitorVolume_ = monitorVolume;
+    microphoneEnabled_ = microphoneEnabled;
+    microphoneVolume_ = microphoneVolume;
+    microphoneToOutput_ = microphoneToOutput;
+    microphoneToMonitor_ = microphoneToMonitor;
     sampleRate_ = static_cast<ma_uint32>(sampleRate);
     bufferMilliseconds_ =
         static_cast<ma_uint32>(bufferMilliseconds);
@@ -1500,6 +2042,20 @@ bool Audio::IsEngineRunning(EngineState& state) const
         deviceState == ma_device_state_starting;
 }
 
+bool Audio::IsMicrophoneRunning() const
+{
+    if (!microphoneEnabled_ || !microphoneCapture_.initialized)
+    {
+        return !microphoneEnabled_;
+    }
+
+    const ma_device_state deviceState =
+        ma_device_get_state(&microphoneCapture_.device);
+
+    return deviceState == ma_device_state_started ||
+        deviceState == ma_device_state_starting;
+}
+
 bool Audio::IsRuntimeHealthy()
 {
     if (!contextInitialized_ ||
@@ -1510,6 +2066,11 @@ bool Audio::IsRuntimeHealthy()
 
     if (!IsDisabledDeviceRequest(requestedMonitorDevice_) &&
         !IsEngineRunning(monitorEngine_))
+    {
+        return false;
+    }
+
+    if (!IsMicrophoneRunning())
     {
         return false;
     }
@@ -1580,6 +2141,22 @@ AudioRecoveryResult Audio::MaintainDeviceConnection()
 
 void Audio::DestroyRuntime()
 {
+    if (microphoneCapture_.initialized)
+    {
+        ma_device_uninit(&microphoneCapture_.device);
+    }
+
+    microphoneCapture_.initialized = false;
+    microphoneCapture_.deviceName.clear();
+    std::memset(
+        &microphoneCapture_.device,
+        0,
+        sizeof(microphoneCapture_.device)
+    );
+
+    DestroyMicrophoneRoute(microphoneOutputRoute_);
+    DestroyMicrophoneRoute(microphoneMonitorRoute_);
+
     for (auto& [soundId, loadedSound] : loadedSounds_)
     {
         static_cast<void>(soundId);
@@ -1636,6 +2213,12 @@ void Audio::Shutdown()
 
     requestedOutputDevice_.clear();
     requestedMonitorDevice_.clear();
+    requestedMicrophoneDevice_.clear();
+
+    microphoneEnabled_ = false;
+    microphoneVolume_ = 1.0f;
+    microphoneToOutput_ = true;
+    microphoneToMonitor_ = false;
 
     sampleRate_ = 48000;
     bufferMilliseconds_ = 5;

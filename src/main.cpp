@@ -162,6 +162,63 @@ namespace
 
         std::cout
             << Localization::Text(
+                "Mikrofon miksi: ",
+                "Microphone mix: "
+            )
+            << (config.GetMicrophoneEnabled()
+                ? Localization::Text("Açık", "Enabled")
+                : Localization::Text("Kapalı", "Disabled"))
+            << '\n';
+
+        if (config.GetMicrophoneEnabled())
+        {
+            std::cout
+                << Localization::Text(
+                    "İstenen mikrofon: ",
+                    "Requested microphone: "
+                )
+                << config.GetMicrophoneDevice()
+                << '\n'
+                << Localization::Text(
+                    "Mikrofon seviyesi: ",
+                    "Microphone volume: "
+                )
+                << static_cast<int>(
+                    config.GetMicrophoneVolume() * 100.0f
+                )
+                << "%\n"
+                << Localization::Text(
+                    "Mikrofon yönlendirmesi: ",
+                    "Microphone routing: "
+                );
+
+            if (config.GetMicrophoneToOutput())
+            {
+                std::cout << Localization::Text(
+                    "ana çıkış",
+                    "main output"
+                );
+            }
+
+            if (config.GetMicrophoneToOutput() &&
+                config.GetMicrophoneToMonitor())
+            {
+                std::cout << " + ";
+            }
+
+            if (config.GetMicrophoneToMonitor())
+            {
+                std::cout << Localization::Text(
+                    "monitör",
+                    "monitor"
+                );
+            }
+
+            std::cout << '\n';
+        }
+
+        std::cout
+            << Localization::Text(
                 "İstenen örnekleme hızı: ",
                 "Requested sample rate: "
             )
@@ -208,6 +265,11 @@ namespace
             config.GetMonitorDevice(),
             config.GetOutputVolume(),
             config.GetMonitorVolume(),
+            config.GetMicrophoneEnabled(),
+            config.GetMicrophoneDevice(),
+            config.GetMicrophoneVolume(),
+            config.GetMicrophoneToOutput(),
+            config.GetMicrophoneToMonitor(),
             config.GetAudioSampleRate(),
             config.GetAudioBufferMilliseconds()
         ))
@@ -572,6 +634,7 @@ int main()
         configPath,
         soundsFolder,
         Audio::EnumeratePlaybackDevices(),
+        Audio::EnumerateCaptureDevices(),
         controlWindowCommandIds
     ))
     {

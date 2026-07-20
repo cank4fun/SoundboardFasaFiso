@@ -29,7 +29,7 @@ namespace
     constexpr int BaseMargin = 16;
     constexpr int HeaderHeight = 28;
     constexpr int StatusHeight = 24;
-    constexpr int SettingsGroupHeight = 242;
+    constexpr int SettingsGroupHeight = 318;
     constexpr int ControlHotkeysGroupHeight = 94;
     constexpr int BindingEditorWidth = 372;
     constexpr int ButtonHeight = 34;
@@ -54,6 +54,7 @@ bool ControlWindow::Initialize(
     const std::filesystem::path& configPath,
     const std::filesystem::path& soundsFolder,
     const std::vector<std::string>& playbackDevices,
+    const std::vector<std::string>& captureDevices,
     const ControlWindowCommandIds& commandIds
 )
 {
@@ -68,6 +69,7 @@ bool ControlWindow::Initialize(
     soundsFolder_ = soundsFolder;
     currentConfig_ = config;
     playbackDevices_ = playbackDevices;
+    captureDevices_ = captureDevices;
 
     if (instance_ == nullptr)
     {
@@ -202,6 +204,7 @@ void ControlWindow::Shutdown()
     pendingConfigPath_.clear();
     soundsFolder_.clear();
     playbackDevices_.clear();
+    captureDevices_.clear();
     pendingBindings_.clear();
     selectedBindingIndex_ = -1;
     capturingBindingHotkey_ = false;
@@ -220,6 +223,14 @@ void ControlWindow::Shutdown()
     monitorVolumeCaption_ = nullptr;
     monitorVolumeSlider_ = nullptr;
     monitorVolumeValue_ = nullptr;
+    microphoneCaption_ = nullptr;
+    microphoneCombo_ = nullptr;
+    microphoneVolumeCaption_ = nullptr;
+    microphoneVolumeSlider_ = nullptr;
+    microphoneVolumeValue_ = nullptr;
+    microphoneEnabledCheck_ = nullptr;
+    microphoneToOutputCheck_ = nullptr;
+    microphoneToMonitorCheck_ = nullptr;
     sampleRateCaption_ = nullptr;
     sampleRateCombo_ = nullptr;
     bufferCaption_ = nullptr;
@@ -345,6 +356,19 @@ void ControlWindow::SetPlaybackDevices(
     }
 }
 
+void ControlWindow::SetCaptureDevices(
+    const std::vector<std::string>& captureDevices
+)
+{
+    captureDevices_ = captureDevices;
+
+    if (window_ != nullptr)
+    {
+        PopulateDeviceCombos();
+        PopulateEditorControls();
+    }
+}
+
 void ControlWindow::SetStatus(const std::wstring& status)
 {
     SetControlText(statusValue_, status);
@@ -430,20 +454,23 @@ LRESULT ControlWindow::HandleWindowMessage(
                         L"Refreshing audio devices..."
                     ));
 
-                    const std::vector<std::string> devices =
+                    const std::vector<std::string> playbackDevices =
                         Audio::EnumeratePlaybackDevices();
+                    const std::vector<std::string> captureDevices =
+                        Audio::EnumerateCaptureDevices();
 
-                    SetPlaybackDevices(devices);
+                    SetPlaybackDevices(playbackDevices);
+                    SetCaptureDevices(captureDevices);
 
                     SetStatus(
-                        devices.empty()
+                        playbackDevices.empty() && captureDevices.empty()
                             ? Localization::Text(
-                                L"Ses cihazı listesi alınamadı.",
-                                L"The audio device list could not be read."
+                                L"Ses cihazı listeleri alınamadı.",
+                                L"The audio device lists could not be read."
                             )
                             : Localization::Text(
-                                L"Ses cihazı listesi yenilendi.",
-                                L"Audio device list refreshed."
+                                L"Çıkış ve mikrofon cihazları yenilendi.",
+                                L"Playback and microphone devices refreshed."
                             )
                     );
                     return 0;
@@ -527,7 +554,8 @@ LRESULT ControlWindow::HandleWindowMessage(
 
         case WM_HSCROLL:
             if (reinterpret_cast<HWND>(lParam) == outputVolumeSlider_ ||
-                reinterpret_cast<HWND>(lParam) == monitorVolumeSlider_)
+                reinterpret_cast<HWND>(lParam) == monitorVolumeSlider_ ||
+                reinterpret_cast<HWND>(lParam) == microphoneVolumeSlider_)
             {
                 UpdateVolumeLabels();
                 return 0;
@@ -668,6 +696,41 @@ bool ControlWindow::CreateControls()
     );
     monitorVolumeValue_ = createControl(L"STATIC", L"", SS_RIGHT, 0);
 
+    microphoneCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    microphoneCombo_ = createControl(
+        L"COMBOBOX",
+        L"",
+        CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP,
+        0,
+        WS_EX_CLIENTEDGE
+    );
+    microphoneVolumeCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    microphoneVolumeSlider_ = createControl(
+        TRACKBAR_CLASSW,
+        L"",
+        TBS_HORZ | TBS_NOTICKS | WS_TABSTOP,
+        IdMicrophoneVolumeSlider
+    );
+    microphoneVolumeValue_ = createControl(L"STATIC", L"", SS_RIGHT, 0);
+    microphoneEnabledCheck_ = createControl(
+        L"BUTTON",
+        L"",
+        BS_AUTOCHECKBOX | WS_TABSTOP,
+        0
+    );
+    microphoneToOutputCheck_ = createControl(
+        L"BUTTON",
+        L"",
+        BS_AUTOCHECKBOX | WS_TABSTOP,
+        0
+    );
+    microphoneToMonitorCheck_ = createControl(
+        L"BUTTON",
+        L"",
+        BS_AUTOCHECKBOX | WS_TABSTOP,
+        0
+    );
+
     sampleRateCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     sampleRateCombo_ = createControl(
         L"COMBOBOX",
@@ -707,8 +770,10 @@ bool ControlWindow::CreateControls()
 
     SendMessageW(outputVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
     SendMessageW(monitorVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
+    SendMessageW(microphoneVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
     SendMessageW(outputVolumeSlider_, TBM_SETPAGESIZE, 0, 5);
     SendMessageW(monitorVolumeSlider_, TBM_SETPAGESIZE, 0, 5);
+    SendMessageW(microphoneVolumeSlider_, TBM_SETPAGESIZE, 0, 5);
 
     controlHotkeysGroup_ = createControl(L"BUTTON", L"", BS_GROUPBOX, 0);
     stopHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
@@ -824,7 +889,11 @@ bool ControlWindow::CreateControls()
         outputCaption_, outputCombo_, outputVolumeCaption_,
         outputVolumeSlider_, outputVolumeValue_, monitorCaption_,
         monitorCombo_, monitorVolumeCaption_, monitorVolumeSlider_,
-        monitorVolumeValue_, sampleRateCaption_, sampleRateCombo_,
+        monitorVolumeValue_, microphoneCaption_, microphoneCombo_,
+        microphoneVolumeCaption_, microphoneVolumeSlider_,
+        microphoneVolumeValue_, microphoneEnabledCheck_,
+        microphoneToOutputCheck_, microphoneToMonitorCheck_,
+        sampleRateCaption_, sampleRateCombo_,
         bufferCaption_, bufferCombo_, languageCaption_, languageCombo_,
         refreshDevicesButton_, applySettingsButton_, controlHotkeysGroup_,
         stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
@@ -954,7 +1023,74 @@ void ControlWindow::LayoutControls(
         TRUE
     );
 
-    rowY += RowHeight + 12;
+    rowY += RowHeight + 8;
+
+    MoveWindow(microphoneCaption_, innerX, rowY + 5, labelWidth, 22, TRUE);
+    MoveWindow(
+        microphoneCombo_,
+        innerX + labelWidth,
+        rowY,
+        comboWidth,
+        220,
+        TRUE
+    );
+
+    volumeX = innerX + labelWidth + comboWidth + sectionGap;
+    MoveWindow(
+        microphoneVolumeCaption_,
+        volumeX,
+        rowY + 5,
+        volumeCaptionWidth,
+        22,
+        TRUE
+    );
+    volumeX += volumeCaptionWidth + fieldGap;
+    MoveWindow(
+        microphoneVolumeSlider_,
+        volumeX,
+        rowY,
+        volumeSliderWidth,
+        28,
+        TRUE
+    );
+    MoveWindow(
+        microphoneVolumeValue_,
+        volumeX + volumeSliderWidth + fieldGap,
+        rowY + 5,
+        volumeValueWidth,
+        22,
+        TRUE
+    );
+
+    rowY += RowHeight + 4;
+
+    const int microphoneCheckWidth = std::max(160, innerWidth / 4);
+    MoveWindow(
+        microphoneEnabledCheck_,
+        innerX + labelWidth,
+        rowY,
+        microphoneCheckWidth,
+        24,
+        TRUE
+    );
+    MoveWindow(
+        microphoneToOutputCheck_,
+        innerX + labelWidth + microphoneCheckWidth + 12,
+        rowY,
+        microphoneCheckWidth,
+        24,
+        TRUE
+    );
+    MoveWindow(
+        microphoneToMonitorCheck_,
+        innerX + labelWidth + (microphoneCheckWidth + 12) * 2,
+        rowY,
+        microphoneCheckWidth,
+        24,
+        TRUE
+    );
+
+    rowY += RowHeight + 8;
 
     const int halfWidth = (innerWidth - sectionGap) / 2;
     const int smallLabelWidth = 150;
@@ -1287,8 +1423,22 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(settingsGroup_, Localization::Text(L"Ayarlar", L"Settings"));
     SetControlText(outputCaption_, Localization::Text(L"Ana çıkış:", L"Main output:"));
     SetControlText(monitorCaption_, Localization::Text(L"Monitör çıkışı:", L"Monitor output:"));
+    SetControlText(microphoneCaption_, Localization::Text(L"Mikrofon:", L"Microphone:"));
     SetControlText(outputVolumeCaption_, Localization::Text(L"Ses:", L"Volume:"));
     SetControlText(monitorVolumeCaption_, Localization::Text(L"Ses:", L"Volume:"));
+    SetControlText(microphoneVolumeCaption_, Localization::Text(L"Ses:", L"Volume:"));
+    SetControlText(
+        microphoneEnabledCheck_,
+        Localization::Text(L"Mikrofonu etkinleştir", L"Enable microphone")
+    );
+    SetControlText(
+        microphoneToOutputCheck_,
+        Localization::Text(L"Ana çıkışa gönder", L"Send to main output")
+    );
+    SetControlText(
+        microphoneToMonitorCheck_,
+        Localization::Text(L"Monitöre gönder", L"Send to monitor")
+    );
     SetControlText(
         sampleRateCaption_,
         Localization::Text(
@@ -1437,6 +1587,10 @@ void ControlWindow::PopulateEditorControls()
         monitorCombo_,
         Utf8ToWide(currentConfig_.GetMonitorDevice())
     );
+    SelectComboText(
+        microphoneCombo_,
+        Utf8ToWide(currentConfig_.GetMicrophoneDevice())
+    );
 
     SendMessageW(
         outputVolumeSlider_,
@@ -1453,6 +1607,33 @@ void ControlWindow::PopulateEditorControls()
         static_cast<LPARAM>(
             currentConfig_.GetMonitorVolume() * 100.0f + 0.5f
         )
+    );
+    SendMessageW(
+        microphoneVolumeSlider_,
+        TBM_SETPOS,
+        TRUE,
+        static_cast<LPARAM>(
+            currentConfig_.GetMicrophoneVolume() * 100.0f + 0.5f
+        )
+    );
+
+    SendMessageW(
+        microphoneEnabledCheck_,
+        BM_SETCHECK,
+        currentConfig_.GetMicrophoneEnabled() ? BST_CHECKED : BST_UNCHECKED,
+        0
+    );
+    SendMessageW(
+        microphoneToOutputCheck_,
+        BM_SETCHECK,
+        currentConfig_.GetMicrophoneToOutput() ? BST_CHECKED : BST_UNCHECKED,
+        0
+    );
+    SendMessageW(
+        microphoneToMonitorCheck_,
+        BM_SETCHECK,
+        currentConfig_.GetMicrophoneToMonitor() ? BST_CHECKED : BST_UNCHECKED,
+        0
     );
 
     SetControlText(
@@ -1476,31 +1657,42 @@ void ControlWindow::PopulateEditorControls()
 
 void ControlWindow::PopulateDeviceCombos()
 {
-    if (outputCombo_ == nullptr || monitorCombo_ == nullptr)
+    if (outputCombo_ == nullptr || monitorCombo_ == nullptr ||
+        microphoneCombo_ == nullptr)
     {
         return;
     }
 
     SendMessageW(outputCombo_, CB_RESETCONTENT, 0, 0);
     SendMessageW(monitorCombo_, CB_RESETCONTENT, 0, 0);
+    SendMessageW(microphoneCombo_, CB_RESETCONTENT, 0, 0);
 
     AddComboItem(outputCombo_, L"default");
     AddComboItem(monitorCombo_, L"none");
     AddComboItem(monitorCombo_, L"default");
+    AddComboItem(microphoneCombo_, L"default");
 
     const std::wstring configuredOutput =
         Utf8ToWide(currentConfig_.GetOutputDevice());
     const std::wstring configuredMonitor =
         Utf8ToWide(currentConfig_.GetMonitorDevice());
+    const std::wstring configuredMicrophone =
+        Utf8ToWide(currentConfig_.GetMicrophoneDevice());
 
     AddComboItem(outputCombo_, configuredOutput);
     AddComboItem(monitorCombo_, configuredMonitor);
+    AddComboItem(microphoneCombo_, configuredMicrophone);
 
     for (const std::string& device : playbackDevices_)
     {
         const std::wstring deviceName = Utf8ToWide(device);
         AddComboItem(outputCombo_, deviceName);
         AddComboItem(monitorCombo_, deviceName);
+    }
+
+    for (const std::string& device : captureDevices_)
+    {
+        AddComboItem(microphoneCombo_, Utf8ToWide(device));
     }
 }
 
@@ -1584,7 +1776,9 @@ void ControlWindow::UpdateBindingVolumeLabel()
 
 void ControlWindow::UpdateVolumeLabels()
 {
-    if (outputVolumeSlider_ == nullptr || monitorVolumeSlider_ == nullptr)
+    if (outputVolumeSlider_ == nullptr ||
+        monitorVolumeSlider_ == nullptr ||
+        microphoneVolumeSlider_ == nullptr)
     {
         return;
     }
@@ -1601,6 +1795,12 @@ void ControlWindow::UpdateVolumeLabels()
         0,
         0
     );
+    const LRESULT microphoneVolume = SendMessageW(
+        microphoneVolumeSlider_,
+        TBM_GETPOS,
+        0,
+        0
+    );
 
     SetControlText(
         outputVolumeValue_,
@@ -1609,6 +1809,10 @@ void ControlWindow::UpdateVolumeLabels()
     SetControlText(
         monitorVolumeValue_,
         std::to_wstring(monitorVolume) + L"%"
+    );
+    SetControlText(
+        microphoneVolumeValue_,
+        std::to_wstring(microphoneVolume) + L"%"
     );
 }
 
@@ -1625,6 +1829,9 @@ bool ControlWindow::SavePendingSettings()
     const std::string monitorDevice = WideToUtf8(
         GetControlText(monitorCombo_)
     );
+    const std::string microphoneDevice = WideToUtf8(
+        GetControlText(microphoneCombo_)
+    );
 
     unsigned int sampleRate = 0;
     unsigned int bufferMilliseconds = 0;
@@ -1632,6 +1839,7 @@ bool ControlWindow::SavePendingSettings()
     const bool valid =
         !outputDevice.empty() &&
         !monitorDevice.empty() &&
+        !microphoneDevice.empty() &&
         ParseUnsignedControl(sampleRateCombo_, sampleRate) &&
         ParseUnsignedControl(bufferCombo_, bufferMilliseconds);
 
@@ -1640,8 +1848,8 @@ bool ControlWindow::SavePendingSettings()
         MessageBoxW(
             window_,
             Localization::Text(
-                L"Cihaz, örnekleme hızı veya buffer alanlarından biri geçersiz.",
-                L"One of the device, sample-rate, or buffer fields is invalid."
+                L"Cihaz, mikrofon, örnekleme hızı veya buffer alanlarından biri geçersiz.",
+                L"One of the device, microphone, sample-rate, or buffer fields is invalid."
             ),
             L"SoundBoardFasaFiso",
             MB_OK | MB_ICONWARNING
@@ -1699,6 +1907,47 @@ bool ControlWindow::SavePendingSettings()
         0,
         0
     ));
+    const int microphoneVolume = static_cast<int>(SendMessageW(
+        microphoneVolumeSlider_,
+        TBM_GETPOS,
+        0,
+        0
+    ));
+
+    const bool microphoneEnabled = SendMessageW(
+        microphoneEnabledCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+    const bool microphoneToOutput = SendMessageW(
+        microphoneToOutputCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+    const bool microphoneToMonitor = SendMessageW(
+        microphoneToMonitorCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+
+    if (microphoneEnabled &&
+        !microphoneToOutput &&
+        !microphoneToMonitor)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Mikrofon etkin olduğunda en az bir yönlendirme seçmelisin.",
+                L"Select at least one route when the microphone is enabled."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
 
     const int languageIndex = static_cast<int>(SendMessageW(
         languageCombo_,
@@ -1715,6 +1964,10 @@ bool ControlWindow::SavePendingSettings()
     );
     candidate.SetOutputDevice(outputDevice);
     candidate.SetMonitorDevice(monitorDevice);
+    candidate.SetMicrophoneEnabled(microphoneEnabled);
+    candidate.SetMicrophoneDevice(microphoneDevice);
+    candidate.SetMicrophoneToOutput(microphoneToOutput);
+    candidate.SetMicrophoneToMonitor(microphoneToMonitor);
     const bool hotkeysAccepted = candidate.SetControlHotkeys(
         WideToUtf8(stopHotkey),
         WideToUtf8(outputMuteHotkey),
@@ -1744,6 +1997,9 @@ bool ControlWindow::SavePendingSettings()
         ) ||
         !candidate.SetMonitorVolume(
             static_cast<float>(monitorVolume) / 100.0f
+        ) ||
+        !candidate.SetMicrophoneVolume(
+            static_cast<float>(microphoneVolume) / 100.0f
         ) ||
         !candidate.SetAudioSampleRate(sampleRate) ||
         !candidate.SetAudioBufferMilliseconds(bufferMilliseconds))

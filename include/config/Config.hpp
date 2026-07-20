@@ -28,6 +28,13 @@ public:
     bool SetOutputVolume(float volume);
     void SetMonitorDevice(std::string deviceName);
     bool SetMonitorVolume(float volume);
+
+    void SetMicrophoneEnabled(bool enabled);
+    void SetMicrophoneDevice(std::string deviceName);
+    bool SetMicrophoneVolume(float volume);
+    void SetMicrophoneToOutput(bool enabled);
+    void SetMicrophoneToMonitor(bool enabled);
+
     bool SetAudioSampleRate(unsigned int sampleRate);
     bool SetAudioBufferMilliseconds(unsigned int bufferMilliseconds);
 
@@ -48,6 +55,12 @@ public:
 
     const std::string& GetMonitorDevice() const;
     float GetMonitorVolume() const;
+
+    bool GetMicrophoneEnabled() const;
+    const std::string& GetMicrophoneDevice() const;
+    float GetMicrophoneVolume() const;
+    bool GetMicrophoneToOutput() const;
+    bool GetMicrophoneToMonitor() const;
 
     unsigned int GetAudioSampleRate() const;
     unsigned int GetAudioBufferMilliseconds() const;
@@ -82,6 +95,12 @@ private:
 
     std::string monitorDevice_ = "default";
     float monitorVolume_ = 0.30f;
+
+    bool microphoneEnabled_ = false;
+    std::string microphoneDevice_ = "default";
+    float microphoneVolume_ = 1.0f;
+    bool microphoneToOutput_ = true;
+    bool microphoneToMonitor_ = false;
 
     unsigned int audioSampleRate_ = 48000;
     unsigned int audioBufferMilliseconds_ = 5;

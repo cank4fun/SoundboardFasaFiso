@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0-alpha.5
+
+- Added physical microphone capture through miniaudio/WASAPI
+- Added real-time microphone routing to the main output, monitor output, or both
+- Added microphone device enumeration and selection in the native control panel
+- Added microphone enable, gain and routing controls with safe config rollback
+- Added microphone-device recovery to the existing audio reconnection flow
+- Kept microphone mixing fully native with no new runtime dependency
+- Preserved the driver boundary: voice-chat microphone exposure still uses an optional virtual endpoint
+
 ## 2.0.0-alpha.4
 
 - Added a visual sound-binding editor with add, update, remove and clear actions

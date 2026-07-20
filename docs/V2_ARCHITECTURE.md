@@ -61,9 +61,10 @@ A first-party virtual microphone driver can be added later without rewriting the
 
 ### Alpha 5 — microphone mixer
 
-- Physical microphone capture
-- Soundboard + microphone gain and mute controls
-- Monitor and broadcast sink selection
+- Physical microphone capture through the selected Windows input device
+- Independent microphone enable and gain controls
+- Real-time routing to the main output, monitor output, or both
+- Shared device-recovery flow for playback and capture endpoints
 
 ### Beta — packaging and migration
 

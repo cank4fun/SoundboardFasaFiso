@@ -12,6 +12,15 @@ output_volume=1.00
 monitor=default
 monitor_volume=0.30
 
+# MİKROFON MİKSERİ
+# Mikrofonu ana çıkışa ve/veya monitöre gerçek zamanlı ekler.
+# Discord/Steam'e mikrofon olarak vermek için ana çıkışta bir sanal cihaz seçilebilir.
+microphone_enabled=false
+microphone=default
+microphone_volume=1.00
+microphone_to_output=true
+microphone_to_monitor=false
+
 # AUDIO GECİKME AYARLARI
 # 0 yazılırsa cihazın/Windows'un varsayılanı kullanılır.
 audio_sample_rate=48000

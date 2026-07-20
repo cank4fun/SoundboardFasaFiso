@@ -176,6 +176,31 @@ namespace
             return "monitor_volume=0.30";
         }
 
+        if (settingName == "MICROPHONE_ENABLED")
+        {
+            return "microphone_enabled=true";
+        }
+
+        if (settingName == "MICROPHONE")
+        {
+            return "microphone=default";
+        }
+
+        if (settingName == "MICROPHONE_VOLUME")
+        {
+            return "microphone_volume=1.00";
+        }
+
+        if (settingName == "MICROPHONE_TO_OUTPUT")
+        {
+            return "microphone_to_output=true";
+        }
+
+        if (settingName == "MICROPHONE_TO_MONITOR")
+        {
+            return "microphone_to_monitor=false";
+        }
+
         if (settingName == "AUDIO_SAMPLE_RATE")
         {
             return "audio_sample_rate=48000";
@@ -246,6 +271,25 @@ namespace
         }
 
         return volume;
+    }
+
+    std::optional<bool> ParseBoolean(const std::string& text)
+    {
+        const std::string value = ToUpper(Trim(text));
+
+        if (value == "TRUE" || value == "YES" ||
+            value == "ON" || value == "1")
+        {
+            return true;
+        }
+
+        if (value == "FALSE" || value == "NO" ||
+            value == "OFF" || value == "0")
+        {
+            return false;
+        }
+
+        return std::nullopt;
     }
 
     std::optional<unsigned int> ParseUnsignedInteger(
@@ -856,6 +900,11 @@ namespace
             settingName == "OUTPUT_VOLUME" ||
             settingName == "MONITOR" ||
             settingName == "MONITOR_VOLUME" ||
+            settingName == "MICROPHONE_ENABLED" ||
+            settingName == "MICROPHONE" ||
+            settingName == "MICROPHONE_VOLUME" ||
+            settingName == "MICROPHONE_TO_OUTPUT" ||
+            settingName == "MICROPHONE_TO_MONITOR" ||
             settingName == "AUDIO_SAMPLE_RATE" ||
             settingName == "AUDIO_BUFFER_MS" ||
             settingName == "STOP" ||
@@ -876,6 +925,12 @@ bool Config::Load(const std::filesystem::path& filePath)
 
     monitorDevice_ = "default";
     monitorVolume_ = 0.30f;
+
+    microphoneEnabled_ = false;
+    microphoneDevice_ = "default";
+    microphoneVolume_ = 1.0f;
+    microphoneToOutput_ = true;
+    microphoneToMonitor_ = false;
 
     audioSampleRate_ = 48000;
     audioBufferMilliseconds_ = 5;
@@ -1174,6 +1229,100 @@ bool Config::Load(const std::filesystem::path& filePath)
             }
 
             monitorVolume_ = *volume;
+            continue;
+        }
+
+        if (settingName == "MICROPHONE_ENABLED")
+        {
+            const auto enabled = ParseBoolean(parsedLine.rightSide);
+
+            if (!enabled.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "microphone_enabled değeri true veya false olmalı. Girilen değer: ",
+                        "microphone_enabled must be true or false. Entered value: "
+                    )} + parsedLine.rightSide,
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            microphoneEnabled_ = *enabled;
+            continue;
+        }
+
+        if (settingName == "MICROPHONE")
+        {
+            microphoneDevice_ = parsedLine.rightSide;
+            continue;
+        }
+
+        if (settingName == "MICROPHONE_VOLUME")
+        {
+            const auto volume = ParseVolume(parsedLine.rightSide);
+
+            if (!volume.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "microphone_volume değeri 0.00 ile 1.00 arasında bir sayı olmalı. Girilen değer: ",
+                        "microphone_volume must be a number between 0.00 and 1.00. Entered value: "
+                    )} + parsedLine.rightSide,
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            microphoneVolume_ = *volume;
+            continue;
+        }
+
+        if (settingName == "MICROPHONE_TO_OUTPUT")
+        {
+            const auto enabled = ParseBoolean(parsedLine.rightSide);
+
+            if (!enabled.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "microphone_to_output değeri true veya false olmalı. Girilen değer: ",
+                        "microphone_to_output must be true or false. Entered value: "
+                    )} + parsedLine.rightSide,
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            microphoneToOutput_ = *enabled;
+            continue;
+        }
+
+        if (settingName == "MICROPHONE_TO_MONITOR")
+        {
+            const auto enabled = ParseBoolean(parsedLine.rightSide);
+
+            if (!enabled.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "microphone_to_monitor değeri true veya false olmalı. Girilen değer: ",
+                        "microphone_to_monitor must be true or false. Entered value: "
+                    )} + parsedLine.rightSide,
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            microphoneToMonitor_ = *enabled;
             continue;
         }
 
@@ -1491,6 +1640,34 @@ bool Config::Load(const std::filesystem::path& filePath)
         );
     }
 
+    if (microphoneEnabled_ && microphoneDevice_.empty())
+    {
+        reportError(
+            0,
+            {},
+            Localization::Text(
+                "Mikrofon etkin ancak microphone cihaz adı boş.",
+                "The microphone is enabled but the microphone device name is empty."
+            ),
+            "microphone=default"
+        );
+    }
+
+    if (microphoneEnabled_ &&
+        !microphoneToOutput_ &&
+        !microphoneToMonitor_)
+    {
+        reportError(
+            0,
+            {},
+            Localization::Text(
+                "Mikrofon etkin olduğunda en az bir yönlendirme açık olmalı.",
+                "At least one microphone route must be enabled when the microphone is active."
+            ),
+            "microphone_to_output=true"
+        );
+    }
+
     if (errorCount != 0)
     {
         std::cerr
@@ -1571,6 +1748,15 @@ bool Config::Save(const std::filesystem::path& filePath) const
         << "output_volume=" << outputVolume_ << '\n'
         << "monitor=" << monitorDevice_ << '\n'
         << "monitor_volume=" << monitorVolume_ << "\n\n"
+        << "# MİKROFON MİKSERİ / MICROPHONE MIXER\n"
+        << "microphone_enabled="
+        << (microphoneEnabled_ ? "true" : "false") << '\n'
+        << "microphone=" << microphoneDevice_ << '\n'
+        << "microphone_volume=" << microphoneVolume_ << '\n'
+        << "microphone_to_output="
+        << (microphoneToOutput_ ? "true" : "false") << '\n'
+        << "microphone_to_monitor="
+        << (microphoneToMonitor_ ? "true" : "false") << "\n\n"
         << "# AUDIO GECİKME AYARLARI / AUDIO LATENCY SETTINGS\n"
         << "audio_sample_rate=" << audioSampleRate_ << '\n'
         << "audio_buffer_ms=" << audioBufferMilliseconds_ << "\n\n"
@@ -1711,6 +1897,37 @@ bool Config::SetMonitorVolume(const float volume)
 
     monitorVolume_ = volume;
     return true;
+}
+
+void Config::SetMicrophoneEnabled(const bool enabled)
+{
+    microphoneEnabled_ = enabled;
+}
+
+void Config::SetMicrophoneDevice(std::string deviceName)
+{
+    microphoneDevice_ = std::move(deviceName);
+}
+
+bool Config::SetMicrophoneVolume(const float volume)
+{
+    if (volume < 0.0f || volume > 1.0f)
+    {
+        return false;
+    }
+
+    microphoneVolume_ = volume;
+    return true;
+}
+
+void Config::SetMicrophoneToOutput(const bool enabled)
+{
+    microphoneToOutput_ = enabled;
+}
+
+void Config::SetMicrophoneToMonitor(const bool enabled)
+{
+    microphoneToMonitor_ = enabled;
 }
 
 bool Config::SetAudioSampleRate(const unsigned int sampleRate)
@@ -1895,6 +2112,31 @@ const std::string& Config::GetMonitorDevice() const
 float Config::GetMonitorVolume() const
 {
     return monitorVolume_;
+}
+
+bool Config::GetMicrophoneEnabled() const
+{
+    return microphoneEnabled_;
+}
+
+const std::string& Config::GetMicrophoneDevice() const
+{
+    return microphoneDevice_;
+}
+
+float Config::GetMicrophoneVolume() const
+{
+    return microphoneVolume_;
+}
+
+bool Config::GetMicrophoneToOutput() const
+{
+    return microphoneToOutput_;
+}
+
+bool Config::GetMicrophoneToMonitor() const
+{
+    return microphoneToMonitor_;
 }
 
 unsigned int Config::GetAudioSampleRate() const

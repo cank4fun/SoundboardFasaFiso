@@ -15,7 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 development status:** Alpha 4 adds editable control hotkeys and a visual sound-binding editor to the native control panel. It is still a development build and is not a stable replacement for v1.0.0 yet.
+**v2 development status:** Alpha 5 adds physical microphone capture and real-time routing to the main output, monitor output, or both. It is still a development build and is not a stable replacement for v1.0.0 yet.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
@@ -25,6 +25,7 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 
 - Global hotkeys through Win32 `RegisterHotKey`
 - Separate main and monitor outputs with independent volume and mute controls
+- Physical microphone capture with device selection, gain and output/monitor routing
 - WAV, MP3 and FLAC playback
 - Audio preloaded into RAM
 - Per-sound volume and playback mode
@@ -68,6 +69,13 @@ output_volume=1.00
 monitor=default
 monitor_volume=0.30
 
+# MICROPHONE MIXER
+microphone_enabled=false
+microphone=default
+microphone_volume=1.00
+microphone_to_output=true
+microphone_to_monitor=false
+
 # LOW-LATENCY AUDIO
 audio_sample_rate=48000
 audio_buffer_ms=5
@@ -88,7 +96,9 @@ F4=example.wav|volume=1.00|mode=overlap
 
 `language=tr` selects Turkish messages and `language=en` selects English messages. The setting is applied during startup and live reload.
 
-`default` selects the current Windows default playback device. `none` disables the monitor output. Device names also support unique partial matches.
+`default` selects the current Windows default playback or capture device. `none` disables the monitor output. Device names also support unique partial matches.
+
+When `microphone_enabled=true`, the selected physical microphone is captured and mixed into every enabled route. `microphone_to_output=true` sends it to the main output; `microphone_to_monitor=true` also lets the user hear it through the monitor device. Enabling microphone monitoring can create feedback when speakers are used, so headphones are recommended.
 
 Sound paths are relative to the `sounds` folder. Subfolders are supported, but absolute paths and `..` traversal are rejected.
 
@@ -123,9 +133,9 @@ Windows rejects a hotkey already owned by another application. SoundBoardFasaFis
 
 ## Control panel
 
-Alpha 3 includes a native Win32 settings editor without Qt, .NET or another GUI runtime. The panel enumerates playback devices and lets the user change the main output, monitor output, both volume targets, language, sample rate and buffer target. `Save and apply` writes a pending configuration, validates it, rebuilds the runtime and only replaces the active config after the new audio setup succeeds. A failure restores the previous working runtime.
+Alpha 5 uses a native Win32 settings editor without Qt, .NET or another GUI runtime. The panel enumerates playback and capture devices and lets the user configure main output, monitor output, microphone input, all three gain targets, microphone routes, language, sample rate, buffer target, control hotkeys and sound bindings.
 
-The configured sound bindings remain visible in the panel. Binding and control-hotkey editing is the next v2 GUI milestone; those values are preserved when core settings are saved. Closing the control-panel window only hides it, so the soundboard continues running in the tray.
+`Save and apply` writes a pending configuration, validates it, rebuilds the complete playback/capture runtime and only replaces the active config after every device and hotkey succeeds. A failure restores the previous working runtime. Closing the control-panel window only hides it, so the soundboard continues running in the tray.
 
 ## Tray menu
 

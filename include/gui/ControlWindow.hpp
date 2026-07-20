@@ -41,6 +41,7 @@ public:
         const std::filesystem::path& configPath,
         const std::filesystem::path& soundsFolder,
         const std::vector<std::string>& playbackDevices,
+        const std::vector<std::string>& captureDevices,
         const ControlWindowCommandIds& commandIds
     );
 
@@ -55,11 +56,14 @@ public:
     void SetPlaybackDevices(
         const std::vector<std::string>& playbackDevices
     );
+    void SetCaptureDevices(
+        const std::vector<std::string>& captureDevices
+    );
     void SetStatus(const std::wstring& status);
 
 private:
     static constexpr int MinimumClientWidth = 1020;
-    static constexpr int MinimumClientHeight = 820;
+    static constexpr int MinimumClientHeight = 900;
 
     static constexpr int IdApplySettings = 1000;
     static constexpr int IdReload = 1001;
@@ -81,6 +85,7 @@ private:
     static constexpr int IdUpdateBinding = 1017;
     static constexpr int IdRemoveBinding = 1018;
     static constexpr int IdClearBinding = 1019;
+    static constexpr int IdMicrophoneVolumeSlider = 1020;
 
     static LRESULT CALLBACK WindowProcedure(
         HWND window,
@@ -148,6 +153,7 @@ private:
 
     Config currentConfig_;
     std::vector<std::string> playbackDevices_;
+    std::vector<std::string> captureDevices_;
     std::vector<SoundBinding> pendingBindings_;
 
     HWND headerLabel_ = nullptr;
@@ -165,6 +171,14 @@ private:
     HWND monitorVolumeCaption_ = nullptr;
     HWND monitorVolumeSlider_ = nullptr;
     HWND monitorVolumeValue_ = nullptr;
+    HWND microphoneCaption_ = nullptr;
+    HWND microphoneCombo_ = nullptr;
+    HWND microphoneVolumeCaption_ = nullptr;
+    HWND microphoneVolumeSlider_ = nullptr;
+    HWND microphoneVolumeValue_ = nullptr;
+    HWND microphoneEnabledCheck_ = nullptr;
+    HWND microphoneToOutputCheck_ = nullptr;
+    HWND microphoneToMonitorCheck_ = nullptr;
     HWND sampleRateCaption_ = nullptr;
     HWND sampleRateCombo_ = nullptr;
     HWND bufferCaption_ = nullptr;

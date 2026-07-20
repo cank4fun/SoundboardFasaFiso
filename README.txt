@@ -49,6 +49,19 @@ monitor=default
 "none" monitör çıkışını kapatır.
 Cihaz adlarında tam isim yerine ayırt edici bir bölüm yazılabilir.
 
+MİKROFON MİKSERİ
+-----------------
+microphone_enabled=false
+microphone=default
+microphone_volume=1.00
+microphone_to_output=true
+microphone_to_monitor=false
+
+Mikrofon etkinleştirildiğinde fiziksel mikrofon ana çıkışa, monitöre veya
+ikisine birden gerçek zamanlı eklenir. Monitöre yönlendirmede geri besleme
+olmaması için kulaklık kullanılması önerilir. Discord/Steam gibi uygulamalara
+mikrofon olarak vermek için ana çıkışta sanal bir audio endpoint seçilebilir.
+
 GECİKME AYARLARI
 ----------------
 audio_sample_rate=48000
@@ -67,8 +80,9 @@ CTRL+SHIFT+F12  : Programı kapat
 
 KONTROL PANELİ
 ---------------
-Panelden ana/monitör cihazı, ses seviyeleri, dil, örnekleme hızı, buffer,
-kontrol hotkey'leri ve ses atamaları düzenlenebilir. Ses ataması eklerken
+Panelden ana/monitör/mikrofon cihazı, ses seviyeleri, mikrofon yönlendirmesi,
+dil, örnekleme hızı, buffer, kontrol hotkey'leri ve ses atamaları düzenlenebilir.
+Ses ataması eklerken
 WAV/MP3/FLAC seçilebilir; dışarıdaki dosya isteğe bağlı olarak sounds
 klasörüne kopyalanır. Kaydet ve uygula tüm ayarları önce doğrular; hotkey
 çakışması veya ses sistemi hatasında önceki çalışan ayarlar geri yüklenir.
