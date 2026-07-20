@@ -39,17 +39,19 @@ A first-party virtual microphone driver can be added later without rewriting the
 - Existing config compatibility
 - No external language files required
 
-### Alpha 2 — application model
+### Alpha 2 — control-panel foundation
 
-- Separate configuration, runtime state and command layers
-- Structured logging
-- Device enumeration API for the future GUI
+- Native Win32 control panel without an external GUI runtime
+- Live runtime status and configuration summary
+- Sound-binding overview and command dispatch to the existing runtime
+- Tray-first lifecycle where closing the panel keeps the soundboard running
 
-### Alpha 3 — GUI and profiles
+### Alpha 3 — visual configuration and profiles
 
-- Native Windows GUI
-- Sound list, hotkey editor and device selectors
-- Save, validate and reload profiles
+- Sound list and hotkey editor
+- Device enumeration and selectors
+- Save, validate and reload profiles from the GUI
+- Structured in-application diagnostics
 
 ### Alpha 4 — microphone mixer
 

@@ -9,6 +9,7 @@
 #include "app/Version.hpp"
 #include "audio/Audio.hpp"
 #include "config/Config.hpp"
+#include "gui/ControlWindow.hpp"
 #include "hotkeys/HotkeyManager.hpp"
 #include "localization/Localization.hpp"
 #include "platform/SingleInstance.hpp"
@@ -29,6 +30,7 @@
 namespace
 {
     constexpr int FirstSoundHotkeyId = 100;
+    constexpr int OpenControlPanelCommandId = 993;
     constexpr int ToggleConsoleCommandId = 994;
     constexpr int OutputMuteHotkeyId = 995;
     constexpr int MonitorMuteHotkeyId = 996;
@@ -302,6 +304,7 @@ namespace
                 << "%, mode="
                 << PlaybackModeName(binding.mode)
                 << "]\n";
+
         }
 
         if (requireAllBindings && bindingError)
@@ -547,9 +550,45 @@ int main()
         return 1;
     }
 
+    ControlWindow controlWindow;
+
+    const ControlWindowCommandIds controlWindowCommandIds{
+        .stop = StopHotkeyId,
+        .outputMute = OutputMuteHotkeyId,
+        .monitorMute = MonitorMuteHotkeyId,
+        .reload = ReloadHotkeyId,
+        .toggleConsole = ToggleConsoleCommandId,
+        .exit = ExitHotkeyId
+    };
+
+    if (controlWindow.Initialize(
+        config,
+        configPath,
+        soundsFolder,
+        controlWindowCommandIds
+    ))
+    {
+        controlWindow.Show();
+
+        std::cout
+            << Localization::Text(
+                "Kontrol paneli hazır. Pencereyi kapatmak uygulamayı kapatmaz; tray'e gizler.\n",
+                "The control panel is ready. Closing the window hides it to the tray without exiting.\n"
+            );
+    }
+    else
+    {
+        std::cerr
+            << Localization::Text(
+                "Kontrol paneli başlatılamadı. Soundboard konsol ve tray üzerinden çalışmaya devam edecek.\n",
+                "The control panel could not be initialized. The soundboard will continue through the console and tray.\n"
+            );
+    }
+
     TrayIcon trayIcon;
 
     const TrayCommandIds trayCommandIds{
+        .controlPanel = OpenControlPanelCommandId,
         .stop = StopHotkeyId,
         .outputMute = OutputMuteHotkeyId,
         .monitorMute = MonitorMuteHotkeyId,
@@ -565,8 +604,8 @@ int main()
     {
         std::cout
             << Localization::Text(
-                "Tray icon hazır. Sağ tıklayarak menüyü açabilirsin.\nTray icon'a çift tıklayarak konsolu gösterip gizleyebilirsin.\n",
-                "Tray icon is ready. Right-click it to open the menu.\nDouble-click the tray icon to show or hide the console.\n"
+                "Tray icon hazır. Sağ tıklayarak menüyü açabilirsin.\nTray icon'a çift tıklayarak kontrol panelini açabilirsin.\n",
+                "Tray icon is ready. Right-click it to open the menu.\nDouble-click the tray icon to open the control panel.\n"
             );
     }
     else
@@ -621,6 +660,13 @@ int main()
                             "\nThe audio device connection was lost. The program will stay open and retry every 3 seconds.\n"
                         );
 
+                    controlWindow.SetStatus(
+                        Localization::Text(
+                            L"Ses cihazı bağlantısı koptu; yeniden bağlanma bekleniyor.",
+                            L"Audio device connection lost; waiting to reconnect."
+                        )
+                    );
+
                     audioRecoveryWarningShown = true;
                 }
             }
@@ -634,6 +680,13 @@ int main()
                         "\nThe audio system was restarted.\nSounds were loaded into RAM again.\nSoundboard ready.\n"
                     );
 
+                controlWindow.SetStatus(
+                    Localization::Text(
+                        L"Ses sistemi yeniden bağlandı. Soundboard hazır.",
+                        L"Audio system reconnected. Soundboard ready."
+                    )
+                );
+
                 audioRecoveryWarningShown = false;
             }
         }
@@ -646,6 +699,12 @@ int main()
         if (hotkeyId == ExitHotkeyId)
         {
             running = false;
+            continue;
+        }
+
+        if (hotkeyId == OpenControlPanelCommandId)
+        {
+            controlWindow.Show();
             continue;
         }
 
@@ -670,6 +729,13 @@ int main()
                 "\nReloading config...\n"
             );
 
+            controlWindow.SetStatus(
+                Localization::Text(
+                    L"Config yeniden yükleniyor...",
+                    L"Reloading config..."
+                )
+            );
+
             const Language oldLanguage = config.GetLanguage();
             Config newConfig;
 
@@ -681,6 +747,13 @@ int main()
                         "Reload başarısız. Eski ayarlar kullanılmaya devam ediyor.\n",
                         "Reload failed. The previous settings will continue to be used.\n"
                     );
+
+                controlWindow.SetStatus(
+                    Localization::Text(
+                        L"Reload başarısız; önceki ayarlar korunuyor.",
+                        L"Reload failed; previous settings kept."
+                    )
+                );
 
                 continue;
             }
@@ -710,6 +783,14 @@ int main()
                         "\nConfig reloaded successfully.\nSoundboard ready.\n"
                     );
 
+                controlWindow.UpdateConfig(config);
+                controlWindow.SetStatus(
+                    Localization::Text(
+                        L"Config başarıyla yenilendi. Soundboard hazır.",
+                        L"Config reloaded successfully. Soundboard ready."
+                    )
+                );
+
                 continue;
             }
 
@@ -720,6 +801,13 @@ int main()
                     "Yeni ayarlar başlatılamadı. Eski ayarlar geri yükleniyor...\n",
                     "The new settings could not be initialized. Restoring the previous settings...\n"
                 );
+
+            controlWindow.SetStatus(
+                Localization::Text(
+                    L"Yeni ayarlar uygulanamadı; önceki ayarlar geri yükleniyor...",
+                    L"New settings failed; restoring previous settings..."
+                )
+            );
 
             ClearRuntime(audio, hotkeys, activeBindings);
 
@@ -737,6 +825,13 @@ int main()
                         "The previous settings could not be restored either. The program is shutting down.\n"
                     );
 
+                controlWindow.SetStatus(
+                    Localization::Text(
+                        L"Ayarlar geri yüklenemedi; program kapatılıyor.",
+                        L"Settings could not be restored; shutting down."
+                    )
+                );
+
                 running = false;
                 continue;
             }
@@ -753,6 +848,14 @@ int main()
                     "The previous settings were restored.\nSoundboard ready.\n"
                 );
 
+            controlWindow.UpdateConfig(config);
+            controlWindow.SetStatus(
+                Localization::Text(
+                    L"Önceki ayarlar geri yüklendi. Soundboard hazır.",
+                    L"Previous settings restored. Soundboard ready."
+                )
+            );
+
             continue;
         }
 
@@ -764,19 +867,23 @@ int main()
             if (result == MuteToggleResult::Muted)
             {
                 std::cout << Localization::Text("Ana çıkış susturuldu.\n", "Main output muted.\n");
+                controlWindow.SetStatus(Localization::Text(L"Ana çıkış susturuldu.", L"Main output muted."));
             }
             else if (result == MuteToggleResult::Unmuted)
             {
                 std::cout << Localization::Text("Ana çıkış sesi açıldı.\n", "Main output unmuted.\n");
+                controlWindow.SetStatus(Localization::Text(L"Ana çıkış sesi açıldı.", L"Main output unmuted."));
             }
             else if (result == MuteToggleResult::Unavailable)
             {
                 std::cerr << Localization::Text("Ana çıkış şu anda kullanılamıyor.\n", "Main output is currently unavailable.\n");
+                controlWindow.SetStatus(Localization::Text(L"Ana çıkış kullanılamıyor.", L"Main output unavailable."));
             }
             else
             {
                 std::cerr
                     << Localization::Text("Ana çıkış mute durumu değiştirilemedi.\n", "Main output mute state could not be changed.\n");
+                controlWindow.SetStatus(Localization::Text(L"Ana çıkış mute durumu değiştirilemedi.", L"Main output mute state could not be changed."));
             }
 
             continue;
@@ -790,20 +897,24 @@ int main()
             if (result == MuteToggleResult::Muted)
             {
                 std::cout << Localization::Text("Monitör çıkışı susturuldu.\n", "Monitor output muted.\n");
+                controlWindow.SetStatus(Localization::Text(L"Monitör çıkışı susturuldu.", L"Monitor output muted."));
             }
             else if (result == MuteToggleResult::Unmuted)
             {
                 std::cout << Localization::Text("Monitör çıkışı sesi açıldı.\n", "Monitor output unmuted.\n");
+                controlWindow.SetStatus(Localization::Text(L"Monitör çıkışı sesi açıldı.", L"Monitor output unmuted."));
             }
             else if (result == MuteToggleResult::Unavailable)
             {
                 std::cerr
                     << Localization::Text("Monitör çıkışı kapalı veya kullanılamıyor.\n", "Monitor output is disabled or unavailable.\n");
+                controlWindow.SetStatus(Localization::Text(L"Monitör çıkışı kapalı veya kullanılamıyor.", L"Monitor output disabled or unavailable."));
             }
             else
             {
                 std::cerr
                     << Localization::Text("Monitör mute durumu değiştirilemedi.\n", "Monitor mute state could not be changed.\n");
+                controlWindow.SetStatus(Localization::Text(L"Monitör mute durumu değiştirilemedi.", L"Monitor mute state could not be changed."));
             }
 
             continue;
@@ -814,10 +925,12 @@ int main()
             if (audio.StopAll())
             {
                 std::cout << Localization::Text("Tüm sesler durduruldu.\n", "All sounds stopped.\n");
+                controlWindow.SetStatus(Localization::Text(L"Tüm sesler durduruldu.", L"All sounds stopped."));
             }
             else
             {
                 std::cerr << Localization::Text("Bazı sesler durdurulamadı.\n", "Some sounds could not be stopped.\n");
+                controlWindow.SetStatus(Localization::Text(L"Bazı sesler durdurulamadı.", L"Some sounds could not be stopped."));
             }
 
             continue;
@@ -852,6 +965,10 @@ int main()
                 << " ["
                 << PlaybackModeName(binding.mode)
                 << "]\n";
+
+            controlWindow.SetStatus(
+                Localization::Text(L"Ses çalınıyor.", L"Sound is playing.")
+            );
         }
         else if (playbackResult == PlaybackResult::Stopped)
         {
@@ -859,6 +976,10 @@ int main()
                 << Localization::Text("Durduruldu: ", "Stopped: ")
                 << PathToUtf8(binding.soundFile.stem())
                 << '\n';
+
+            controlWindow.SetStatus(
+                Localization::Text(L"Ses durduruldu.", L"Sound stopped.")
+            );
         }
         else if (playbackResult == PlaybackResult::Failed)
         {
@@ -866,9 +987,17 @@ int main()
                 << Localization::Text("Ses çalınamadı: ", "Sound could not be played: ")
                 << PathToUtf8(binding.soundFile.stem())
                 << '\n';
+
+            controlWindow.SetStatus(
+                Localization::Text(
+                    L"Ses çalınamadı.",
+                    L"Sound could not be played."
+                )
+            );
         }
     }
 
+    controlWindow.Shutdown();
     trayIcon.Shutdown();
     ClearRuntime(audio, hotkeys, activeBindings);
 

@@ -354,7 +354,7 @@ LRESULT TrayIcon::HandleWindowMessage(
 
         if (lParam == WM_LBUTTONDBLCLK)
         {
-            PostApplicationCommand(commandIds_.toggleConsole);
+            PostApplicationCommand(commandIds_.controlPanel);
             return 0;
         }
     }
@@ -394,6 +394,13 @@ void TrayIcon::ShowContextMenu()
     {
         return;
     }
+
+    AppendMenuW(
+        menu,
+        MF_STRING | MF_DEFAULT,
+        MenuControlPanel,
+        Localization::Text(L"Kontrol panelini aç", L"Open control panel")
+    );
 
     AppendMenuW(
         menu,
@@ -470,6 +477,10 @@ void TrayIcon::ShowContextMenu()
 
     switch (selectedCommand)
     {
+        case MenuControlPanel:
+            PostApplicationCommand(commandIds_.controlPanel);
+            break;
+
         case MenuReload:
             PostApplicationCommand(commandIds_.reload);
             break;

@@ -15,7 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 development status:** this branch is an alpha foundation and is not a stable replacement for v1.0.0 yet.
+**v2 development status:** Alpha 2 adds the first native control panel. It is still a development build and is not a stable replacement for v1.0.0 yet.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
@@ -34,6 +34,7 @@ There is no installer, database or GUI framework. Runtime behavior is controlled
 - Automatic recovery after audio-device disconnects
 - WASAPI with configurable sample rate and buffer target
 - Turkish and English runtime messages selected from `config.txt`
+- Native Win32 control panel with live status and sound-binding overview
 - UTF-8 console and Unicode file-path support
 - Tray menu and single-instance protection
 - Portable Release ZIP generation with CMake
@@ -43,8 +44,8 @@ There is no installer, database or GUI framework. Runtime behavior is controlled
 1. Download and extract the latest portable ZIP.
 2. Put audio files in the `sounds` folder.
 3. Edit `config.txt`.
-4. Run `SoundBoardFasaFiso.exe`.
-5. Press `CTRL+SHIFT+F11` after changing the config.
+4. Run `SoundBoardFasaFiso.exe`; the control panel opens automatically.
+5. Use the panel or press `CTRL+SHIFT+F11` after changing the config.
 
 ```text
 SoundBoardFasaFiso/
@@ -120,17 +121,24 @@ NUMPAD1=example.wav
 
 Windows rejects a hotkey already owned by another application. SoundBoardFasaFiso reports the conflict and keeps the last working configuration during a failed reload.
 
+## Control panel
+
+Alpha 2 includes a native Win32 control panel without Qt, .NET or another GUI runtime. It shows the active language, requested devices, volume targets, audio settings and configured sound bindings. Buttons provide quick access to reload, stop all sounds, toggle either output mute, open `config.txt`, open the `sounds` folder, show or hide the console, and exit.
+
+Closing the control-panel window only hides it; the soundboard continues running in the tray. Config editing is still file-based in Alpha 2. A full visual binding editor and device selectors are planned for later v2 milestones.
+
 ## Tray menu
 
 Right-click the tray icon to:
 
+- Open the control panel
 - Reload the config
 - Stop all sounds
 - Mute or unmute either output
 - Show or hide the console
 - Exit
 
-Double-click the tray icon to show or hide the console.
+Double-click the tray icon to reopen the control panel.
 
 ## Device recovery and latency
 

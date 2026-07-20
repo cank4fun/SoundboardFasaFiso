@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(SOUNDBOARD_VERSION "2.0.0-alpha.1")
+set(SOUNDBOARD_VERSION "2.0.0-alpha.2")
 
 project(SoundBoardFasaFiso VERSION 2.0.0 LANGUAGES CXX)
 
@@ -42,6 +42,7 @@ add_executable(
     src/audio/Audio.cpp
     src/audio/miniaudio_impl.cpp
     src/config/Config.cpp
+    src/gui/ControlWindow.cpp
     src/hotkeys/HotkeyManager.cpp
     src/localization/Localization.cpp
     src/platform/SingleInstance.cpp

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0-alpha.2
+
+- Added a native Win32 control panel with no GUI framework dependency
+- Added live status, audio configuration summary and sound-binding list
+- Added GUI buttons for reload, stop, mute, console, config, sounds and exit
+- Changed tray double-click to open the control panel
+- Added a localized tray command for reopening the control panel
+- Preserved console, global hotkeys and portable standalone packaging
+
 ## 2.0.0-alpha.1
 
 - Added embedded Turkish and English localization infrastructure
