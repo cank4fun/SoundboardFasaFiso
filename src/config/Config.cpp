@@ -1739,6 +1739,139 @@ bool Config::SetAudioBufferMilliseconds(
     return true;
 }
 
+bool Config::SetControlHotkeys(
+    std::string stopKeyName,
+    std::string outputMuteKeyName,
+    std::string monitorMuteKeyName,
+    std::string reloadKeyName,
+    std::string exitKeyName
+)
+{
+    std::string errorReason;
+
+    const auto stop = ParseHotkey(stopKeyName, errorReason);
+    const auto outputMute = ParseHotkey(outputMuteKeyName, errorReason);
+    const auto monitorMute = ParseHotkey(monitorMuteKeyName, errorReason);
+    const auto reload = ParseHotkey(reloadKeyName, errorReason);
+    const auto exit = ParseHotkey(exitKeyName, errorReason);
+
+    if (!stop.has_value() || !outputMute.has_value() ||
+        !monitorMute.has_value() || !reload.has_value() ||
+        !exit.has_value())
+    {
+        return false;
+    }
+
+    const ParsedHotkey* hotkeys[] = {
+        &*stop,
+        &*outputMute,
+        &*monitorMute,
+        &*reload,
+        &*exit
+    };
+
+    std::unordered_set<std::uint64_t> identities;
+
+    for (const ParsedHotkey* hotkey : hotkeys)
+    {
+        if (!identities.insert(
+                MakeHotkeyIdentity(
+                    hotkey->modifiers,
+                    hotkey->virtualKey
+                )
+            ).second)
+        {
+            return false;
+        }
+    }
+
+    stopKeyName_ = stop->canonicalName;
+    stopModifiers_ = stop->modifiers;
+    stopVirtualKey_ = stop->virtualKey;
+
+    outputMuteKeyName_ = outputMute->canonicalName;
+    outputMuteModifiers_ = outputMute->modifiers;
+    outputMuteVirtualKey_ = outputMute->virtualKey;
+
+    monitorMuteKeyName_ = monitorMute->canonicalName;
+    monitorMuteModifiers_ = monitorMute->modifiers;
+    monitorMuteVirtualKey_ = monitorMute->virtualKey;
+
+    reloadKeyName_ = reload->canonicalName;
+    reloadModifiers_ = reload->modifiers;
+    reloadVirtualKey_ = reload->virtualKey;
+
+    exitKeyName_ = exit->canonicalName;
+    exitModifiers_ = exit->modifiers;
+    exitVirtualKey_ = exit->virtualKey;
+
+    return true;
+}
+
+bool Config::SetBindings(std::vector<SoundBinding> bindings)
+{
+    if (bindings.empty())
+    {
+        return false;
+    }
+
+    std::unordered_set<std::uint64_t> usedHotkeys{
+        MakeHotkeyIdentity(stopModifiers_, stopVirtualKey_),
+        MakeHotkeyIdentity(outputMuteModifiers_, outputMuteVirtualKey_),
+        MakeHotkeyIdentity(
+            monitorMuteModifiers_,
+            monitorMuteVirtualKey_
+        ),
+        MakeHotkeyIdentity(reloadModifiers_, reloadVirtualKey_),
+        MakeHotkeyIdentity(exitModifiers_, exitVirtualKey_)
+    };
+
+    for (SoundBinding& binding : bindings)
+    {
+        if (binding.volume < 0.0f || binding.volume > 1.0f ||
+            binding.soundFile.empty() ||
+            binding.soundFile.has_root_path() ||
+            !SoundFileFormat::IsSupported(binding.soundFile))
+        {
+            return false;
+        }
+
+        for (const auto& component : binding.soundFile)
+        {
+            if (component == "..")
+            {
+                return false;
+            }
+        }
+
+        std::string errorReason;
+        const auto hotkey = ParseHotkey(binding.keyName, errorReason);
+
+        if (!hotkey.has_value())
+        {
+            return false;
+        }
+
+        const std::uint64_t identity = MakeHotkeyIdentity(
+            hotkey->modifiers,
+            hotkey->virtualKey
+        );
+
+        if (!usedHotkeys.insert(identity).second)
+        {
+            return false;
+        }
+
+        binding.keyName = hotkey->canonicalName;
+        binding.modifiers = hotkey->modifiers;
+        binding.virtualKey = hotkey->virtualKey;
+        binding.soundFile = binding.soundFile.lexically_normal();
+    }
+
+    bindings_ = std::move(bindings);
+    return true;
+}
+
 Language Config::GetLanguage() const
 {
     return language_;

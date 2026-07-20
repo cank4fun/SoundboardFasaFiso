@@ -31,6 +31,16 @@ public:
     bool SetAudioSampleRate(unsigned int sampleRate);
     bool SetAudioBufferMilliseconds(unsigned int bufferMilliseconds);
 
+    bool SetControlHotkeys(
+        std::string stopKeyName,
+        std::string outputMuteKeyName,
+        std::string monitorMuteKeyName,
+        std::string reloadKeyName,
+        std::string exitKeyName
+    );
+
+    bool SetBindings(std::vector<SoundBinding> bindings);
+
     Language GetLanguage() const;
 
     const std::string& GetOutputDevice() const;

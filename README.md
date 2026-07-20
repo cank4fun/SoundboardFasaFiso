@@ -15,11 +15,11 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 development status:** Alpha 3 turns the native control panel into a safe core-settings editor. It is still a development build and is not a stable replacement for v1.0.0 yet.
+**v2 development status:** Alpha 4 adds editable control hotkeys and a visual sound-binding editor to the native control panel. It is still a development build and is not a stable replacement for v1.0.0 yet.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
-There is no installer, database or GUI framework. Core audio settings can be edited from the native control panel, while `config.txt` remains available for advanced binding edits.
+There is no installer, database or GUI framework. Audio settings, control hotkeys, and sound bindings can be edited from the native control panel; `config.txt` remains available for manual workflows.
 
 ## Features
 
@@ -34,7 +34,7 @@ There is no installer, database or GUI framework. Core audio settings can be edi
 - Automatic recovery after audio-device disconnects
 - WASAPI with configurable sample rate and buffer target
 - Turkish and English runtime messages selected from `config.txt`
-- Native Win32 control panel with live status, device selectors and safe settings application
+- Native Win32 control panel with device selectors, hotkey capture and sound-binding editing
 - UTF-8 console and Unicode file-path support
 - Tray menu and single-instance protection
 - Portable Release ZIP generation with CMake
@@ -43,9 +43,9 @@ There is no installer, database or GUI framework. Core audio settings can be edi
 
 1. Download and extract the latest portable ZIP.
 2. Put audio files in the `sounds` folder.
-3. Edit `config.txt`.
-4. Run `SoundBoardFasaFiso.exe`; the control panel opens automatically.
-5. Use the panel or press `CTRL+SHIFT+F11` after changing the config.
+3. Run `SoundBoardFasaFiso.exe`; the control panel opens automatically.
+4. Configure devices, control hotkeys, and sound bindings from the panel.
+5. Click **Save and apply**; invalid changes are rejected and the previous runtime is restored.
 
 ```text
 SoundBoardFasaFiso/

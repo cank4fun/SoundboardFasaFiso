@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0-alpha.4
+
+- Added a visual sound-binding editor with add, update, remove and clear actions
+- Added hotkey capture for supported key combinations
+- Added editable control hotkeys for stop, mute, reload and exit commands
+- Added WAV/MP3/FLAC file selection with optional portable copy into `sounds`
+- Added per-binding mode and volume controls
+- Kept all changes staged in the pending config until `Save and apply` succeeds
+- Preserved runtime validation and rollback for hotkey conflicts and invalid bindings
+
 ## 2.0.0-alpha.3
 
 - Added editable main and monitor device selectors backed by live device enumeration

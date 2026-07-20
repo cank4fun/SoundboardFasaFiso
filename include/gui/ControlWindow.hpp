@@ -58,8 +58,8 @@ public:
     void SetStatus(const std::wstring& status);
 
 private:
-    static constexpr int MinimumClientWidth = 860;
-    static constexpr int MinimumClientHeight = 680;
+    static constexpr int MinimumClientWidth = 1020;
+    static constexpr int MinimumClientHeight = 820;
 
     static constexpr int IdApplySettings = 1000;
     static constexpr int IdReload = 1001;
@@ -73,6 +73,14 @@ private:
     static constexpr int IdRefreshDevices = 1009;
     static constexpr int IdOutputVolumeSlider = 1010;
     static constexpr int IdMonitorVolumeSlider = 1011;
+    static constexpr int IdBindingsList = 1012;
+    static constexpr int IdBindingVolumeSlider = 1013;
+    static constexpr int IdBrowseSound = 1014;
+    static constexpr int IdCaptureHotkey = 1015;
+    static constexpr int IdAddBinding = 1016;
+    static constexpr int IdUpdateBinding = 1017;
+    static constexpr int IdRemoveBinding = 1018;
+    static constexpr int IdClearBinding = 1019;
 
     static LRESULT CALLBACK WindowProcedure(
         HWND window,
@@ -91,12 +99,26 @@ private:
     bool CreateControls();
     void LayoutControls(int clientWidth, int clientHeight);
     void RefreshLocalizedText();
-    void PopulateBindings(const Config& config);
+    void PopulateBindings();
     void PopulateEditorControls();
     void PopulateDeviceCombos();
     void PopulateNumericCombos();
+    void PopulateControlHotkeys();
     void UpdateVolumeLabels();
+    void UpdateBindingVolumeLabel();
     bool SavePendingSettings();
+
+    void LoadSelectedBindingIntoEditor();
+    void ClearBindingEditor();
+    bool AddOrUpdateBinding(bool updateExisting);
+    bool RemoveSelectedBinding();
+    void BrowseForSoundFile();
+    void BeginHotkeyCapture();
+    bool CaptureHotkeyFromMessage(WPARAM virtualKey);
+
+    std::filesystem::path ImportSoundFile(
+        const std::filesystem::path& selectedPath
+    );
 
     void PostApplicationCommand(int commandId) const;
     void OpenPath(const std::filesystem::path& path) const;
@@ -112,6 +134,8 @@ private:
         HWND control,
         unsigned int& value
     );
+    static std::wstring VirtualKeyName(unsigned int virtualKey);
+    static std::wstring NormalizeHotkeyText(std::wstring text);
 
     HINSTANCE instance_ = nullptr;
     HWND window_ = nullptr;
@@ -124,6 +148,7 @@ private:
 
     Config currentConfig_;
     std::vector<std::string> playbackDevices_;
+    std::vector<SoundBinding> pendingBindings_;
 
     HWND headerLabel_ = nullptr;
     HWND statusCaption_ = nullptr;
@@ -149,8 +174,36 @@ private:
     HWND refreshDevicesButton_ = nullptr;
     HWND applySettingsButton_ = nullptr;
 
+    HWND controlHotkeysGroup_ = nullptr;
+    HWND stopHotkeyCaption_ = nullptr;
+    HWND stopHotkeyEdit_ = nullptr;
+    HWND outputMuteHotkeyCaption_ = nullptr;
+    HWND outputMuteHotkeyEdit_ = nullptr;
+    HWND monitorMuteHotkeyCaption_ = nullptr;
+    HWND monitorMuteHotkeyEdit_ = nullptr;
+    HWND reloadHotkeyCaption_ = nullptr;
+    HWND reloadHotkeyEdit_ = nullptr;
+    HWND exitHotkeyCaption_ = nullptr;
+    HWND exitHotkeyEdit_ = nullptr;
+
     HWND bindingsGroup_ = nullptr;
     HWND bindingsList_ = nullptr;
+    HWND bindingEditorGroup_ = nullptr;
+    HWND bindingHotkeyCaption_ = nullptr;
+    HWND bindingHotkeyEdit_ = nullptr;
+    HWND captureHotkeyButton_ = nullptr;
+    HWND bindingFileCaption_ = nullptr;
+    HWND bindingFileEdit_ = nullptr;
+    HWND browseSoundButton_ = nullptr;
+    HWND bindingModeCaption_ = nullptr;
+    HWND bindingModeCombo_ = nullptr;
+    HWND bindingVolumeCaption_ = nullptr;
+    HWND bindingVolumeSlider_ = nullptr;
+    HWND bindingVolumeValue_ = nullptr;
+    HWND addBindingButton_ = nullptr;
+    HWND updateBindingButton_ = nullptr;
+    HWND removeBindingButton_ = nullptr;
+    HWND clearBindingButton_ = nullptr;
 
     HWND reloadButton_ = nullptr;
     HWND stopButton_ = nullptr;
@@ -161,5 +214,7 @@ private:
     HWND consoleButton_ = nullptr;
     HWND exitButton_ = nullptr;
 
+    int selectedBindingIndex_ = -1;
+    bool capturingBindingHotkey_ = false;
     bool classRegistered_ = false;
 };

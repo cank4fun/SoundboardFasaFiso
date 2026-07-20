@@ -3,14 +3,18 @@
 #include "app/Version.hpp"
 #include "audio/Audio.hpp"
 #include "localization/Localization.hpp"
+#include "platform/Utf8Path.hpp"
+#include "sound/SoundFileFormat.hpp"
 #include "ResourceIds.h"
 
 #include <commctrl.h>
+#include <commdlg.h>
 #include <shellapi.h>
 
 #include <algorithm>
 #include <charconv>
 #include <cstddef>
+#include <cwctype>
 #include <iterator>
 #include <string>
 #include <string_view>
@@ -26,6 +30,8 @@ namespace
     constexpr int HeaderHeight = 28;
     constexpr int StatusHeight = 24;
     constexpr int SettingsGroupHeight = 242;
+    constexpr int ControlHotkeysGroupHeight = 94;
+    constexpr int BindingEditorWidth = 372;
     constexpr int ButtonHeight = 34;
     constexpr int ButtonGap = 8;
     constexpr int RowHeight = 30;
@@ -196,6 +202,9 @@ void ControlWindow::Shutdown()
     pendingConfigPath_.clear();
     soundsFolder_.clear();
     playbackDevices_.clear();
+    pendingBindings_.clear();
+    selectedBindingIndex_ = -1;
+    capturingBindingHotkey_ = false;
 
     headerLabel_ = nullptr;
     statusCaption_ = nullptr;
@@ -219,8 +228,35 @@ void ControlWindow::Shutdown()
     languageCombo_ = nullptr;
     refreshDevicesButton_ = nullptr;
     applySettingsButton_ = nullptr;
+    controlHotkeysGroup_ = nullptr;
+    stopHotkeyCaption_ = nullptr;
+    stopHotkeyEdit_ = nullptr;
+    outputMuteHotkeyCaption_ = nullptr;
+    outputMuteHotkeyEdit_ = nullptr;
+    monitorMuteHotkeyCaption_ = nullptr;
+    monitorMuteHotkeyEdit_ = nullptr;
+    reloadHotkeyCaption_ = nullptr;
+    reloadHotkeyEdit_ = nullptr;
+    exitHotkeyCaption_ = nullptr;
+    exitHotkeyEdit_ = nullptr;
     bindingsGroup_ = nullptr;
     bindingsList_ = nullptr;
+    bindingEditorGroup_ = nullptr;
+    bindingHotkeyCaption_ = nullptr;
+    bindingHotkeyEdit_ = nullptr;
+    captureHotkeyButton_ = nullptr;
+    bindingFileCaption_ = nullptr;
+    bindingFileEdit_ = nullptr;
+    browseSoundButton_ = nullptr;
+    bindingModeCaption_ = nullptr;
+    bindingModeCombo_ = nullptr;
+    bindingVolumeCaption_ = nullptr;
+    bindingVolumeSlider_ = nullptr;
+    bindingVolumeValue_ = nullptr;
+    addBindingButton_ = nullptr;
+    updateBindingButton_ = nullptr;
+    removeBindingButton_ = nullptr;
+    clearBindingButton_ = nullptr;
     reloadButton_ = nullptr;
     stopButton_ = nullptr;
     outputMuteButton_ = nullptr;
@@ -283,11 +319,17 @@ void ControlWindow::UpdateConfig(const Config& config)
     }
 
     currentConfig_ = config;
+    pendingBindings_ = config.GetBindings();
+    selectedBindingIndex_ = -1;
+    capturingBindingHotkey_ = false;
+
     RefreshLocalizedText();
     PopulateDeviceCombos();
     PopulateNumericCombos();
     PopulateEditorControls();
-    PopulateBindings(config);
+    PopulateControlHotkeys();
+    PopulateBindings();
+    ClearBindingEditor();
 }
 
 void ControlWindow::SetPlaybackDevices(
@@ -359,12 +401,23 @@ LRESULT ControlWindow::HandleWindowMessage(
     {
         case WM_COMMAND:
         {
-            if (HIWORD(wParam) != BN_CLICKED)
+            const int controlId = LOWORD(wParam);
+            const int notificationCode = HIWORD(wParam);
+
+            if (controlId == IdBindingsList &&
+                (notificationCode == LBN_SELCHANGE ||
+                    notificationCode == LBN_DBLCLK))
+            {
+                LoadSelectedBindingIntoEditor();
+                return 0;
+            }
+
+            if (notificationCode != BN_CLICKED)
             {
                 break;
             }
 
-            switch (LOWORD(wParam))
+            switch (controlId)
             {
                 case IdApplySettings:
                     SavePendingSettings();
@@ -395,6 +448,30 @@ LRESULT ControlWindow::HandleWindowMessage(
                     );
                     return 0;
                 }
+
+                case IdBrowseSound:
+                    BrowseForSoundFile();
+                    return 0;
+
+                case IdCaptureHotkey:
+                    BeginHotkeyCapture();
+                    return 0;
+
+                case IdAddBinding:
+                    AddOrUpdateBinding(false);
+                    return 0;
+
+                case IdUpdateBinding:
+                    AddOrUpdateBinding(true);
+                    return 0;
+
+                case IdRemoveBinding:
+                    RemoveSelectedBinding();
+                    return 0;
+
+                case IdClearBinding:
+                    ClearBindingEditor();
+                    return 0;
 
                 case IdReload:
                     SetStatus(Localization::Text(
@@ -439,11 +516,26 @@ LRESULT ControlWindow::HandleWindowMessage(
             break;
         }
 
+        case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
+            if (capturingBindingHotkey_ &&
+                CaptureHotkeyFromMessage(wParam))
+            {
+                return 0;
+            }
+            break;
+
         case WM_HSCROLL:
             if (reinterpret_cast<HWND>(lParam) == outputVolumeSlider_ ||
                 reinterpret_cast<HWND>(lParam) == monitorVolumeSlider_)
             {
                 UpdateVolumeLabels();
+                return 0;
+            }
+
+            if (reinterpret_cast<HWND>(lParam) == bindingVolumeSlider_)
+            {
+                UpdateBindingVolumeLabel();
                 return 0;
             }
             break;
@@ -541,13 +633,7 @@ bool ControlWindow::CreateControls()
     statusCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     statusValue_ = createControl(L"STATIC", L"", SS_LEFT, 0);
 
-    settingsGroup_ = createControl(
-        L"BUTTON",
-        L"",
-        BS_GROUPBOX,
-        0
-    );
-
+    settingsGroup_ = createControl(L"BUTTON", L"", BS_GROUPBOX, 0);
     outputCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     outputCombo_ = createControl(
         L"COMBOBOX",
@@ -598,7 +684,6 @@ bool ControlWindow::CreateControls()
         0,
         WS_EX_CLIENTEDGE
     );
-
     languageCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     languageCombo_ = createControl(
         L"COMBOBOX",
@@ -607,7 +692,6 @@ bool ControlWindow::CreateControls()
         0,
         WS_EX_CLIENTEDGE
     );
-
     refreshDevicesButton_ = createControl(
         L"BUTTON",
         L"",
@@ -626,103 +710,135 @@ bool ControlWindow::CreateControls()
     SendMessageW(outputVolumeSlider_, TBM_SETPAGESIZE, 0, 5);
     SendMessageW(monitorVolumeSlider_, TBM_SETPAGESIZE, 0, 5);
 
-    bindingsGroup_ = createControl(
-        L"BUTTON",
-        L"",
-        BS_GROUPBOX,
-        0
+    controlHotkeysGroup_ = createControl(L"BUTTON", L"", BS_GROUPBOX, 0);
+    stopHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    stopHotkeyEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
+    );
+    outputMuteHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    outputMuteHotkeyEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
+    );
+    monitorMuteHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    monitorMuteHotkeyEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
+    );
+    reloadHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    reloadHotkeyEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
+    );
+    exitHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    exitHotkeyEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
     );
 
+    bindingsGroup_ = createControl(L"BUTTON", L"", BS_GROUPBOX, 0);
     bindingsList_ = createControl(
         L"LISTBOX",
         L"",
-        WS_VSCROLL | WS_HSCROLL | LBS_NOINTEGRALHEIGHT,
-        0,
+        WS_VSCROLL | WS_HSCROLL | LBS_NOINTEGRALHEIGHT |
+            LBS_NOTIFY | WS_TABSTOP,
+        IdBindingsList,
         WS_EX_CLIENTEDGE
     );
 
-    reloadButton_ = createControl(
-        L"BUTTON",
-        L"",
-        BS_PUSHBUTTON | WS_TABSTOP,
-        IdReload
+    bindingEditorGroup_ = createControl(L"BUTTON", L"", BS_GROUPBOX, 0);
+    bindingHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    bindingHotkeyEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
     );
-    stopButton_ = createControl(
-        L"BUTTON",
-        L"",
-        BS_PUSHBUTTON | WS_TABSTOP,
-        IdStopAll
+    captureHotkeyButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdCaptureHotkey
     );
-    outputMuteButton_ = createControl(
-        L"BUTTON",
-        L"",
-        BS_PUSHBUTTON | WS_TABSTOP,
-        IdOutputMute
+    bindingFileCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    bindingFileEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
     );
-    monitorMuteButton_ = createControl(
-        L"BUTTON",
-        L"",
-        BS_PUSHBUTTON | WS_TABSTOP,
-        IdMonitorMute
+    browseSoundButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdBrowseSound
     );
-    openConfigButton_ = createControl(
-        L"BUTTON",
+    bindingModeCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    bindingModeCombo_ = createControl(
+        L"COMBOBOX",
         L"",
-        BS_PUSHBUTTON | WS_TABSTOP,
-        IdOpenConfig
+        CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP,
+        0,
+        WS_EX_CLIENTEDGE
     );
-    openSoundsButton_ = createControl(
-        L"BUTTON",
+    bindingVolumeCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    bindingVolumeSlider_ = createControl(
+        TRACKBAR_CLASSW,
         L"",
-        BS_PUSHBUTTON | WS_TABSTOP,
-        IdOpenSounds
+        TBS_HORZ | TBS_NOTICKS | WS_TABSTOP,
+        IdBindingVolumeSlider
     );
-    consoleButton_ = createControl(
-        L"BUTTON",
-        L"",
-        BS_PUSHBUTTON | WS_TABSTOP,
-        IdToggleConsole
+    bindingVolumeValue_ = createControl(L"STATIC", L"", SS_RIGHT, 0);
+    addBindingButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdAddBinding
     );
-    exitButton_ = createControl(
-        L"BUTTON",
-        L"",
-        BS_PUSHBUTTON | WS_TABSTOP,
-        IdExit
+    updateBindingButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdUpdateBinding
+    );
+    removeBindingButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdRemoveBinding
+    );
+    clearBindingButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdClearBinding
     );
 
+    SendMessageW(bindingVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
+    SendMessageW(bindingVolumeSlider_, TBM_SETPAGESIZE, 0, 5);
+
+    reloadButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdReload
+    );
+    stopButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdStopAll
+    );
+    outputMuteButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdOutputMute
+    );
+    monitorMuteButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdMonitorMute
+    );
+    openConfigButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdOpenConfig
+    );
+    openSoundsButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdOpenSounds
+    );
+    consoleButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdToggleConsole
+    );
+    exitButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdExit
+    );
+
+    AddComboItem(bindingModeCombo_, L"restart");
+    AddComboItem(bindingModeCombo_, L"toggle");
+    AddComboItem(bindingModeCombo_, L"loop");
+    AddComboItem(bindingModeCombo_, L"overlap");
+
     const HWND controls[] = {
-        headerLabel_,
-        statusCaption_,
-        statusValue_,
-        settingsGroup_,
-        outputCaption_,
-        outputCombo_,
-        outputVolumeCaption_,
-        outputVolumeSlider_,
-        outputVolumeValue_,
-        monitorCaption_,
-        monitorCombo_,
-        monitorVolumeCaption_,
-        monitorVolumeSlider_,
-        monitorVolumeValue_,
-        sampleRateCaption_,
-        sampleRateCombo_,
-        bufferCaption_,
-        bufferCombo_,
-        languageCaption_,
-        languageCombo_,
-        refreshDevicesButton_,
-        applySettingsButton_,
-        bindingsGroup_,
-        bindingsList_,
-        reloadButton_,
-        stopButton_,
-        outputMuteButton_,
-        monitorMuteButton_,
-        openConfigButton_,
-        openSoundsButton_,
-        consoleButton_,
-        exitButton_
+        headerLabel_, statusCaption_, statusValue_, settingsGroup_,
+        outputCaption_, outputCombo_, outputVolumeCaption_,
+        outputVolumeSlider_, outputVolumeValue_, monitorCaption_,
+        monitorCombo_, monitorVolumeCaption_, monitorVolumeSlider_,
+        monitorVolumeValue_, sampleRateCaption_, sampleRateCombo_,
+        bufferCaption_, bufferCombo_, languageCaption_, languageCombo_,
+        refreshDevicesButton_, applySettingsButton_, controlHotkeysGroup_,
+        stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
+        outputMuteHotkeyEdit_, monitorMuteHotkeyCaption_,
+        monitorMuteHotkeyEdit_, reloadHotkeyCaption_, reloadHotkeyEdit_,
+        exitHotkeyCaption_, exitHotkeyEdit_, bindingsGroup_, bindingsList_,
+        bindingEditorGroup_, bindingHotkeyCaption_, bindingHotkeyEdit_,
+        captureHotkeyButton_, bindingFileCaption_, bindingFileEdit_,
+        browseSoundButton_, bindingModeCaption_, bindingModeCombo_,
+        bindingVolumeCaption_, bindingVolumeSlider_, bindingVolumeValue_,
+        addBindingButton_, updateBindingButton_, removeBindingButton_,
+        clearBindingButton_, reloadButton_, stopButton_, outputMuteButton_,
+        monitorMuteButton_, openConfigButton_, openSoundsButton_,
+        consoleButton_, exitButton_
     };
 
     return std::all_of(
@@ -751,24 +867,10 @@ void ControlWindow::LayoutControls(
 
     int y = BaseMargin;
 
-    MoveWindow(
-        headerLabel_,
-        BaseMargin,
-        y,
-        contentWidth,
-        HeaderHeight,
-        TRUE
-    );
+    MoveWindow(headerLabel_, BaseMargin, y, contentWidth, HeaderHeight, TRUE);
     y += HeaderHeight + 4;
 
-    MoveWindow(
-        statusCaption_,
-        BaseMargin,
-        y,
-        72,
-        StatusHeight,
-        TRUE
-    );
+    MoveWindow(statusCaption_, BaseMargin, y, 72, StatusHeight, TRUE);
     MoveWindow(
         statusValue_,
         BaseMargin + 72,
@@ -805,14 +907,7 @@ void ControlWindow::LayoutControls(
     int rowY = y + 28;
 
     MoveWindow(outputCaption_, innerX, rowY + 5, labelWidth, 22, TRUE);
-    MoveWindow(
-        outputCombo_,
-        innerX + labelWidth,
-        rowY,
-        comboWidth,
-        220,
-        TRUE
-    );
+    MoveWindow(outputCombo_, innerX + labelWidth, rowY, comboWidth, 220, TRUE);
 
     int volumeX = innerX + labelWidth + comboWidth + sectionGap;
     MoveWindow(
@@ -824,14 +919,7 @@ void ControlWindow::LayoutControls(
         TRUE
     );
     volumeX += volumeCaptionWidth + fieldGap;
-    MoveWindow(
-        outputVolumeSlider_,
-        volumeX,
-        rowY,
-        volumeSliderWidth,
-        28,
-        TRUE
-    );
+    MoveWindow(outputVolumeSlider_, volumeX, rowY, volumeSliderWidth, 28, TRUE);
     MoveWindow(
         outputVolumeValue_,
         volumeX + volumeSliderWidth + fieldGap,
@@ -844,14 +932,7 @@ void ControlWindow::LayoutControls(
     rowY += RowHeight + 8;
 
     MoveWindow(monitorCaption_, innerX, rowY + 5, labelWidth, 22, TRUE);
-    MoveWindow(
-        monitorCombo_,
-        innerX + labelWidth,
-        rowY,
-        comboWidth,
-        220,
-        TRUE
-    );
+    MoveWindow(monitorCombo_, innerX + labelWidth, rowY, comboWidth, 220, TRUE);
 
     volumeX = innerX + labelWidth + comboWidth + sectionGap;
     MoveWindow(
@@ -863,14 +944,7 @@ void ControlWindow::LayoutControls(
         TRUE
     );
     volumeX += volumeCaptionWidth + fieldGap;
-    MoveWindow(
-        monitorVolumeSlider_,
-        volumeX,
-        rowY,
-        volumeSliderWidth,
-        28,
-        TRUE
-    );
+    MoveWindow(monitorVolumeSlider_, volumeX, rowY, volumeSliderWidth, 28, TRUE);
     MoveWindow(
         monitorVolumeValue_,
         volumeX + volumeSliderWidth + fieldGap,
@@ -910,14 +984,7 @@ void ControlWindow::LayoutControls(
     rowY += RowHeight + 12;
 
     MoveWindow(languageCaption_, innerX, rowY + 5, labelWidth, 22, TRUE);
-    MoveWindow(
-        languageCombo_,
-        innerX + labelWidth,
-        rowY,
-        190,
-        150,
-        TRUE
-    );
+    MoveWindow(languageCombo_, innerX + labelWidth, rowY, 190, 150, TRUE);
 
     const int actionButtonWidth = 190;
     const int applyX = innerX + innerWidth - actionButtonWidth;
@@ -940,61 +1007,249 @@ void ControlWindow::LayoutControls(
 
     y += SettingsGroupHeight + 8;
 
+    MoveWindow(
+        controlHotkeysGroup_,
+        BaseMargin,
+        y,
+        contentWidth,
+        ControlHotkeysGroupHeight,
+        TRUE
+    );
+
+    const int hotkeyGap = 10;
+    const int hotkeyInnerX = BaseMargin + 14;
+    const int hotkeyInnerWidth = contentWidth - 28;
+    const int hotkeyColumnWidth =
+        (hotkeyInnerWidth - hotkeyGap * 4) / 5;
+    const HWND hotkeyCaptions[] = {
+        stopHotkeyCaption_,
+        outputMuteHotkeyCaption_,
+        monitorMuteHotkeyCaption_,
+        reloadHotkeyCaption_,
+        exitHotkeyCaption_
+    };
+    const HWND hotkeyEdits[] = {
+        stopHotkeyEdit_,
+        outputMuteHotkeyEdit_,
+        monitorMuteHotkeyEdit_,
+        reloadHotkeyEdit_,
+        exitHotkeyEdit_
+    };
+
+    for (std::size_t index = 0; index < 5; ++index)
+    {
+        const int x = hotkeyInnerX +
+            static_cast<int>(index) * (hotkeyColumnWidth + hotkeyGap);
+
+        MoveWindow(hotkeyCaptions[index], x, y + 24, hotkeyColumnWidth, 20, TRUE);
+        MoveWindow(hotkeyEdits[index], x, y + 46, hotkeyColumnWidth, 26, TRUE);
+    }
+
+    y += ControlHotkeysGroupHeight + 8;
+
     const int buttonsAreaHeight =
         ButtonHeight * 2 + ButtonGap + BaseMargin;
 
     const int bindingsHeight = std::max(
-        110,
+        240,
         clientHeight - y - buttonsAreaHeight
     );
 
-    MoveWindow(
-        bindingsGroup_,
-        BaseMargin,
-        y,
-        contentWidth,
-        bindingsHeight,
-        TRUE
+    MoveWindow(bindingsGroup_, BaseMargin, y, contentWidth, bindingsHeight, TRUE);
+
+    const int bindingsInnerX = BaseMargin + 12;
+    const int bindingsInnerY = y + 24;
+    const int bindingsInnerWidth = contentWidth - 24;
+    const int bindingsInnerHeight = bindingsHeight - 36;
+    const int editorWidth = std::min(
+        BindingEditorWidth,
+        std::max(330, bindingsInnerWidth * 42 / 100)
+    );
+    const int bindingGap = 12;
+    const int listWidth = std::max(
+        260,
+        bindingsInnerWidth - editorWidth - bindingGap
     );
 
     MoveWindow(
         bindingsList_,
-        BaseMargin + 12,
-        y + 24,
-        contentWidth - 24,
-        bindingsHeight - 36,
+        bindingsInnerX,
+        bindingsInnerY,
+        listWidth,
+        bindingsInnerHeight,
+        TRUE
+    );
+
+    const int editorX = bindingsInnerX + listWidth + bindingGap;
+    MoveWindow(
+        bindingEditorGroup_,
+        editorX,
+        bindingsInnerY,
+        editorWidth,
+        bindingsInnerHeight,
+        TRUE
+    );
+
+    const int editorMargin = 12;
+    const int editorLabelWidth = 78;
+    const int editorButtonWidth = 96;
+    const int editorContentX = editorX + editorMargin;
+    const int editorContentWidth = editorWidth - editorMargin * 2;
+    int editorY = bindingsInnerY + 28;
+
+    MoveWindow(
+        bindingHotkeyCaption_,
+        editorContentX,
+        editorY + 5,
+        editorLabelWidth,
+        22,
+        TRUE
+    );
+    MoveWindow(
+        bindingHotkeyEdit_,
+        editorContentX + editorLabelWidth,
+        editorY,
+        editorContentWidth - editorLabelWidth - editorButtonWidth - ButtonGap,
+        26,
+        TRUE
+    );
+    MoveWindow(
+        captureHotkeyButton_,
+        editorContentX + editorContentWidth - editorButtonWidth,
+        editorY,
+        editorButtonWidth,
+        26,
+        TRUE
+    );
+
+    editorY += 36;
+
+    MoveWindow(
+        bindingFileCaption_,
+        editorContentX,
+        editorY + 5,
+        editorLabelWidth,
+        22,
+        TRUE
+    );
+    MoveWindow(
+        bindingFileEdit_,
+        editorContentX + editorLabelWidth,
+        editorY,
+        editorContentWidth - editorLabelWidth - editorButtonWidth - ButtonGap,
+        26,
+        TRUE
+    );
+    MoveWindow(
+        browseSoundButton_,
+        editorContentX + editorContentWidth - editorButtonWidth,
+        editorY,
+        editorButtonWidth,
+        26,
+        TRUE
+    );
+
+    editorY += 36;
+
+    MoveWindow(
+        bindingModeCaption_,
+        editorContentX,
+        editorY + 5,
+        editorLabelWidth,
+        22,
+        TRUE
+    );
+    MoveWindow(
+        bindingModeCombo_,
+        editorContentX + editorLabelWidth,
+        editorY,
+        editorContentWidth - editorLabelWidth,
+        140,
+        TRUE
+    );
+
+    editorY += 36;
+
+    MoveWindow(
+        bindingVolumeCaption_,
+        editorContentX,
+        editorY + 5,
+        editorLabelWidth,
+        22,
+        TRUE
+    );
+    MoveWindow(
+        bindingVolumeSlider_,
+        editorContentX + editorLabelWidth,
+        editorY,
+        editorContentWidth - editorLabelWidth - 46,
+        28,
+        TRUE
+    );
+    MoveWindow(
+        bindingVolumeValue_,
+        editorContentX + editorContentWidth - 42,
+        editorY + 5,
+        42,
+        22,
+        TRUE
+    );
+
+    const int actionGap = 6;
+    const int actionWidth =
+        (editorContentWidth - actionGap) / 2;
+    const int actionY = std::max(
+        editorY + 42,
+        bindingsInnerY + bindingsInnerHeight - ButtonHeight * 2 - actionGap - 12
+    );
+
+    MoveWindow(
+        addBindingButton_,
+        editorContentX,
+        actionY,
+        actionWidth,
+        ButtonHeight,
+        TRUE
+    );
+    MoveWindow(
+        updateBindingButton_,
+        editorContentX + actionWidth + actionGap,
+        actionY,
+        actionWidth,
+        ButtonHeight,
+        TRUE
+    );
+    MoveWindow(
+        removeBindingButton_,
+        editorContentX,
+        actionY + ButtonHeight + actionGap,
+        actionWidth,
+        ButtonHeight,
+        TRUE
+    );
+    MoveWindow(
+        clearBindingButton_,
+        editorContentX + actionWidth + actionGap,
+        actionY + ButtonHeight + actionGap,
+        actionWidth,
+        ButtonHeight,
         TRUE
     );
 
     y += bindingsHeight + 8;
 
     const HWND firstRow[] = {
-        reloadButton_,
-        stopButton_,
-        outputMuteButton_,
-        monitorMuteButton_
+        reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_
     };
-
     const HWND secondRow[] = {
-        openConfigButton_,
-        openSoundsButton_,
-        consoleButton_,
-        exitButton_
+        openConfigButton_, openSoundsButton_, consoleButton_, exitButton_
     };
 
     for (std::size_t index = 0; index < 4; ++index)
     {
         const int x = BaseMargin +
             static_cast<int>(index) * (buttonWidth + ButtonGap);
-
-        MoveWindow(
-            firstRow[index],
-            x,
-            y,
-            buttonWidth,
-            ButtonHeight,
-            TRUE
-        );
+        MoveWindow(firstRow[index], x, y, buttonWidth, ButtonHeight, TRUE);
     }
 
     y += ButtonHeight + ButtonGap;
@@ -1003,15 +1258,7 @@ void ControlWindow::LayoutControls(
     {
         const int x = BaseMargin +
             static_cast<int>(index) * (buttonWidth + ButtonGap);
-
-        MoveWindow(
-            secondRow[index],
-            x,
-            y,
-            buttonWidth,
-            ButtonHeight,
-            TRUE
-        );
+        MoveWindow(secondRow[index], x, y, buttonWidth, ButtonHeight, TRUE);
     }
 }
 
@@ -1066,7 +1313,34 @@ void ControlWindow::RefreshLocalizedText()
         Localization::Text(L"Kaydet ve uygula", L"Save and apply")
     );
 
+    SetControlText(
+        controlHotkeysGroup_,
+        Localization::Text(L"Kontrol hotkey'leri", L"Control hotkeys")
+    );
+    SetControlText(stopHotkeyCaption_, Localization::Text(L"Tümünü durdur", L"Stop all"));
+    SetControlText(outputMuteHotkeyCaption_, Localization::Text(L"Ana mute", L"Main mute"));
+    SetControlText(monitorMuteHotkeyCaption_, Localization::Text(L"Monitör mute", L"Monitor mute"));
+    SetControlText(reloadHotkeyCaption_, Localization::Text(L"Reload", L"Reload"));
+    SetControlText(exitHotkeyCaption_, Localization::Text(L"Çıkış", L"Exit"));
+
     SetControlText(bindingsGroup_, Localization::Text(L"Ses atamaları", L"Sound bindings"));
+    SetControlText(bindingEditorGroup_, Localization::Text(L"Atama düzenleyici", L"Binding editor"));
+    SetControlText(bindingHotkeyCaption_, Localization::Text(L"Hotkey:", L"Hotkey:"));
+    SetControlText(bindingFileCaption_, Localization::Text(L"Ses:", L"Sound:"));
+    SetControlText(bindingModeCaption_, Localization::Text(L"Mod:", L"Mode:"));
+    SetControlText(bindingVolumeCaption_, Localization::Text(L"Ses:", L"Volume:"));
+    SetControlText(
+        captureHotkeyButton_,
+        capturingBindingHotkey_
+            ? Localization::Text(L"Tuşa bas...", L"Press key...")
+            : Localization::Text(L"Yakala", L"Capture")
+    );
+    SetControlText(browseSoundButton_, Localization::Text(L"Gözat", L"Browse"));
+    SetControlText(addBindingButton_, Localization::Text(L"Yeni ekle", L"Add new"));
+    SetControlText(updateBindingButton_, Localization::Text(L"Seçileni güncelle", L"Update selected"));
+    SetControlText(removeBindingButton_, Localization::Text(L"Seçileni sil", L"Remove selected"));
+    SetControlText(clearBindingButton_, Localization::Text(L"Alanları temizle", L"Clear fields"));
+
     SetControlText(reloadButton_, Localization::Text(L"Config'i yenile", L"Reload config"));
     SetControlText(stopButton_, Localization::Text(L"Tümünü durdur", L"Stop all"));
     SetControlText(outputMuteButton_, Localization::Text(L"Ana çıkışı sustur/aç", L"Toggle main mute"));
@@ -1077,7 +1351,7 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(exitButton_, Localization::Text(L"Programı kapat", L"Exit"));
 }
 
-void ControlWindow::PopulateBindings(const Config& config)
+void ControlWindow::PopulateBindings()
 {
     if (bindingsList_ == nullptr)
     {
@@ -1089,7 +1363,7 @@ void ControlWindow::PopulateBindings(const Config& config)
     int maximumWidth = 0;
     HDC deviceContext = GetDC(bindingsList_);
 
-    for (const SoundBinding& binding : config.GetBindings())
+    for (const SoundBinding& binding : pendingBindings_)
     {
         const std::wstring entry =
             Utf8ToWide(binding.keyName) + L"  ->  " +
@@ -1134,6 +1408,18 @@ void ControlWindow::PopulateBindings(const Config& config)
         static_cast<WPARAM>(maximumWidth),
         0
     );
+
+    if (selectedBindingIndex_ >= 0 &&
+        static_cast<std::size_t>(selectedBindingIndex_) <
+            pendingBindings_.size())
+    {
+        SendMessageW(
+            bindingsList_,
+            LB_SETCURSEL,
+            static_cast<WPARAM>(selectedBindingIndex_),
+            0
+        );
+    }
 }
 
 void ControlWindow::PopulateEditorControls()
@@ -1252,6 +1538,50 @@ void ControlWindow::PopulateNumericCombos()
     AddComboItem(languageCombo_, L"English");
 }
 
+void ControlWindow::PopulateControlHotkeys()
+{
+    SetControlText(
+        stopHotkeyEdit_,
+        Utf8ToWide(currentConfig_.GetStopKeyName())
+    );
+    SetControlText(
+        outputMuteHotkeyEdit_,
+        Utf8ToWide(currentConfig_.GetOutputMuteKeyName())
+    );
+    SetControlText(
+        monitorMuteHotkeyEdit_,
+        Utf8ToWide(currentConfig_.GetMonitorMuteKeyName())
+    );
+    SetControlText(
+        reloadHotkeyEdit_,
+        Utf8ToWide(currentConfig_.GetReloadKeyName())
+    );
+    SetControlText(
+        exitHotkeyEdit_,
+        Utf8ToWide(currentConfig_.GetExitKeyName())
+    );
+}
+
+void ControlWindow::UpdateBindingVolumeLabel()
+{
+    if (bindingVolumeSlider_ == nullptr)
+    {
+        return;
+    }
+
+    const LRESULT volume = SendMessageW(
+        bindingVolumeSlider_,
+        TBM_GETPOS,
+        0,
+        0
+    );
+
+    SetControlText(
+        bindingVolumeValue_,
+        std::to_wstring(volume) + L"%"
+    );
+}
+
 void ControlWindow::UpdateVolumeLabels()
 {
     if (outputVolumeSlider_ == nullptr || monitorVolumeSlider_ == nullptr)
@@ -1319,6 +1649,44 @@ bool ControlWindow::SavePendingSettings()
         return false;
     }
 
+    if (pendingBindings_.empty())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"En az bir ses ataması olmalı.",
+                L"At least one sound binding is required."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
+    const std::wstring stopHotkey = GetControlText(stopHotkeyEdit_);
+    const std::wstring outputMuteHotkey =
+        GetControlText(outputMuteHotkeyEdit_);
+    const std::wstring monitorMuteHotkey =
+        GetControlText(monitorMuteHotkeyEdit_);
+    const std::wstring reloadHotkey = GetControlText(reloadHotkeyEdit_);
+    const std::wstring exitHotkey = GetControlText(exitHotkeyEdit_);
+
+    if (stopHotkey.empty() || outputMuteHotkey.empty() ||
+        monitorMuteHotkey.empty() || reloadHotkey.empty() ||
+        exitHotkey.empty())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Kontrol hotkey alanları boş bırakılamaz.",
+                L"Control hotkey fields cannot be empty."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
     const int outputVolume = static_cast<int>(SendMessageW(
         outputVolumeSlider_,
         TBM_GETPOS,
@@ -1347,6 +1715,29 @@ bool ControlWindow::SavePendingSettings()
     );
     candidate.SetOutputDevice(outputDevice);
     candidate.SetMonitorDevice(monitorDevice);
+    const bool hotkeysAccepted = candidate.SetControlHotkeys(
+        WideToUtf8(stopHotkey),
+        WideToUtf8(outputMuteHotkey),
+        WideToUtf8(monitorMuteHotkey),
+        WideToUtf8(reloadHotkey),
+        WideToUtf8(exitHotkey)
+    );
+    const bool bindingsAccepted =
+        hotkeysAccepted && candidate.SetBindings(pendingBindings_);
+
+    if (!hotkeysAccepted || !bindingsAccepted)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Hotkey veya ses atamalarından biri geçersiz ya da başka bir atamayla çakışıyor.",
+                L"A hotkey or sound binding is invalid or conflicts with another assignment."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
 
     if (!candidate.SetOutputVolume(
             static_cast<float>(outputVolume) / 100.0f
@@ -1384,11 +1775,651 @@ bool ControlWindow::SavePendingSettings()
     }
 
     SetStatus(Localization::Text(
-        L"Yeni ayarlar doğrulanıyor ve uygulanıyor...",
-        L"Validating and applying the new settings..."
+        L"Yeni ayarlar, hotkey'ler ve ses atamaları doğrulanıyor...",
+        L"Validating settings, hotkeys, and sound bindings..."
     ));
     PostApplicationCommand(commandIds_.applySettings);
     return true;
+}
+
+void ControlWindow::LoadSelectedBindingIntoEditor()
+{
+    if (bindingsList_ == nullptr)
+    {
+        return;
+    }
+
+    const LRESULT selected = SendMessageW(
+        bindingsList_,
+        LB_GETCURSEL,
+        0,
+        0
+    );
+
+    if (selected == LB_ERR || selected < 0 ||
+        static_cast<std::size_t>(selected) >= pendingBindings_.size())
+    {
+        selectedBindingIndex_ = -1;
+        return;
+    }
+
+    selectedBindingIndex_ = static_cast<int>(selected);
+    const SoundBinding& binding =
+        pendingBindings_[static_cast<std::size_t>(selectedBindingIndex_)];
+
+    SetControlText(bindingHotkeyEdit_, Utf8ToWide(binding.keyName));
+    SetControlText(bindingFileEdit_, binding.soundFile.wstring());
+    SelectComboText(
+        bindingModeCombo_,
+        Utf8ToWide(std::string{PlaybackModeName(binding.mode)})
+    );
+    SendMessageW(
+        bindingVolumeSlider_,
+        TBM_SETPOS,
+        TRUE,
+        static_cast<LPARAM>(binding.volume * 100.0f + 0.5f)
+    );
+    UpdateBindingVolumeLabel();
+
+    SetStatus(Localization::Text(
+        L"Seçili ses ataması düzenleyiciye yüklendi.",
+        L"The selected sound binding was loaded into the editor."
+    ));
+}
+
+void ControlWindow::ClearBindingEditor()
+{
+    selectedBindingIndex_ = -1;
+    capturingBindingHotkey_ = false;
+
+    if (bindingsList_ != nullptr)
+    {
+        SendMessageW(bindingsList_, LB_SETCURSEL, static_cast<WPARAM>(-1), 0);
+    }
+
+    SetControlText(bindingHotkeyEdit_, L"");
+    SetControlText(bindingFileEdit_, L"");
+    SelectComboText(bindingModeCombo_, L"restart");
+    SendMessageW(bindingVolumeSlider_, TBM_SETPOS, TRUE, 100);
+    UpdateBindingVolumeLabel();
+    RefreshLocalizedText();
+}
+
+bool ControlWindow::AddOrUpdateBinding(const bool updateExisting)
+{
+    std::wstring hotkeyText = GetControlText(bindingHotkeyEdit_);
+    std::wstring fileText = GetControlText(bindingFileEdit_);
+
+    const auto trim = [](std::wstring& value)
+    {
+        const std::size_t first = value.find_first_not_of(L" \t\r\n");
+
+        if (first == std::wstring::npos)
+        {
+            value.clear();
+            return;
+        }
+
+        const std::size_t last = value.find_last_not_of(L" \t\r\n");
+        value = value.substr(first, last - first + 1);
+    };
+
+    trim(hotkeyText);
+    trim(fileText);
+
+    if (hotkeyText.empty() || fileText.empty())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Hotkey ve ses dosyası alanları boş bırakılamaz.",
+                L"Hotkey and sound-file fields cannot be empty."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
+    std::filesystem::path relativePath{fileText};
+
+    if (relativePath.has_root_path())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Ses dosyası sounds klasörüne göre göreli olmalı. Gözat düğmesini kullanabilirsin.",
+                L"The sound file must be relative to the sounds folder. You can use the Browse button."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
+    for (const auto& component : relativePath)
+    {
+        if (component == L"..")
+        {
+            MessageBoxW(
+                window_,
+                Localization::Text(
+                    L"Ses dosyası sounds klasörünün dışına çıkamaz.",
+                    L"The sound file cannot leave the sounds folder."
+                ),
+                L"SoundBoardFasaFiso",
+                MB_OK | MB_ICONWARNING
+            );
+            return false;
+        }
+    }
+
+    if (!SoundFileFormat::IsSupported(relativePath))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Yalnızca WAV, MP3 ve FLAC dosyaları destekleniyor.",
+                L"Only WAV, MP3, and FLAC files are supported."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
+    std::error_code fileError;
+    const std::filesystem::path fullPath =
+        (soundsFolder_ / relativePath).lexically_normal();
+
+    if (!std::filesystem::is_regular_file(fullPath, fileError) || fileError)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Seçilen ses dosyası sounds klasöründe bulunamadı.",
+                L"The selected sound file was not found in the sounds folder."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
+    const std::wstring normalizedHotkey =
+        NormalizeHotkeyText(hotkeyText);
+
+    const HWND controlHotkeyEdits[] = {
+        stopHotkeyEdit_, outputMuteHotkeyEdit_, monitorMuteHotkeyEdit_,
+        reloadHotkeyEdit_, exitHotkeyEdit_
+    };
+
+    for (const HWND edit : controlHotkeyEdits)
+    {
+        if (NormalizeHotkeyText(GetControlText(edit)) == normalizedHotkey)
+        {
+            MessageBoxW(
+                window_,
+                Localization::Text(
+                    L"Bu hotkey kontrol tuşlarından biri tarafından kullanılıyor.",
+                    L"This hotkey is already used by a control command."
+                ),
+                L"SoundBoardFasaFiso",
+                MB_OK | MB_ICONWARNING
+            );
+            return false;
+        }
+    }
+
+    for (std::size_t index = 0; index < pendingBindings_.size(); ++index)
+    {
+        if (updateExisting &&
+            static_cast<int>(index) == selectedBindingIndex_)
+        {
+            continue;
+        }
+
+        if (NormalizeHotkeyText(
+                Utf8ToWide(pendingBindings_[index].keyName)
+            ) == normalizedHotkey)
+        {
+            MessageBoxW(
+                window_,
+                Localization::Text(
+                    L"Bu hotkey başka bir ses atamasında kullanılıyor.",
+                    L"This hotkey is already used by another sound binding."
+                ),
+                L"SoundBoardFasaFiso",
+                MB_OK | MB_ICONWARNING
+            );
+            return false;
+        }
+    }
+
+    if (updateExisting &&
+        (selectedBindingIndex_ < 0 ||
+            static_cast<std::size_t>(selectedBindingIndex_) >=
+                pendingBindings_.size()))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Güncellemek için önce listeden bir atama seç.",
+                L"Select a binding from the list before updating it."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONINFORMATION
+        );
+        return false;
+    }
+
+    const int modeIndex = static_cast<int>(SendMessageW(
+        bindingModeCombo_,
+        CB_GETCURSEL,
+        0,
+        0
+    ));
+
+    PlaybackMode mode = PlaybackMode::Restart;
+
+    if (modeIndex == 1)
+    {
+        mode = PlaybackMode::Toggle;
+    }
+    else if (modeIndex == 2)
+    {
+        mode = PlaybackMode::Loop;
+    }
+    else if (modeIndex == 3)
+    {
+        mode = PlaybackMode::Overlap;
+    }
+
+    const int volume = static_cast<int>(SendMessageW(
+        bindingVolumeSlider_,
+        TBM_GETPOS,
+        0,
+        0
+    ));
+
+    SoundBinding binding;
+    binding.keyName = WideToUtf8(hotkeyText);
+    binding.soundFile = relativePath.lexically_normal();
+    binding.volume = static_cast<float>(volume) / 100.0f;
+    binding.mode = mode;
+
+    if (updateExisting)
+    {
+        pendingBindings_[
+            static_cast<std::size_t>(selectedBindingIndex_)
+        ] = std::move(binding);
+
+        SetStatus(Localization::Text(
+            L"Ses ataması güncellendi. Değişiklikleri etkinleştirmek için Kaydet ve uygula'ya bas.",
+            L"Sound binding updated. Click Save and apply to activate the changes."
+        ));
+    }
+    else
+    {
+        pendingBindings_.push_back(std::move(binding));
+        selectedBindingIndex_ =
+            static_cast<int>(pendingBindings_.size() - 1);
+
+        SetStatus(Localization::Text(
+            L"Yeni ses ataması eklendi. Değişiklikleri etkinleştirmek için Kaydet ve uygula'ya bas.",
+            L"New sound binding added. Click Save and apply to activate the changes."
+        ));
+    }
+
+    PopulateBindings();
+    LoadSelectedBindingIntoEditor();
+    return true;
+}
+
+bool ControlWindow::RemoveSelectedBinding()
+{
+    if (selectedBindingIndex_ < 0 ||
+        static_cast<std::size_t>(selectedBindingIndex_) >=
+            pendingBindings_.size())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Silmek için önce listeden bir atama seç.",
+                L"Select a binding from the list before removing it."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONINFORMATION
+        );
+        return false;
+    }
+
+    if (pendingBindings_.size() == 1)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Son ses ataması silinemez. Config içinde en az bir atama olmalı.",
+                L"The last sound binding cannot be removed. The config must contain at least one binding."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
+    const int answer = MessageBoxW(
+        window_,
+        Localization::Text(
+            L"Seçili ses ataması silinsin mi? Ses dosyasının kendisi silinmeyecek.",
+            L"Remove the selected sound binding? The audio file itself will not be deleted."
+        ),
+        L"SoundBoardFasaFiso",
+        MB_YESNO | MB_ICONQUESTION
+    );
+
+    if (answer != IDYES)
+    {
+        return false;
+    }
+
+    pendingBindings_.erase(
+        pendingBindings_.begin() + selectedBindingIndex_
+    );
+
+    selectedBindingIndex_ = -1;
+    PopulateBindings();
+    ClearBindingEditor();
+    SetStatus(Localization::Text(
+        L"Ses ataması kaldırıldı. Kaydet ve uygula'ya basınca etkinleşecek.",
+        L"Sound binding removed. It will take effect after Save and apply."
+    ));
+    return true;
+}
+
+void ControlWindow::BrowseForSoundFile()
+{
+    wchar_t selectedPath[32768]{};
+    const std::wstring initialFolder = soundsFolder_.wstring();
+
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = window_;
+    dialog.lpstrFile = selectedPath;
+    dialog.nMaxFile = static_cast<DWORD>(std::size(selectedPath));
+    dialog.lpstrFilter =
+        L"Audio files (*.wav;*.mp3;*.flac)\0*.wav;*.mp3;*.flac\0"
+        L"WAV files (*.wav)\0*.wav\0"
+        L"MP3 files (*.mp3)\0*.mp3\0"
+        L"FLAC files (*.flac)\0*.flac\0"
+        L"All files (*.*)\0*.*\0\0";
+    dialog.lpstrInitialDir = initialFolder.c_str();
+    dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
+        OFN_NOCHANGEDIR | OFN_EXPLORER;
+
+    if (GetOpenFileNameW(&dialog) == FALSE)
+    {
+        return;
+    }
+
+    const std::filesystem::path imported =
+        ImportSoundFile(std::filesystem::path{selectedPath});
+
+    if (imported.empty())
+    {
+        return;
+    }
+
+    SetControlText(bindingFileEdit_, imported.wstring());
+    SetStatus(Localization::Text(
+        L"Ses dosyası atama düzenleyicisine eklendi.",
+        L"The audio file was added to the binding editor."
+    ));
+}
+
+void ControlWindow::BeginHotkeyCapture()
+{
+    capturingBindingHotkey_ = !capturingBindingHotkey_;
+    RefreshLocalizedText();
+
+    if (capturingBindingHotkey_)
+    {
+        SetFocus(window_);
+        SetStatus(Localization::Text(
+            L"Yeni hotkey kombinasyonuna bas. CTRL, SHIFT, ALT ve WIN kullanılabilir.",
+            L"Press the new hotkey combination. CTRL, SHIFT, ALT, and WIN are supported."
+        ));
+    }
+    else
+    {
+        SetStatus(Localization::Text(
+            L"Hotkey yakalama iptal edildi.",
+            L"Hotkey capture cancelled."
+        ));
+    }
+}
+
+bool ControlWindow::CaptureHotkeyFromMessage(const WPARAM virtualKey)
+{
+    const unsigned int key = static_cast<unsigned int>(virtualKey);
+
+    if (key == VK_CONTROL || key == VK_LCONTROL || key == VK_RCONTROL ||
+        key == VK_SHIFT || key == VK_LSHIFT || key == VK_RSHIFT ||
+        key == VK_MENU || key == VK_LMENU || key == VK_RMENU ||
+        key == VK_LWIN || key == VK_RWIN)
+    {
+        return true;
+    }
+
+    const std::wstring baseKey = VirtualKeyName(key);
+
+    if (baseKey.empty())
+    {
+        SetStatus(Localization::Text(
+            L"Bu tuş desteklenmiyor; başka bir ana tuşa bas.",
+            L"This key is not supported; press another primary key."
+        ));
+        return true;
+    }
+
+    std::wstring hotkey;
+
+    const auto appendPart = [&hotkey](const std::wstring_view part)
+    {
+        if (!hotkey.empty())
+        {
+            hotkey += L'+';
+        }
+
+        hotkey += part;
+    };
+
+    if ((GetKeyState(VK_CONTROL) & 0x8000) != 0)
+    {
+        appendPart(L"CTRL");
+    }
+
+    if ((GetKeyState(VK_SHIFT) & 0x8000) != 0)
+    {
+        appendPart(L"SHIFT");
+    }
+
+    if ((GetKeyState(VK_MENU) & 0x8000) != 0)
+    {
+        appendPart(L"ALT");
+    }
+
+    if ((GetKeyState(VK_LWIN) & 0x8000) != 0 ||
+        (GetKeyState(VK_RWIN) & 0x8000) != 0)
+    {
+        appendPart(L"WIN");
+    }
+
+    appendPart(baseKey);
+
+    SetControlText(bindingHotkeyEdit_, hotkey);
+    capturingBindingHotkey_ = false;
+    RefreshLocalizedText();
+    SetStatus(Localization::Text(
+        L"Hotkey yakalandı.",
+        L"Hotkey captured."
+    ));
+    return true;
+}
+
+std::filesystem::path ControlWindow::ImportSoundFile(
+    const std::filesystem::path& selectedPath
+)
+{
+    if (selectedPath.empty() ||
+        !SoundFileFormat::IsSupported(selectedPath))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Yalnızca WAV, MP3 ve FLAC dosyaları seçilebilir.",
+                L"Only WAV, MP3, and FLAC files can be selected."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return {};
+    }
+
+    std::error_code error;
+    const std::filesystem::path source =
+        std::filesystem::weakly_canonical(selectedPath, error);
+
+    if (error || !std::filesystem::is_regular_file(source, error) || error)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Seçilen ses dosyası okunamıyor.",
+                L"The selected audio file cannot be read."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return {};
+    }
+
+    error.clear();
+    std::filesystem::create_directories(soundsFolder_, error);
+
+    if (error)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"sounds klasörü oluşturulamadı.",
+                L"The sounds folder could not be created."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return {};
+    }
+
+    const std::filesystem::path soundsRoot =
+        std::filesystem::weakly_canonical(soundsFolder_, error);
+
+    if (!error)
+    {
+        error.clear();
+        const std::filesystem::path relative =
+            std::filesystem::relative(source, soundsRoot, error);
+
+        bool staysInside = !error && !relative.empty() &&
+            !relative.has_root_path();
+
+        if (staysInside)
+        {
+            for (const auto& component : relative)
+            {
+                if (component == L"..")
+                {
+                    staysInside = false;
+                    break;
+                }
+            }
+        }
+
+        if (staysInside)
+        {
+            return relative.lexically_normal();
+        }
+    }
+
+    const int answer = MessageBoxW(
+        window_,
+        Localization::Text(
+            L"Seçilen dosya sounds klasörünün dışında. Portable kullanım için sounds klasörüne kopyalansın mı?",
+            L"The selected file is outside the sounds folder. Copy it into the sounds folder for portable use?"
+        ),
+        L"SoundBoardFasaFiso",
+        MB_YESNO | MB_ICONQUESTION
+    );
+
+    if (answer != IDYES)
+    {
+        return {};
+    }
+
+    std::filesystem::path destination =
+        soundsFolder_ / source.filename();
+
+    if (std::filesystem::exists(destination, error) && !error)
+    {
+        error.clear();
+
+        if (std::filesystem::equivalent(source, destination, error) &&
+            !error)
+        {
+            return destination.filename();
+        }
+
+        const std::filesystem::path stem = source.stem();
+        const std::filesystem::path extension = source.extension();
+
+        for (unsigned int suffix = 2; suffix < 10000; ++suffix)
+        {
+            destination = soundsFolder_ /
+                (stem.wstring() + L"_" + std::to_wstring(suffix) +
+                    extension.wstring());
+
+            error.clear();
+
+            if (!std::filesystem::exists(destination, error) && !error)
+            {
+                break;
+            }
+        }
+    }
+
+    error.clear();
+    std::filesystem::copy_file(
+        source,
+        destination,
+        std::filesystem::copy_options::none,
+        error
+    );
+
+    if (error)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Ses dosyası sounds klasörüne kopyalanamadı.",
+                L"The audio file could not be copied into the sounds folder."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return {};
+    }
+
+    return destination.filename();
 }
 
 void ControlWindow::PostApplicationCommand(
@@ -1716,4 +2747,91 @@ bool ControlWindow::ParseUnsignedControl(
 
     value = parsedValue;
     return true;
+}
+
+std::wstring ControlWindow::VirtualKeyName(
+    const unsigned int virtualKey
+)
+{
+    if (virtualKey >= VK_F1 && virtualKey <= VK_F24)
+    {
+        return L"F" + std::to_wstring(virtualKey - VK_F1 + 1);
+    }
+
+    if ((virtualKey >= 'A' && virtualKey <= 'Z') ||
+        (virtualKey >= '0' && virtualKey <= '9'))
+    {
+        return std::wstring{
+            1,
+            static_cast<wchar_t>(virtualKey)
+        };
+    }
+
+    if (virtualKey >= VK_NUMPAD0 && virtualKey <= VK_NUMPAD9)
+    {
+        return L"NUMPAD" +
+            std::to_wstring(virtualKey - VK_NUMPAD0);
+    }
+
+    const std::pair<unsigned int, std::wstring_view> namedKeys[] = {
+        {VK_SPACE, L"SPACE"},
+        {VK_TAB, L"TAB"},
+        {VK_RETURN, L"ENTER"},
+        {VK_ESCAPE, L"ESC"},
+        {VK_BACK, L"BACKSPACE"},
+        {VK_INSERT, L"INSERT"},
+        {VK_DELETE, L"DELETE"},
+        {VK_HOME, L"HOME"},
+        {VK_END, L"END"},
+        {VK_PRIOR, L"PAGEUP"},
+        {VK_NEXT, L"PAGEDOWN"},
+        {VK_UP, L"UP"},
+        {VK_DOWN, L"DOWN"},
+        {VK_LEFT, L"LEFT"},
+        {VK_RIGHT, L"RIGHT"},
+        {VK_ADD, L"NUMPAD_ADD"},
+        {VK_SUBTRACT, L"NUMPAD_SUBTRACT"},
+        {VK_MULTIPLY, L"NUMPAD_MULTIPLY"},
+        {VK_DIVIDE, L"NUMPAD_DIVIDE"},
+        {VK_DECIMAL, L"NUMPAD_DECIMAL"}
+    };
+
+    for (const auto& [key, name] : namedKeys)
+    {
+        if (virtualKey == key)
+        {
+            return std::wstring{name};
+        }
+    }
+
+    return {};
+}
+
+std::wstring ControlWindow::NormalizeHotkeyText(
+    std::wstring text
+)
+{
+    text.erase(
+        std::remove_if(
+            text.begin(),
+            text.end(),
+            [](const wchar_t character)
+            {
+                return std::iswspace(character) != 0;
+            }
+        ),
+        text.end()
+    );
+
+    std::transform(
+        text.begin(),
+        text.end(),
+        text.begin(),
+        [](const wchar_t character)
+        {
+            return static_cast<wchar_t>(std::towupper(character));
+        }
+    );
+
+    return text;
 }

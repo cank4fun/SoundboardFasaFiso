@@ -54,9 +54,10 @@ A first-party virtual microphone driver can be added later without rewriting the
 
 ### Alpha 4 — sound and hotkey editor
 
-- Add, edit and remove sound bindings
-- Hotkey capture and conflict validation
-- File picker and optional copy into the `sounds` folder
+- Add, edit and remove sound bindings from the native control panel
+- Capture supported hotkey combinations and edit control hotkeys
+- Select WAV/MP3/FLAC files and optionally copy them into `sounds`
+- Keep edits pending until full config and runtime validation succeeds
 
 ### Alpha 5 — microphone mixer
 
