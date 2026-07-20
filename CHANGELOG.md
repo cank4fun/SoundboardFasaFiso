@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0-alpha.6
+
+- Added persistent session logging with automatic `latest.log` and `previous.log` rotation
+- Added an **Open logs folder** action to the native control panel
+- Added optional per-user Windows startup registration without administrator privileges
+- Added `start_with_windows` and `show_console_on_start` config settings
+- Added GUI controls for startup registration and console visibility at launch
+- Applied startup and console changes through the existing safe settings transaction
+- Kept the application standalone with no new runtime dependency
+
 ## 2.0.0-alpha.5
 
 - Added physical microphone capture through miniaudio/WASAPI

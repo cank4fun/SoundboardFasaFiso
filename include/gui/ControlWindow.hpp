@@ -63,7 +63,7 @@ public:
 
 private:
     static constexpr int MinimumClientWidth = 1020;
-    static constexpr int MinimumClientHeight = 900;
+    static constexpr int MinimumClientHeight = 940;
 
     static constexpr int IdApplySettings = 1000;
     static constexpr int IdReload = 1001;
@@ -86,6 +86,7 @@ private:
     static constexpr int IdRemoveBinding = 1018;
     static constexpr int IdClearBinding = 1019;
     static constexpr int IdMicrophoneVolumeSlider = 1020;
+    static constexpr int IdOpenLogs = 1021;
 
     static LRESULT CALLBACK WindowProcedure(
         HWND window,
@@ -150,6 +151,7 @@ private:
     std::filesystem::path configPath_;
     std::filesystem::path pendingConfigPath_;
     std::filesystem::path soundsFolder_;
+    std::filesystem::path logsFolder_;
 
     Config currentConfig_;
     std::vector<std::string> playbackDevices_;
@@ -185,6 +187,8 @@ private:
     HWND bufferCombo_ = nullptr;
     HWND languageCaption_ = nullptr;
     HWND languageCombo_ = nullptr;
+    HWND startWithWindowsCheck_ = nullptr;
+    HWND showConsoleOnStartCheck_ = nullptr;
     HWND refreshDevicesButton_ = nullptr;
     HWND applySettingsButton_ = nullptr;
 
@@ -225,6 +229,7 @@ private:
     HWND monitorMuteButton_ = nullptr;
     HWND openConfigButton_ = nullptr;
     HWND openSoundsButton_ = nullptr;
+    HWND openLogsButton_ = nullptr;
     HWND consoleButton_ = nullptr;
     HWND exitButton_ = nullptr;
 

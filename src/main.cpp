@@ -9,10 +9,12 @@
 #include "app/Version.hpp"
 #include "audio/Audio.hpp"
 #include "config/Config.hpp"
+#include "diagnostics/Logger.hpp"
 #include "gui/ControlWindow.hpp"
 #include "hotkeys/HotkeyManager.hpp"
 #include "localization/Localization.hpp"
 #include "platform/SingleInstance.hpp"
+#include "platform/StartupManager.hpp"
 #include "platform/Utf8Path.hpp"
 #include "tray/TrayIcon.hpp"
 
@@ -60,7 +62,7 @@ namespace
         }
     }
 
-    std::optional<std::filesystem::path> GetExecutableFolder()
+    std::optional<std::filesystem::path> GetExecutablePath()
     {
         constexpr std::size_t MaximumPathCharacters = 32768;
 
@@ -105,7 +107,7 @@ namespace
                     return std::nullopt;
                 }
 
-                return executablePath.parent_path();
+                return executablePath;
             }
 
             if (pathBuffer.size() >= MaximumPathCharacters)
@@ -124,6 +126,42 @@ namespace
 
             pathBuffer.resize(nextBufferSize);
         }
+    }
+
+    void SetConsoleVisibility(const bool visible)
+    {
+        const HWND consoleWindow = GetConsoleWindow();
+
+        if (consoleWindow != nullptr)
+        {
+            ShowWindow(consoleWindow, visible ? SW_SHOW : SW_HIDE);
+        }
+    }
+
+    bool ApplyStartupSetting(
+        const Config& config,
+        const std::filesystem::path& executablePath
+    )
+    {
+        const LSTATUS result = StartupManager::SetEnabled(
+            config.GetStartWithWindows(),
+            executablePath
+        );
+
+        if (result == ERROR_SUCCESS)
+        {
+            return true;
+        }
+
+        std::cerr
+            << Localization::Text(
+                "Windows başlangıç ayarı güncellenemedi. Hata kodu: ",
+                "The Windows startup setting could not be updated. Error code: "
+            )
+            << result
+            << '\n';
+
+        return false;
     }
 
     void PrintConfigSummary(const Config& config)
@@ -243,6 +281,24 @@ namespace
                 : std::to_string(
                     config.GetAudioBufferMilliseconds()
                 ) + " ms")
+            << '\n';
+
+        std::cout
+            << Localization::Text(
+                "Windows ile başlat: ",
+                "Start with Windows: "
+            )
+            << (config.GetStartWithWindows()
+                ? Localization::Text("Açık", "Enabled")
+                : Localization::Text("Kapalı", "Disabled"))
+            << '\n'
+            << Localization::Text(
+                "Başlangıçta konsol: ",
+                "Console on startup: "
+            )
+            << (config.GetShowConsoleOnStart()
+                ? Localization::Text("Göster", "Show")
+                : Localization::Text("Gizle", "Hide"))
             << '\n';
     }
 
@@ -528,18 +584,21 @@ int main()
 {
     ConfigureUtf8Console();
 
-    const auto programFolder = GetExecutableFolder();
+    const auto executablePath = GetExecutablePath();
 
-    if (!programFolder.has_value())
+    if (!executablePath.has_value())
     {
         return 1;
     }
 
+    const std::filesystem::path programFolder =
+        executablePath->parent_path();
     const std::filesystem::path soundsFolder =
-        *programFolder / "sounds";
-
+        programFolder / "sounds";
+    const std::filesystem::path logsFolder =
+        programFolder / "logs";
     const std::filesystem::path configPath =
-        *programFolder / "config.txt";
+        programFolder / "config.txt";
 
     std::filesystem::path pendingConfigPath = configPath;
     pendingConfigPath += L".pending";
@@ -589,6 +648,24 @@ int main()
         return 1;
     }
 
+    Logger logger;
+
+    if (!logger.Initialize(logsFolder))
+    {
+        std::cerr << Localization::Text(
+            "Uyarı: Kalıcı log sistemi başlatılamadı.\n",
+            "Warning: Persistent logging could not be initialized.\n"
+        );
+    }
+
+    if (!ApplyStartupSetting(config, *executablePath))
+    {
+        std::cerr << Localization::Text(
+            "Program çalışmaya devam edecek; başlangıç ayarını GUI'den tekrar deneyebilirsin.\n",
+            "The program will continue; you can retry the startup setting from the GUI.\n"
+        );
+    }
+
     std::cout << "================================\n";
     std::cout << "SoundBoardFasaFiso v" << AppVersion::String << '\n';
     std::cout << "================================\n";
@@ -600,6 +677,17 @@ int main()
         )
         << PathToUtf8(configPath)
         << '\n';
+
+    if (!logger.GetLogPath().empty())
+    {
+        std::cout
+            << Localization::Text(
+                "Oturum logu: ",
+                "Session log: "
+            )
+            << PathToUtf8(logger.GetLogPath())
+            << '\n';
+    }
 
     Audio audio;
     HotkeyManager hotkeys;
@@ -686,6 +774,8 @@ int main()
                 "The tray icon could not be initialized. The soundboard will continue running through the terminal.\n"
             );
     }
+
+    SetConsoleVisibility(config.GetShowConsoleOnStart());
 
     std::cout
         << Localization::Text(
@@ -837,8 +927,12 @@ int main()
                 true
             );
 
+            const bool startupSettingApplied =
+                runtimeStarted &&
+                ApplyStartupSetting(newConfig, *executablePath);
+
             const bool configSaved =
-                runtimeStarted && newConfig.Save(configPath);
+                startupSettingApplied && newConfig.Save(configPath);
 
             std::error_code removeError;
             std::filesystem::remove(
@@ -846,9 +940,10 @@ int main()
                 removeError
             );
 
-            if (runtimeStarted && configSaved)
+            if (runtimeStarted && startupSettingApplied && configSaved)
             {
                 config = std::move(newConfig);
+                SetConsoleVisibility(config.GetShowConsoleOnStart());
                 audioRecoveryWarningShown = false;
                 nextAudioConnectionCheck =
                     std::chrono::steady_clock::now() +
@@ -869,7 +964,14 @@ int main()
 
             Localization::SetLanguage(oldLanguage);
 
-            if (runtimeStarted && !configSaved)
+            if (runtimeStarted && !startupSettingApplied)
+            {
+                std::cerr << Localization::Text(
+                    "Windows başlangıç ayarı uygulanamadı. Önceki ayarlar geri yükleniyor...\n",
+                    "The Windows startup setting could not be applied. Restoring previous settings...\n"
+                );
+            }
+            else if (runtimeStarted && !configSaved)
             {
                 std::cerr << Localization::Text(
                     "Yeni ayarlar çalıştı ancak config dosyasına kaydedilemedi. Önceki ayarlar geri yükleniyor...\n",
@@ -885,6 +987,7 @@ int main()
             }
 
             ClearRuntime(audio, hotkeys, activeBindings);
+            ApplyStartupSetting(oldConfig, *executablePath);
 
             if (!BuildRuntime(
                 oldConfig,
@@ -968,16 +1071,22 @@ int main()
 
             ClearRuntime(audio, hotkeys, activeBindings);
 
-            if (BuildRuntime(
+            const bool runtimeStarted = BuildRuntime(
                 newConfig,
                 soundsFolder,
                 audio,
                 hotkeys,
                 activeBindings,
                 true
-            ))
+            );
+            const bool startupSettingApplied =
+                runtimeStarted &&
+                ApplyStartupSetting(newConfig, *executablePath);
+
+            if (runtimeStarted && startupSettingApplied)
             {
                 config = std::move(newConfig);
+                SetConsoleVisibility(config.GetShowConsoleOnStart());
                 audioRecoveryWarningShown = false;
                 nextAudioConnectionCheck =
                     std::chrono::steady_clock::now() +
@@ -1003,10 +1112,15 @@ int main()
             Localization::SetLanguage(oldLanguage);
 
             std::cerr
-                << Localization::Text(
-                    "Yeni ayarlar başlatılamadı. Eski ayarlar geri yükleniyor...\n",
-                    "The new settings could not be initialized. Restoring the previous settings...\n"
-                );
+                << (runtimeStarted && !startupSettingApplied
+                    ? Localization::Text(
+                        "Windows başlangıç ayarı uygulanamadı. Eski ayarlar geri yükleniyor...\n",
+                        "The Windows startup setting could not be applied. Restoring the previous settings...\n"
+                    )
+                    : Localization::Text(
+                        "Yeni ayarlar başlatılamadı. Eski ayarlar geri yükleniyor...\n",
+                        "The new settings could not be initialized. Restoring the previous settings...\n"
+                    ));
 
             controlWindow.SetStatus(
                 Localization::Text(
@@ -1016,6 +1130,7 @@ int main()
             );
 
             ClearRuntime(audio, hotkeys, activeBindings);
+            ApplyStartupSetting(oldConfig, *executablePath);
 
             if (!BuildRuntime(
                 oldConfig,

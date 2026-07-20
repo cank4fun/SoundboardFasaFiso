@@ -70,6 +70,16 @@ audio_buffer_ms=5
 0 değeri Windows/miniaudio varsayılanını kullanır. Cızırtı veya kesilme
 olursa audio_buffer_ms değerini yükselt.
 
+UYGULAMA VE LOGLAR
+------------------
+start_with_windows=false
+show_console_on_start=true
+
+Windows ile başlatma kullanıcı hesabına özel olarak ayarlanır ve yönetici
+izni istemez. Konsol başlangıçta gizlense bile panel veya tray üzerinden
+tekrar açılabilir. Her oturum logs\latest.log dosyasına yazılır; önceki
+oturum logs\previous.log olarak tutulur.
+
 VARSAYILAN KONTROLLER
 ---------------------
 F11             : Tüm sesleri durdur
@@ -81,8 +91,8 @@ CTRL+SHIFT+F12  : Programı kapat
 KONTROL PANELİ
 ---------------
 Panelden ana/monitör/mikrofon cihazı, ses seviyeleri, mikrofon yönlendirmesi,
-dil, örnekleme hızı, buffer, kontrol hotkey'leri ve ses atamaları düzenlenebilir.
-Ses ataması eklerken
+dil, örnekleme hızı, buffer, Windows başlangıcı, konsol başlangıcı,
+kontrol hotkey'leri ve ses atamaları düzenlenebilir. Ses ataması eklerken
 WAV/MP3/FLAC seçilebilir; dışarıdaki dosya isteğe bağlı olarak sounds
 klasörüne kopyalanır. Kaydet ve uygula tüm ayarları önce doğrular; hotkey
 çakışması veya ses sistemi hatasında önceki çalışan ayarlar geri yüklenir.

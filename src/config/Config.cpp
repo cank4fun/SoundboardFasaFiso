@@ -211,6 +211,16 @@ namespace
             return "audio_buffer_ms=5";
         }
 
+        if (settingName == "START_WITH_WINDOWS")
+        {
+            return "start_with_windows=false";
+        }
+
+        if (settingName == "SHOW_CONSOLE_ON_START")
+        {
+            return "show_console_on_start=true";
+        }
+
         if (settingName == "STOP")
         {
             return "stop=F11";
@@ -907,6 +917,8 @@ namespace
             settingName == "MICROPHONE_TO_MONITOR" ||
             settingName == "AUDIO_SAMPLE_RATE" ||
             settingName == "AUDIO_BUFFER_MS" ||
+            settingName == "START_WITH_WINDOWS" ||
+            settingName == "SHOW_CONSOLE_ON_START" ||
             settingName == "STOP" ||
             settingName == "OUTPUT_MUTE" ||
             settingName == "MONITOR_MUTE" ||
@@ -934,6 +946,9 @@ bool Config::Load(const std::filesystem::path& filePath)
 
     audioSampleRate_ = 48000;
     audioBufferMilliseconds_ = 5;
+
+    startWithWindows_ = false;
+    showConsoleOnStart_ = true;
 
     stopKeyName_ = "F11";
     stopModifiers_ = 0;
@@ -1383,6 +1398,50 @@ bool Config::Load(const std::filesystem::path& filePath)
             continue;
         }
 
+        if (settingName == "START_WITH_WINDOWS")
+        {
+            const auto enabled = ParseBoolean(parsedLine.rightSide);
+
+            if (!enabled.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "start_with_windows değeri true veya false olmalı. Girilen değer: ",
+                        "start_with_windows must be true or false. Entered value: "
+                    )} + parsedLine.rightSide,
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            startWithWindows_ = *enabled;
+            continue;
+        }
+
+        if (settingName == "SHOW_CONSOLE_ON_START")
+        {
+            const auto enabled = ParseBoolean(parsedLine.rightSide);
+
+            if (!enabled.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "show_console_on_start değeri true veya false olmalı. Girilen değer: ",
+                        "show_console_on_start must be true or false. Entered value: "
+                    )} + parsedLine.rightSide,
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            showConsoleOnStart_ = *enabled;
+            continue;
+        }
+
         std::string hotkeyError;
         const auto hotkey =
             ParseHotkey(parsedLine.rightSide, hotkeyError);
@@ -1760,6 +1819,11 @@ bool Config::Save(const std::filesystem::path& filePath) const
         << "# AUDIO GECİKME AYARLARI / AUDIO LATENCY SETTINGS\n"
         << "audio_sample_rate=" << audioSampleRate_ << '\n'
         << "audio_buffer_ms=" << audioBufferMilliseconds_ << "\n\n"
+        << "# UYGULAMA / APPLICATION\n"
+        << "start_with_windows="
+        << (startWithWindows_ ? "true" : "false") << '\n'
+        << "show_console_on_start="
+        << (showConsoleOnStart_ ? "true" : "false") << "\n\n"
         << "# KONTROLLER / CONTROLS\n"
         << "stop=" << stopKeyName_ << '\n'
         << "output_mute=" << outputMuteKeyName_ << '\n'
@@ -1956,6 +2020,16 @@ bool Config::SetAudioBufferMilliseconds(
     return true;
 }
 
+void Config::SetStartWithWindows(const bool enabled)
+{
+    startWithWindows_ = enabled;
+}
+
+void Config::SetShowConsoleOnStart(const bool enabled)
+{
+    showConsoleOnStart_ = enabled;
+}
+
 bool Config::SetControlHotkeys(
     std::string stopKeyName,
     std::string outputMuteKeyName,
@@ -2147,6 +2221,16 @@ unsigned int Config::GetAudioSampleRate() const
 unsigned int Config::GetAudioBufferMilliseconds() const
 {
     return audioBufferMilliseconds_;
+}
+
+bool Config::GetStartWithWindows() const
+{
+    return startWithWindows_;
+}
+
+bool Config::GetShowConsoleOnStart() const
+{
+    return showConsoleOnStart_;
 }
 
 const std::string& Config::GetStopKeyName() const

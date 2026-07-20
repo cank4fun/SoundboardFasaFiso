@@ -29,7 +29,7 @@ namespace
     constexpr int BaseMargin = 16;
     constexpr int HeaderHeight = 28;
     constexpr int StatusHeight = 24;
-    constexpr int SettingsGroupHeight = 318;
+    constexpr int SettingsGroupHeight = 356;
     constexpr int ControlHotkeysGroupHeight = 94;
     constexpr int BindingEditorWidth = 372;
     constexpr int ButtonHeight = 34;
@@ -67,6 +67,7 @@ bool ControlWindow::Initialize(
     pendingConfigPath_ = configPath;
     pendingConfigPath_ += L".pending";
     soundsFolder_ = soundsFolder;
+    logsFolder_ = configPath.parent_path() / L"logs";
     currentConfig_ = config;
     playbackDevices_ = playbackDevices;
     captureDevices_ = captureDevices;
@@ -203,6 +204,7 @@ void ControlWindow::Shutdown()
     configPath_.clear();
     pendingConfigPath_.clear();
     soundsFolder_.clear();
+    logsFolder_.clear();
     playbackDevices_.clear();
     captureDevices_.clear();
     pendingBindings_.clear();
@@ -237,6 +239,8 @@ void ControlWindow::Shutdown()
     bufferCombo_ = nullptr;
     languageCaption_ = nullptr;
     languageCombo_ = nullptr;
+    startWithWindowsCheck_ = nullptr;
+    showConsoleOnStartCheck_ = nullptr;
     refreshDevicesButton_ = nullptr;
     applySettingsButton_ = nullptr;
     controlHotkeysGroup_ = nullptr;
@@ -274,6 +278,7 @@ void ControlWindow::Shutdown()
     monitorMuteButton_ = nullptr;
     openConfigButton_ = nullptr;
     openSoundsButton_ = nullptr;
+    openLogsButton_ = nullptr;
     consoleButton_ = nullptr;
     exitButton_ = nullptr;
 }
@@ -528,6 +533,10 @@ LRESULT ControlWindow::HandleWindowMessage(
                     OpenPath(soundsFolder_);
                     return 0;
 
+                case IdOpenLogs:
+                    OpenPath(logsFolder_);
+                    return 0;
+
                 case IdToggleConsole:
                     PostApplicationCommand(commandIds_.toggleConsole);
                     return 0;
@@ -755,6 +764,18 @@ bool ControlWindow::CreateControls()
         0,
         WS_EX_CLIENTEDGE
     );
+    startWithWindowsCheck_ = createControl(
+        L"BUTTON",
+        L"",
+        BS_AUTOCHECKBOX | WS_TABSTOP,
+        0
+    );
+    showConsoleOnStartCheck_ = createControl(
+        L"BUTTON",
+        L"",
+        BS_AUTOCHECKBOX | WS_TABSTOP,
+        0
+    );
     refreshDevicesButton_ = createControl(
         L"BUTTON",
         L"",
@@ -872,6 +893,9 @@ bool ControlWindow::CreateControls()
     openSoundsButton_ = createControl(
         L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdOpenSounds
     );
+    openLogsButton_ = createControl(
+        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdOpenLogs
+    );
     consoleButton_ = createControl(
         L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdToggleConsole
     );
@@ -895,6 +919,7 @@ bool ControlWindow::CreateControls()
         microphoneToOutputCheck_, microphoneToMonitorCheck_,
         sampleRateCaption_, sampleRateCombo_,
         bufferCaption_, bufferCombo_, languageCaption_, languageCombo_,
+        startWithWindowsCheck_, showConsoleOnStartCheck_,
         refreshDevicesButton_, applySettingsButton_, controlHotkeysGroup_,
         stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
         outputMuteHotkeyEdit_, monitorMuteHotkeyCaption_,
@@ -907,7 +932,7 @@ bool ControlWindow::CreateControls()
         addBindingButton_, updateBindingButton_, removeBindingButton_,
         clearBindingButton_, reloadButton_, stopButton_, outputMuteButton_,
         monitorMuteButton_, openConfigButton_, openSoundsButton_,
-        consoleButton_, exitButton_
+        openLogsButton_, consoleButton_, exitButton_
     };
 
     return std::all_of(
@@ -1121,6 +1146,26 @@ void ControlWindow::LayoutControls(
 
     MoveWindow(languageCaption_, innerX, rowY + 5, labelWidth, 22, TRUE);
     MoveWindow(languageCombo_, innerX + labelWidth, rowY, 190, 150, TRUE);
+
+    rowY += RowHeight + 8;
+
+    const int applicationCheckWidth = 220;
+    MoveWindow(
+        startWithWindowsCheck_,
+        innerX,
+        rowY + 5,
+        applicationCheckWidth,
+        24,
+        TRUE
+    );
+    MoveWindow(
+        showConsoleOnStartCheck_,
+        innerX + applicationCheckWidth + 12,
+        rowY + 5,
+        applicationCheckWidth,
+        24,
+        TRUE
+    );
 
     const int actionButtonWidth = 190;
     const int applyX = innerX + innerWidth - actionButtonWidth;
@@ -1378,7 +1423,8 @@ void ControlWindow::LayoutControls(
         reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_
     };
     const HWND secondRow[] = {
-        openConfigButton_, openSoundsButton_, consoleButton_, exitButton_
+        openConfigButton_, openSoundsButton_, openLogsButton_,
+        consoleButton_, exitButton_
     };
 
     for (std::size_t index = 0; index < 4; ++index)
@@ -1390,11 +1436,21 @@ void ControlWindow::LayoutControls(
 
     y += ButtonHeight + ButtonGap;
 
-    for (std::size_t index = 0; index < 4; ++index)
+    const int secondRowButtonWidth =
+        (contentWidth - ButtonGap * 4) / 5;
+
+    for (std::size_t index = 0; index < 5; ++index)
     {
         const int x = BaseMargin +
-            static_cast<int>(index) * (buttonWidth + ButtonGap);
-        MoveWindow(secondRow[index], x, y, buttonWidth, ButtonHeight, TRUE);
+            static_cast<int>(index) * (secondRowButtonWidth + ButtonGap);
+        MoveWindow(
+            secondRow[index],
+            x,
+            y,
+            secondRowButtonWidth,
+            ButtonHeight,
+            TRUE
+        );
     }
 }
 
@@ -1455,6 +1511,20 @@ void ControlWindow::RefreshLocalizedText()
     );
     SetControlText(languageCaption_, Localization::Text(L"Dil:", L"Language:"));
     SetControlText(
+        startWithWindowsCheck_,
+        Localization::Text(
+            L"Windows ile başlat",
+            L"Start with Windows"
+        )
+    );
+    SetControlText(
+        showConsoleOnStartCheck_,
+        Localization::Text(
+            L"Başlangıçta konsolu göster",
+            L"Show console on startup"
+        )
+    );
+    SetControlText(
         refreshDevicesButton_,
         Localization::Text(L"Cihazları yenile", L"Refresh devices")
     );
@@ -1497,6 +1567,7 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(monitorMuteButton_, Localization::Text(L"Monitörü sustur/aç", L"Toggle monitor mute"));
     SetControlText(openConfigButton_, Localization::Text(L"Config'i aç", L"Open config"));
     SetControlText(openSoundsButton_, Localization::Text(L"Ses klasörünü aç", L"Open sounds folder"));
+    SetControlText(openLogsButton_, Localization::Text(L"Log klasörünü aç", L"Open logs folder"));
     SetControlText(consoleButton_, Localization::Text(L"Konsolu göster/gizle", L"Show/hide console"));
     SetControlText(exitButton_, Localization::Text(L"Programı kapat", L"Exit"));
 }
@@ -1649,6 +1720,18 @@ void ControlWindow::PopulateEditorControls()
         languageCombo_,
         CB_SETCURSEL,
         currentConfig_.GetLanguage() == Language::English ? 1 : 0,
+        0
+    );
+    SendMessageW(
+        startWithWindowsCheck_,
+        BM_SETCHECK,
+        currentConfig_.GetStartWithWindows() ? BST_CHECKED : BST_UNCHECKED,
+        0
+    );
+    SendMessageW(
+        showConsoleOnStartCheck_,
+        BM_SETCHECK,
+        currentConfig_.GetShowConsoleOnStart() ? BST_CHECKED : BST_UNCHECKED,
         0
     );
 
@@ -1932,6 +2015,18 @@ bool ControlWindow::SavePendingSettings()
         0,
         0
     ) == BST_CHECKED;
+    const bool startWithWindows = SendMessageW(
+        startWithWindowsCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+    const bool showConsoleOnStart = SendMessageW(
+        showConsoleOnStartCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
 
     if (microphoneEnabled &&
         !microphoneToOutput &&
@@ -1968,6 +2063,8 @@ bool ControlWindow::SavePendingSettings()
     candidate.SetMicrophoneDevice(microphoneDevice);
     candidate.SetMicrophoneToOutput(microphoneToOutput);
     candidate.SetMicrophoneToMonitor(microphoneToMonitor);
+    candidate.SetStartWithWindows(startWithWindows);
+    candidate.SetShowConsoleOnStart(showConsoleOnStart);
     const bool hotkeysAccepted = candidate.SetControlHotkeys(
         WideToUtf8(stopHotkey),
         WideToUtf8(outputMuteHotkey),

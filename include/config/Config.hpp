@@ -38,6 +38,9 @@ public:
     bool SetAudioSampleRate(unsigned int sampleRate);
     bool SetAudioBufferMilliseconds(unsigned int bufferMilliseconds);
 
+    void SetStartWithWindows(bool enabled);
+    void SetShowConsoleOnStart(bool enabled);
+
     bool SetControlHotkeys(
         std::string stopKeyName,
         std::string outputMuteKeyName,
@@ -64,6 +67,9 @@ public:
 
     unsigned int GetAudioSampleRate() const;
     unsigned int GetAudioBufferMilliseconds() const;
+
+    bool GetStartWithWindows() const;
+    bool GetShowConsoleOnStart() const;
 
     const std::string& GetStopKeyName() const;
     unsigned int GetStopModifiers() const;
@@ -104,6 +110,9 @@ private:
 
     unsigned int audioSampleRate_ = 48000;
     unsigned int audioBufferMilliseconds_ = 5;
+
+    bool startWithWindows_ = false;
+    bool showConsoleOnStart_ = true;
 
     std::string stopKeyName_ = "F11";
     unsigned int stopModifiers_ = 0;

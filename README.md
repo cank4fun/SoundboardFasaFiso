@@ -15,7 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 development status:** Alpha 5 adds physical microphone capture and real-time routing to the main output, monitor output, or both. It is still a development build and is not a stable replacement for v1.0.0 yet.
+**v2 development status:** Alpha 6 adds persistent session logs, optional per-user Windows startup registration, and console-free startup while preserving the native microphone mixer. It is still a development build and is not a stable replacement for v1.0.0 yet.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
@@ -26,6 +26,8 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 - Global hotkeys through Win32 `RegisterHotKey`
 - Separate main and monitor outputs with independent volume and mute controls
 - Physical microphone capture with device selection, gain and output/monitor routing
+- Persistent session logs with one-click log-folder access
+- Optional Windows startup registration and console-free launch
 - WAV, MP3 and FLAC playback
 - Audio preloaded into RAM
 - Per-sound volume and playback mode
@@ -53,6 +55,7 @@ SoundBoardFasaFiso/
 ├── SoundBoardFasaFiso.exe
 ├── config.txt
 ├── README.txt
+├── logs/          # created automatically
 └── sounds/
 ```
 
@@ -79,6 +82,10 @@ microphone_to_monitor=false
 # LOW-LATENCY AUDIO
 audio_sample_rate=48000
 audio_buffer_ms=5
+
+# APPLICATION
+start_with_windows=false
+show_console_on_start=true
 
 # CONTROLS
 stop=F11
@@ -133,9 +140,17 @@ Windows rejects a hotkey already owned by another application. SoundBoardFasaFis
 
 ## Control panel
 
-Alpha 5 uses a native Win32 settings editor without Qt, .NET or another GUI runtime. The panel enumerates playback and capture devices and lets the user configure main output, monitor output, microphone input, all three gain targets, microphone routes, language, sample rate, buffer target, control hotkeys and sound bindings.
+Alpha 6 uses a native Win32 settings editor without Qt, .NET or another GUI runtime. The panel enumerates playback and capture devices and lets the user configure main output, monitor output, microphone input, all three gain targets, microphone routes, language, sample rate, buffer target, Windows startup, console startup, control hotkeys and sound bindings.
 
 `Save and apply` writes a pending configuration, validates it, rebuilds the complete playback/capture runtime and only replaces the active config after every device and hotkey succeeds. A failure restores the previous working runtime. Closing the control-panel window only hides it, so the soundboard continues running in the tray.
+
+## Startup and diagnostics
+
+`start_with_windows=true` registers the current executable under the current user's Windows startup key, so no administrator permission is required. Moving the portable folder and launching the application again refreshes the registered path.
+
+`show_console_on_start=false` starts with the control panel and tray while keeping the diagnostic console hidden. The console remains available from the control panel or tray menu.
+
+Every successful launch writes `logs/latest.log`; the previous session is kept as `logs/previous.log`. The control panel can open the logs folder directly.
 
 ## Tray menu
 

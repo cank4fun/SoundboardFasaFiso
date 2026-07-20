@@ -26,6 +26,12 @@ microphone_to_monitor=false
 audio_sample_rate=48000
 audio_buffer_ms=5
 
+# UYGULAMA
+# Windows ile otomatik başlatma kullanıcı hesabına özel kayıt defteri ayarı kullanır.
+start_with_windows=false
+# false ise uygulama kontrol paneli ve tray ile açılır; konsol sonradan gösterilebilir.
+show_console_on_start=true
+
 # KONTROLLER
 stop=F11
 output_mute=CTRL+SHIFT+F9

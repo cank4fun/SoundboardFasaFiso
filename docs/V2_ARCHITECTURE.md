@@ -66,11 +66,18 @@ A first-party virtual microphone driver can be added later without rewriting the
 - Real-time routing to the main output, monitor output, or both
 - Shared device-recovery flow for playback and capture endpoints
 
+### Alpha 6 — startup and diagnostics
+
+- Persistent session logs with one-session rotation
+- Optional per-user Windows startup registration
+- Console-free startup with the console still available on demand
+- GUI access to diagnostic files
+
 ### Beta — packaging and migration
 
-- Console-free normal mode with optional diagnostics window
-- v1 config migration
+- v1 config migration and final config cleanup
 - Portable release and clean-machine testing
+- Visual polish, accessibility and final workflow validation
 
 ## Driver boundary
 
