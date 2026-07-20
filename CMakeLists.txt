@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(SoundBoardFasaFiso VERSION 1.0.0 LANGUAGES CXX)
+set(SOUNDBOARD_VERSION "2.0.0-alpha.1")
+
+project(SoundBoardFasaFiso VERSION 2.0.0 LANGUAGES CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "SoundBoardFasaFiso currently supports Windows only.")
@@ -41,6 +43,7 @@ add_executable(
     src/audio/miniaudio_impl.cpp
     src/config/Config.cpp
     src/hotkeys/HotkeyManager.cpp
+    src/localization/Localization.cpp
     src/platform/SingleInstance.cpp
     src/tray/TrayIcon.cpp
     "${SOUNDBOARD_GENERATED_DIR}/SoundBoardFasaFiso.rc"

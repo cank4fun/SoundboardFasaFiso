@@ -3,6 +3,11 @@ SoundBoardFasaFiso
 
 Windows 10/11 için kurulumsuz, portable soundboard.
 
+DİL / LANGUAGE
+--------------
+language=tr : Türkçe
+language=en : English
+
 HIZLI KULLANIM
 --------------
 1. Ses dosyalarını sounds klasörüne koy.

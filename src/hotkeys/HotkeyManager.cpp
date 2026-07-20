@@ -1,4 +1,5 @@
 #include "hotkeys/HotkeyManager.hpp"
+#include "localization/Localization.hpp"
 
 #include <Windows.h>
 
@@ -27,17 +28,25 @@ bool HotkeyManager::Register(
         const DWORD errorCode = GetLastError();
 
         std::cerr
-            << "Hotkey kaydedilemedi. ID: "
+            << Localization::Text(
+                "Hotkey kaydedilemedi. ID: ",
+                "Hotkey could not be registered. ID: "
+            )
             << id
-            << ", Windows hata kodu: "
+            << Localization::Text(
+                ", Windows hata kodu: ",
+                ", Windows error code: "
+            )
             << errorCode
             << '\n';
 
         if (errorCode == ERROR_HOTKEY_ALREADY_REGISTERED)
         {
             std::cerr
-                << "Bu tus kombinasyonu baska bir program "
-                << "veya hotkey tarafindan kullaniliyor.\n";
+                << Localization::Text(
+                    "Bu tuş kombinasyonu başka bir program veya hotkey tarafından kullanılıyor.\n",
+                    "This key combination is already used by another program or hotkey.\n"
+                );
         }
 
         return false;
@@ -67,7 +76,10 @@ int HotkeyManager::WaitForPress(
     if (waitResult == WAIT_FAILED)
     {
         std::cerr
-            << "Windows mesaj bekleme islemi hata verdi: "
+            << Localization::Text(
+                "Windows mesaj bekleme işlemi hata verdi: ",
+                "Waiting for Windows messages failed: "
+            )
             << GetLastError()
             << '\n';
 

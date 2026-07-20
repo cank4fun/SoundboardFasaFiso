@@ -1,6 +1,7 @@
 #include "audio/Audio.hpp"
-#include "sound/SoundFileFormat.hpp"
+#include "localization/Localization.hpp"
 #include "platform/Utf8Path.hpp"
+#include "sound/SoundFileFormat.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -71,7 +72,7 @@ namespace
         case ma_backend_null:
             return "Null";
         default:
-            return "Diger";
+            return Localization::Text("Diğer", "Other");
         }
     }
 
@@ -88,7 +89,7 @@ namespace
         std::ostringstream description;
 
         description
-            << " | Ornekleme: "
+            << Localization::Text(" | Örnekleme: ", " | Sample rate: ")
             << device->sampleRate
             << " Hz";
 
@@ -130,7 +131,7 @@ namespace
             nativeSampleRate != device->sampleRate)
         {
             description
-                << " | Cihaz dogal hizi: "
+                << Localization::Text(" | Cihaz doğal hızı: ", " | Device native rate: ")
                 << nativeSampleRate
                 << " Hz";
         }
@@ -183,7 +184,7 @@ namespace
         if (matches.empty())
         {
             std::cerr
-                << "Cikis cihazi bulunamadi: "
+                << Localization::Text("Çıkış cihazı bulunamadı: ", "Output device not found: ")
                 << requestedDevice
                 << '\n';
 
@@ -193,9 +194,15 @@ namespace
         if (matches.size() > 1)
         {
             std::cerr
-                << "Cihaz adi birden fazla cihazla eslesti: "
+                << Localization::Text(
+                    "Cihaz adı birden fazla cihazla eşleşti: ",
+                    "The device name matched more than one device: "
+                )
                 << requestedDevice
-                << "\nEslesen cihazlar:\n";
+                << Localization::Text(
+                    "\nEşleşen cihazlar:\n",
+                    "\nMatching devices:\n"
+                );
 
             for (const ma_uint32 index : matches)
             {
@@ -350,12 +357,14 @@ bool Audio::InitializeEngine(
         activeBufferMilliseconds != 0)
     {
         std::cerr
-            << "Uyari: "
+            << Localization::Text("Uyarı: ", "Warning: ")
             << engineLabel
-            << " icin "
+            << Localization::Text(" için ", " could not open a ")
             << activeBufferMilliseconds
-            << " ms dusuk gecikme buffer'i acilamadi. "
-            << "Windows varsayilan buffer'i ile tekrar deneniyor.\n";
+            << Localization::Text(
+                " ms düşük gecikme buffer'ı açılamadı. Windows varsayılan buffer'ı ile tekrar deneniyor.\n",
+                " ms low-latency buffer. Retrying with the Windows default buffer.\n"
+            );
 
         activeBufferMilliseconds = 0;
 
@@ -370,12 +379,14 @@ bool Audio::InitializeEngine(
         activeSampleRate != 0)
     {
         std::cerr
-            << "Uyari: "
+            << Localization::Text("Uyarı: ", "Warning: ")
             << engineLabel
-            << " icin "
+            << Localization::Text(" için ", " could not open at ")
             << activeSampleRate
-            << " Hz acilamadi. Cihazin dogal ornekleme "
-            << "hizi ile tekrar deneniyor.\n";
+            << Localization::Text(
+                " Hz açılamadı. Cihazın doğal örnekleme hızı ile tekrar deneniyor.\n",
+                " Hz. Retrying with the device's native sample rate.\n"
+            );
 
         activeSampleRate = 0;
         activeBufferMilliseconds = 0;
@@ -391,7 +402,7 @@ bool Audio::InitializeEngine(
     {
         std::cerr
             << engineLabel
-            << " audio engine baslatilamadi. Hata: "
+            << Localization::Text(" audio engine başlatılamadı. Hata: ", " audio engine could not be initialized. Error: ")
             << engineResult
             << '\n';
 
@@ -413,7 +424,7 @@ bool Audio::InitializeEngine(
     {
         std::cerr
             << engineLabel
-            << " ses seviyesi ayarlanamadi. Hata: "
+            << Localization::Text(" ses seviyesi ayarlanamadı. Hata: ", " volume could not be set. Error: ")
             << volumeResult
             << '\n';
 
@@ -430,7 +441,7 @@ bool Audio::InitializeEngine(
         << engineLabel
         << ": "
         << state.deviceName
-        << " | Ses: "
+        << Localization::Text(" | Ses: ", " | Volume: ")
         << static_cast<int>(volume * 100.0f)
         << '%';
 
@@ -468,8 +479,10 @@ bool Audio::InitializeRuntime()
     if (contextResult != MA_SUCCESS)
     {
         std::cerr
-            << "Uyari: WASAPI baslatilamadi. Miniaudio'nun "
-            << "Windows yedek backend sirasi deneniyor. Hata: "
+            << Localization::Text(
+                "Uyarı: WASAPI başlatılamadı. Miniaudio'nun Windows yedek backend sırası deneniyor. Hata: ",
+                "Warning: WASAPI could not be initialized. Trying miniaudio's Windows fallback backend order. Error: "
+            )
             << contextResult
             << '\n';
 
@@ -487,7 +500,7 @@ bool Audio::InitializeRuntime()
     if (contextResult != MA_SUCCESS)
     {
         std::cerr
-            << "Audio context baslatilamadi. Hata: "
+            << Localization::Text("Audio context başlatılamadı. Hata: ", "Audio context could not be initialized. Error: ")
             << contextResult
             << '\n';
 
@@ -497,7 +510,7 @@ bool Audio::InitializeRuntime()
     contextInitialized_ = true;
 
     std::cout
-        << "Audio backend: "
+        << Localization::Text("Audio backend: ", "Audio backend: ")
         << BackendName(context_.backend)
         << '\n';
 
@@ -516,7 +529,7 @@ bool Audio::InitializeRuntime()
     if (deviceResult != MA_SUCCESS)
     {
         std::cerr
-            << "Ses cihazlari alinamadi. Hata: "
+            << Localization::Text("Ses cihazları alınamadı. Hata: ", "Audio devices could not be enumerated. Error: ")
             << deviceResult
             << '\n';
 
@@ -526,7 +539,7 @@ bool Audio::InitializeRuntime()
 
     if (!InitializeEngine(
         requestedOutputDevice_,
-        "Ana cikis",
+        Localization::Text("Ana çıkış", "Main output"),
         playbackDevices,
         playbackDeviceCount,
         outputVolume_,
@@ -544,7 +557,7 @@ bool Audio::InitializeRuntime()
     {
         if (!InitializeEngine(
             requestedMonitorDevice_,
-            "Monitor cikisi",
+            Localization::Text("Monitör çıkışı", "Monitor output"),
             playbackDevices,
             playbackDeviceCount,
             monitorVolume_,
@@ -562,13 +575,15 @@ bool Audio::InitializeRuntime()
             monitorEngine_.deviceName)
         {
             std::cerr
-                << "Uyari: Ana cikis ve monitor ayni cihaz. "
-                << "Ses iki kez oynatilabilir.\n";
+                << Localization::Text(
+                    "Uyarı: Ana çıkış ve monitör aynı cihaz. Ses iki kez oynatılabilir.\n",
+                    "Warning: The main output and monitor output use the same device. Audio may play twice.\n"
+                );
         }
     }
     else
     {
-        std::cout << "Monitor cikisi: Kapali\n";
+        std::cout << Localization::Text("Monitör çıkışı: Kapalı\n", "Monitor output: Disabled\n");
     }
 
     return true;
@@ -594,8 +609,10 @@ bool Audio::Initialize(
     if (activeInstance != nullptr && activeInstance != this)
     {
         std::cerr
-            << "Ayni anda birden fazla Audio nesnesi "
-            << "baslatilamaz.\n";
+            << Localization::Text(
+                "Aynı anda birden fazla Audio nesnesi başlatılamaz.\n",
+                "More than one Audio instance cannot be initialized at the same time.\n"
+            );
 
         return false;
     }
@@ -612,8 +629,10 @@ bool Audio::Initialize(
     if (!sampleRateIsValid || !bufferIsValid)
     {
         std::cerr
-            << "Gecersiz audio gecikme ayari. "
-            << "sampleRate="
+            << Localization::Text(
+                "Geçersiz audio gecikme ayarı. sampleRate=",
+                "Invalid audio latency setting. sampleRate="
+            )
             << sampleRate
             << ", bufferMilliseconds="
             << bufferMilliseconds
@@ -695,9 +714,9 @@ bool Audio::InitializeVoiceFromFile(
     if (result != MA_SUCCESS)
     {
         std::cerr
-            << "Ses ana cikisa yuklenemedi: "
+            << Localization::Text("Ses ana çıkışa yüklenemedi: ", "Sound could not be loaded into the main output: ")
             << PathToUtf8(definition.path)
-            << ". Hata: "
+            << Localization::Text(". Hata: ", ". Error: ")
             << result
             << '\n';
 
@@ -723,9 +742,9 @@ bool Audio::InitializeVoiceFromFile(
         if (result != MA_SUCCESS)
         {
             std::cerr
-                << "Ses monitor cikisina yuklenemedi: "
+                << Localization::Text("Ses monitör çıkışına yüklenemedi: ", "Sound could not be loaded into the monitor output: ")
                 << PathToUtf8(definition.path)
-                << ". Hata: "
+                << Localization::Text(". Hata: ", ". Error: ")
                 << result
                 << '\n';
 
@@ -795,9 +814,9 @@ bool Audio::InitializeVoiceCopy(
     if (result != MA_SUCCESS)
     {
         std::cerr
-            << "Overlap voice ana cikisa olusturulamadi: "
+            << Localization::Text("Overlap voice ana çıkış için oluşturulamadı: ", "Overlap voice could not be created for the main output: ")
             << PathToUtf8(definition.path)
-            << ". Hata: "
+            << Localization::Text(". Hata: ", ". Error: ")
             << result
             << '\n';
 
@@ -822,9 +841,9 @@ bool Audio::InitializeVoiceCopy(
         if (result != MA_SUCCESS)
         {
             std::cerr
-                << "Overlap voice monitor cikisina olusturulamadi: "
+                << Localization::Text("Overlap voice monitör çıkışı için oluşturulamadı: ", "Overlap voice could not be created for the monitor output: ")
                 << PathToUtf8(definition.path)
-                << ". Hata: "
+                << Localization::Text(". Hata: ", ". Error: ")
                 << result
                 << '\n';
 
@@ -866,20 +885,20 @@ bool Audio::LoadSoundIntoRuntime(
 {
     if (!outputEngine_.initialized)
     {
-        std::cerr << "Ana audio engine hazir degil.\n";
+        std::cerr << Localization::Text("Ana audio engine hazır değil.\n", "The main audio engine is not ready.\n");
         return false;
     }
 
     if (soundId.empty())
     {
-        std::cerr << "Ses kimligi bos olamaz.\n";
+        std::cerr << Localization::Text("Ses kimliği boş olamaz.\n", "The sound ID cannot be empty.\n");
         return false;
     }
 
     if (loadedSounds_.contains(soundId))
     {
         std::cerr
-            << "Ses zaten yuklenmis: "
+            << Localization::Text("Ses zaten yüklenmiş: ", "Sound is already loaded: ")
             << soundId
             << '\n';
 
@@ -890,7 +909,7 @@ bool Audio::LoadSoundIntoRuntime(
         !std::filesystem::is_regular_file(definition.path))
     {
         std::cerr
-            << "Ses dosyasi bulunamadi: "
+            << Localization::Text("Ses dosyası bulunamadı: ", "Sound file not found: ")
             << PathToUtf8(definition.path)
             << '\n';
 
@@ -962,7 +981,7 @@ bool Audio::PrepareVoiceForPlayback(
         ))
     {
         std::cerr
-            << "Ana cikistaki ses hazirlanamadi: "
+            << Localization::Text("Ana çıkıştaki ses hazırlanamadı: ", "The sound on the main output could not be prepared: ")
             << soundId
             << '\n';
 
@@ -975,7 +994,7 @@ bool Audio::PrepareVoiceForPlayback(
         ))
     {
         std::cerr
-            << "Monitor sesi hazirlanamadi: "
+            << Localization::Text("Monitör sesi hazırlanamadı: ", "The monitor sound could not be prepared: ")
             << soundId
             << '\n';
 
@@ -1003,9 +1022,9 @@ bool Audio::StartVoice(
     if (result != MA_SUCCESS)
     {
         std::cerr
-            << "Ana cikistaki ses baslatilamadi: "
+            << Localization::Text("Ana çıkıştaki ses başlatılamadı: ", "The sound on the main output could not be started: ")
             << soundId
-            << ". Hata: "
+            << Localization::Text(". Hata: ", ". Error: ")
             << result
             << '\n';
 
@@ -1022,9 +1041,9 @@ bool Audio::StartVoice(
         if (result != MA_SUCCESS)
         {
             std::cerr
-                << "Monitor sesi baslatilamadi: "
+                << Localization::Text("Monitör sesi başlatılamadı: ", "The monitor sound could not be started: ")
                 << soundId
-                << ". Hata: "
+                << Localization::Text(". Hata: ", ". Error: ")
                 << result
                 << '\n';
 
@@ -1108,7 +1127,7 @@ bool Audio::LoadSound(
     if (soundDefinitions_.contains(soundId))
     {
         std::cerr
-            << "Ses zaten kayitli: "
+            << Localization::Text("Ses zaten kayıtlı: ", "Sound is already registered: ")
             << soundId
             << '\n';
 
@@ -1121,11 +1140,13 @@ bool Audio::LoadSound(
             SoundFileFormat::NormalizedExtension(soundPath);
 
         std::cerr
-            << "Desteklenmeyen ses dosyasi uzantisi: "
-            << (extension.empty() ? "<uzanti yok>" : extension)
-            << "\nDosya: "
+            << Localization::Text("Desteklenmeyen ses dosyası uzantısı: ", "Unsupported sound file extension: ")
+            << (extension.empty()
+                ? Localization::Text("<uzantı yok>", "<no extension>")
+                : extension)
+            << Localization::Text("\nDosya: ", "\nFile: ")
             << PathToUtf8(soundPath)
-            << "\nDesteklenen uzantilar: "
+            << Localization::Text("\nDesteklenen uzantılar: ", "\nSupported extensions: ")
             << SoundFileFormat::SupportedExtensions()
             << '\n';
 
@@ -1135,7 +1156,7 @@ bool Audio::LoadSound(
     if (volume < 0.0f || volume > 1.0f)
     {
         std::cerr
-            << "Ses seviyesi 0.00 ile 1.00 arasinda olmali: "
+            << Localization::Text("Ses seviyesi 0.00 ile 1.00 arasında olmalı: ", "Volume must be between 0.00 and 1.00: ")
             << soundId
             << '\n';
 
@@ -1169,8 +1190,10 @@ PlaybackResult Audio::PlayLoaded(const std::string& soundId)
     if (iterator == loadedSounds_.end())
     {
         std::cerr
-            << "Ses sistemi su anda hazir degil veya "
-            << "yuklenmis ses bulunamadi: "
+            << Localization::Text(
+                "Ses sistemi şu anda hazır değil veya yüklenmiş ses bulunamadı: ",
+                "The audio system is not ready or the loaded sound could not be found: "
+            )
             << soundId
             << '\n';
 
@@ -1338,7 +1361,7 @@ MuteToggleResult Audio::ToggleEngineMute(
     {
         std::cerr
             << engineLabel
-            << " mute durumu degistirilemedi. Hata: "
+            << Localization::Text(" mute durumu değiştirilemedi. Hata: ", " mute state could not be changed. Error: ")
             << result
             << '\n';
 
@@ -1363,7 +1386,7 @@ MuteToggleResult Audio::ToggleOutputMute()
         outputEngine_,
         outputVolume_,
         outputMuted_,
-        "Ana cikis"
+        Localization::Text("Ana çıkış", "Main output")
     );
 }
 
@@ -1373,7 +1396,7 @@ MuteToggleResult Audio::ToggleMonitorMute()
         monitorEngine_,
         monitorVolume_,
         monitorMuted_,
-        "Monitor cikisi"
+        Localization::Text("Monitör çıkışı", "Monitor output")
     );
 }
 

@@ -22,12 +22,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "SoundBoardFasaFiso contributors\0"
             VALUE "FileDescription", "Portable Windows soundboard\0"
-            VALUE "FileVersion", "@PROJECT_VERSION@.0\0"
+            VALUE "FileVersion", "@SOUNDBOARD_VERSION@\0"
             VALUE "InternalName", "SoundBoardFasaFiso\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 SoundBoardFasaFiso contributors\0"
             VALUE "OriginalFilename", "SoundBoardFasaFiso.exe\0"
             VALUE "ProductName", "SoundBoardFasaFiso\0"
-            VALUE "ProductVersion", "@PROJECT_VERSION@.0\0"
+            VALUE "ProductVersion", "@SOUNDBOARD_VERSION@\0"
         END
     END
 

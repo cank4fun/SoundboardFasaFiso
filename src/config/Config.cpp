@@ -1,6 +1,6 @@
 #include "config/Config.hpp"
-#include "sound/SoundFileFormat.hpp"
 #include "platform/Utf8Path.hpp"
+#include "sound/SoundFileFormat.hpp"
 
 #include <Windows.h>
 
@@ -52,7 +52,7 @@ namespace
     struct SettingSource
     {
         std::size_t lineNumber = 0;
-        std::string originalLine = "<varsayılan değer>";
+        std::string originalLine = "<default>";
     };
 
     struct ControlHotkey
@@ -104,12 +104,16 @@ namespace
         const std::string_view example
     )
     {
-        std::cerr << "\n[CONFIG HATASI]\n";
+        std::cerr
+            << Localization::Text(
+                "\n[CONFIG HATASI]\n",
+                "\n[CONFIG ERROR]\n"
+            );
 
         if (lineNumber != 0)
         {
             std::cerr
-                << "Satır "
+                << Localization::Text("Satır ", "Line ")
                 << lineNumber
                 << ": "
                 << originalLine
@@ -117,18 +121,25 @@ namespace
         }
         else
         {
-            std::cerr << "Satır: <dosya geneli>\n";
+            std::cerr
+                << Localization::Text(
+                    "Satır: <dosya geneli>\n",
+                    "Line: <whole file>\n"
+                );
         }
 
         std::cerr
-            << "Neden: "
+            << Localization::Text("Neden: ", "Reason: ")
             << reason
             << '\n';
 
         if (!example.empty())
         {
             std::cerr
-                << "Doğru örnek: "
+                << Localization::Text(
+                    "Doğru örnek: ",
+                    "Correct example: "
+                )
                 << example
                 << '\n';
         }
@@ -138,6 +149,11 @@ namespace
         const std::string_view settingName
     )
     {
+        if (settingName == "LANGUAGE")
+        {
+            return "language=tr";
+        }
+
         if (settingName == "OUTPUT")
         {
             return "output=CABLE Input";
@@ -312,8 +328,10 @@ namespace
 
             if (token.empty())
             {
-                errorReason =
-                    "'|' işaretinin yanında boş bir ses ayarı var.";
+                errorReason = Localization::Text(
+                    "'|' işaretinin yanında boş bir ses ayarı var.",
+                    "There is an empty sound option next to the '|' character."
+                );
                 correctExample =
                     "F1=example.wav|volume=0.80|mode=restart";
                 return std::nullopt;
@@ -333,8 +351,10 @@ namespace
                         std::string::npos)
                 {
                     errorReason =
-                        "Ses ayarı 'isim=değer' biçiminde olmalı. "
-                        "Hatalı bölüm: " + token;
+                        std::string{Localization::Text(
+                            "Ses ayarı 'isim=değer' biçiminde olmalı. Hatalı bölüm: ",
+                            "A sound option must use the 'name=value' format. Invalid section: "
+                        )} + token;
                     correctExample =
                         "F1=example.wav|volume=0.80|mode=restart";
                     return std::nullopt;
@@ -354,8 +374,10 @@ namespace
                 if (optionName.empty() || optionValue.empty())
                 {
                     errorReason =
-                        "Ses ayarının adı veya değeri boş. "
-                        "Hatalı bölüm: " + token;
+                        std::string{Localization::Text(
+                            "Ses ayarının adı veya değeri boş. Hatalı bölüm: ",
+                            "The sound option name or value is empty. Invalid section: "
+                        )} + token;
                     correctExample =
                         "F1=example.wav|volume=0.80|mode=restart";
                     return std::nullopt;
@@ -365,8 +387,10 @@ namespace
                 {
                     if (volumeWasSet)
                     {
-                        errorReason =
-                            "volume ayarı aynı satırda birden fazla yazılmış.";
+                        errorReason = Localization::Text(
+                            "volume ayarı aynı satırda birden fazla yazılmış.",
+                            "The volume option is specified more than once on the same line."
+                        );
                         correctExample =
                             "F1=example.wav|volume=0.80|mode=restart";
                         return std::nullopt;
@@ -378,9 +402,10 @@ namespace
                     if (!volume.has_value())
                     {
                         errorReason =
-                            "volume değeri 0.00 ile 1.00 arasında "
-                            "bir sayı olmalı. Girilen değer: " +
-                            optionValue;
+                            std::string{Localization::Text(
+                                "volume değeri 0.00 ile 1.00 arasında bir sayı olmalı. Girilen değer: ",
+                                "The volume value must be a number between 0.00 and 1.00. Entered value: "
+                            )} + optionValue;
                         correctExample =
                             "F1=example.wav|volume=0.80|mode=restart";
                         return std::nullopt;
@@ -393,8 +418,10 @@ namespace
                 {
                     if (modeWasSet)
                     {
-                        errorReason =
-                            "mode ayarı aynı satırda birden fazla yazılmış.";
+                        errorReason = Localization::Text(
+                            "mode ayarı aynı satırda birden fazla yazılmış.",
+                            "The mode option is specified more than once on the same line."
+                        );
                         correctExample =
                             "F1=example.wav|volume=0.80|mode=restart";
                         return std::nullopt;
@@ -406,8 +433,13 @@ namespace
                     if (!mode.has_value())
                     {
                         errorReason =
-                            "Desteklenmeyen mode değeri: " + optionValue +
-                            ". Desteklenenler: restart, overlap, toggle, loop.";
+                            std::string{Localization::Text(
+                                "Desteklenmeyen mode değeri: ",
+                                "Unsupported mode value: "
+                            )} + optionValue + Localization::Text(
+                                ". Desteklenenler: restart, overlap, toggle, loop.",
+                                ". Supported values: restart, overlap, toggle, loop."
+                            );
                         correctExample =
                             "F1=example.wav|volume=0.80|mode=restart";
                         return std::nullopt;
@@ -419,8 +451,13 @@ namespace
                 else
                 {
                     errorReason =
-                        "Desteklenmeyen ses ayarı: " + optionName +
-                        ". Desteklenen ayarlar: volume, mode.";
+                        std::string{Localization::Text(
+                            "Desteklenmeyen ses ayarı: ",
+                            "Unsupported sound option: "
+                        )} + optionName + Localization::Text(
+                            ". Desteklenen ayarlar: volume, mode.",
+                            ". Supported options: volume, mode."
+                        );
                     correctExample =
                         "F1=example.wav|volume=0.80|mode=restart";
                     return std::nullopt;
@@ -439,15 +476,20 @@ namespace
 
         if (parsedValue.soundFile.empty())
         {
-            errorReason = "Ses dosyasının adı boş bırakılamaz.";
+            errorReason = Localization::Text(
+                "Ses dosyasının adı boş bırakılamaz.",
+                "The sound file name cannot be empty."
+            );
             correctExample = "F1=example.wav";
             return std::nullopt;
         }
 
         if (parsedValue.soundFile.has_root_path())
         {
-            errorReason =
-                "Ses dosyası yolu sounds klasörüne göre göreli olmalı.";
+            errorReason = Localization::Text(
+                "Ses dosyası yolu sounds klasörüne göre göreli olmalı.",
+                "The sound file path must be relative to the sounds folder."
+            );
             correctExample =
                 "F1=effects/example.wav|volume=0.80|mode=restart";
             return std::nullopt;
@@ -457,8 +499,10 @@ namespace
         {
             if (component == "..")
             {
-                errorReason =
-                    "Ses dosyası yolu sounds klasörünün dışına çıkamaz.";
+                errorReason = Localization::Text(
+                    "Ses dosyası yolu sounds klasörünün dışına çıkamaz.",
+                    "The sound file path cannot leave the sounds folder."
+                );
                 correctExample =
                     "F1=effects/example.wav|volume=0.80|mode=restart";
                 return std::nullopt;
@@ -475,11 +519,20 @@ namespace
                 );
 
             errorReason =
-                "Desteklenmeyen ses dosyası uzantısı: " +
+                std::string{Localization::Text(
+                    "Desteklenmeyen ses dosyası uzantısı: ",
+                    "Unsupported sound file extension: "
+                )} +
                 (extension.empty()
-                    ? std::string{"<uzantı yok>"}
+                    ? std::string{Localization::Text(
+                        "<uzantı yok>",
+                        "<no extension>"
+                    )}
                     : extension) +
-                ". Desteklenen uzantılar: " +
+                Localization::Text(
+                    ". Desteklenen uzantılar: ",
+                    ". Supported extensions: "
+                ) +
                 std::string{SoundFileFormat::SupportedExtensions()} + ".";
             correctExample =
                 "F1=example.mp3|volume=0.80|mode=restart";
@@ -628,7 +681,10 @@ namespace
 
         if (hotkeyText.empty())
         {
-            errorReason = "Hotkey boş bırakılamaz.";
+            errorReason = Localization::Text(
+                "Hotkey boş bırakılamaz.",
+                "The hotkey cannot be empty."
+            );
             return std::nullopt;
         }
 
@@ -655,8 +711,10 @@ namespace
 
             if (token.empty())
             {
-                errorReason =
-                    "'+' işaretinin iki yanında bir tuş adı olmalı.";
+                errorReason = Localization::Text(
+                    "'+' işaretinin iki yanında bir tuş adı olmalı.",
+                    "A key name must appear on both sides of the '+' character."
+                );
                 return std::nullopt;
             }
 
@@ -684,7 +742,10 @@ namespace
                 if ((modifiers & modifier) != 0)
                 {
                     errorReason =
-                        "Aynı modifier birden fazla yazılmış: " + token;
+                        std::string{Localization::Text(
+                            "Aynı modifier birden fazla yazılmış: ",
+                            "The same modifier is specified more than once: "
+                        )} + token;
                     return std::nullopt;
                 }
 
@@ -694,9 +755,10 @@ namespace
             {
                 if (baseKey.has_value())
                 {
-                    errorReason =
-                        "Bir hotkey yalnızca bir ana tuş içerebilir. "
-                        "F1+F2 gibi iki ana tuş birlikte kullanılamaz.";
+                    errorReason = Localization::Text(
+                        "Bir hotkey yalnızca bir ana tuş içerebilir. F1+F2 gibi iki ana tuş birlikte kullanılamaz.",
+                        "A hotkey can contain only one primary key. Two primary keys such as F1+F2 cannot be used together."
+                    );
                     return std::nullopt;
                 }
 
@@ -705,9 +767,13 @@ namespace
                 if (!baseKey.has_value())
                 {
                     errorReason =
-                        "Desteklenmeyen tuş adı: " + token +
-                        ". F1-F24, A-Z, 0-9, NUMPAD0-NUMPAD9 ve "
-                        "desteklenen özel tuşlardan birini kullanın.";
+                        std::string{Localization::Text(
+                            "Desteklenmeyen tuş adı: ",
+                            "Unsupported key name: "
+                        )} + token + Localization::Text(
+                            ". F1-F24, A-Z, 0-9, NUMPAD0-NUMPAD9 ve desteklenen özel tuşlardan birini kullanın.",
+                            ". Use F1-F24, A-Z, 0-9, NUMPAD0-NUMPAD9, or one of the supported special keys."
+                        );
                     return std::nullopt;
                 }
             }
@@ -722,9 +788,10 @@ namespace
 
         if (!baseKey.has_value())
         {
-            errorReason =
-                "Hotkey içinde ana tuş eksik. CTRL veya SHIFT tek başına "
-                "hotkey olamaz.";
+            errorReason = Localization::Text(
+                "Hotkey içinde ana tuş eksik. CTRL veya SHIFT tek başına hotkey olamaz.",
+                "The hotkey is missing a primary key. CTRL or SHIFT cannot be used as a hotkey by itself."
+            );
             return std::nullopt;
         }
 
@@ -782,7 +849,8 @@ namespace
 
     bool IsKnownSetting(const std::string& settingName)
     {
-        return settingName == "OUTPUT" ||
+        return settingName == "LANGUAGE" ||
+            settingName == "OUTPUT" ||
             settingName == "OUTPUT_VOLUME" ||
             settingName == "MONITOR" ||
             settingName == "MONITOR_VOLUME" ||
@@ -798,6 +866,9 @@ namespace
 
 bool Config::Load(const std::filesystem::path& filePath)
 {
+    language_ = Language::Turkish;
+    Localization::SetLanguage(language_);
+
     outputDevice_ = "default";
     outputVolume_ = 1.0f;
 
@@ -836,11 +907,57 @@ bool Config::Load(const std::filesystem::path& filePath)
         PrintConfigError(
             0,
             {},
-            "Config dosyası açılamadı: " + PathToUtf8(filePath),
-            "config.txt dosyasını EXE'nin yanına koyun."
+            std::string{Localization::Text(
+                "Config dosyası açılamadı: ",
+                "The config file could not be opened: "
+            )} + PathToUtf8(filePath),
+            Localization::Text(
+                "config.txt dosyasını EXE'nin yanına koyun.",
+                "Place config.txt next to the executable."
+            )
         );
 
         return false;
+    }
+
+    std::vector<std::string> rawLines;
+    std::string line;
+
+    while (std::getline(file, line))
+    {
+        rawLines.push_back(line);
+    }
+
+    for (const std::string& rawLine : rawLines)
+    {
+        const std::string candidate = Trim(rawLine);
+        const std::size_t equalsPosition = candidate.find('=');
+
+        if (equalsPosition == std::string::npos)
+        {
+            continue;
+        }
+
+        const std::string settingName = ToUpper(
+            Trim(candidate.substr(0, equalsPosition))
+        );
+
+        if (settingName != "LANGUAGE")
+        {
+            continue;
+        }
+
+        const auto detectedLanguage = Localization::ParseLanguage(
+            Trim(candidate.substr(equalsPosition + 1))
+        );
+
+        if (detectedLanguage.has_value())
+        {
+            language_ = *detectedLanguage;
+            Localization::SetLanguage(language_);
+        }
+
+        break;
     }
 
     std::size_t errorCount = 0;
@@ -863,15 +980,13 @@ bool Config::Load(const std::filesystem::path& filePath)
         };
 
     std::vector<ParsedLine> parsedLines;
-
-    std::string line;
     std::size_t lineNumber = 0;
 
-    while (std::getline(file, line))
+    for (const std::string& rawLine : rawLines)
     {
         ++lineNumber;
 
-        const std::string originalLine = Trim(line);
+        const std::string originalLine = Trim(rawLine);
 
         if (originalLine.empty() || originalLine.front() == '#')
         {
@@ -886,7 +1001,10 @@ bool Config::Load(const std::filesystem::path& filePath)
             reportError(
                 lineNumber,
                 originalLine,
-                "Satırda '=' işareti yok. Her ayar 'sol=sağ' biçiminde yazılmalı.",
+                Localization::Text(
+                    "Satırda '=' işareti yok. Her ayar 'sol=sağ' biçiminde yazılmalı.",
+                    "The line has no '=' character. Every setting must use the 'left=right' format."
+                ),
                 "F1=example.wav|volume=0.80|mode=restart"
             );
             continue;
@@ -903,7 +1021,10 @@ bool Config::Load(const std::filesystem::path& filePath)
             reportError(
                 lineNumber,
                 originalLine,
-                "'=' işaretinin sol tarafı boş. Ayar veya hotkey adı yazılmalı.",
+                Localization::Text(
+                    "'=' işaretinin sol tarafı boş. Ayar veya hotkey adı yazılmalı.",
+                    "The left side of '=' is empty. Enter a setting or hotkey name."
+                ),
                 "F1=example.wav"
             );
             continue;
@@ -914,7 +1035,10 @@ bool Config::Load(const std::filesystem::path& filePath)
             reportError(
                 lineNumber,
                 originalLine,
-                "'=' işaretinin sağ tarafı boş. Bir değer veya ses dosyası yazılmalı.",
+                Localization::Text(
+                    "'=' işaretinin sağ tarafı boş. Bir değer veya ses dosyası yazılmalı.",
+                    "The right side of '=' is empty. Enter a value or sound file."
+                ),
                 "F1=example.wav"
             );
             continue;
@@ -959,9 +1083,37 @@ bool Config::Load(const std::filesystem::path& filePath)
             reportError(
                 parsedLine.lineNumber,
                 parsedLine.originalLine,
-                "Bu ayar config içinde birden fazla yazılmış: " + settingName,
+                std::string{Localization::Text(
+                    "Bu ayar config içinde birden fazla yazılmış: ",
+                    "This setting is specified more than once in the config: "
+                )} + settingName,
                 SettingExample(settingName)
             );
+            continue;
+        }
+
+        if (settingName == "LANGUAGE")
+        {
+            const auto language = Localization::ParseLanguage(
+                parsedLine.rightSide
+            );
+
+            if (!language.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "language değeri 'tr' veya 'en' olmalı. Girilen değer: ",
+                        "language must be 'tr' or 'en'. Entered value: "
+                    )} + parsedLine.rightSide,
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            language_ = *language;
+            Localization::SetLanguage(language_);
             continue;
         }
 
@@ -981,8 +1133,10 @@ bool Config::Load(const std::filesystem::path& filePath)
                 reportError(
                     parsedLine.lineNumber,
                     parsedLine.originalLine,
-                    "output_volume değeri 0.00 ile 1.00 arasında bir sayı olmalı. "
-                    "Girilen değer: " + parsedLine.rightSide,
+                    std::string{Localization::Text(
+                        "output_volume değeri 0.00 ile 1.00 arasında bir sayı olmalı. Girilen değer: ",
+                        "output_volume must be a number between 0.00 and 1.00. Entered value: "
+                    )} + parsedLine.rightSide,
                     SettingExample(settingName)
                 );
                 continue;
@@ -1008,8 +1162,10 @@ bool Config::Load(const std::filesystem::path& filePath)
                 reportError(
                     parsedLine.lineNumber,
                     parsedLine.originalLine,
-                    "monitor_volume değeri 0.00 ile 1.00 arasında bir sayı olmalı. "
-                    "Girilen değer: " + parsedLine.rightSide,
+                    std::string{Localization::Text(
+                        "monitor_volume değeri 0.00 ile 1.00 arasında bir sayı olmalı. Girilen değer: ",
+                        "monitor_volume must be a number between 0.00 and 1.00. Entered value: "
+                    )} + parsedLine.rightSide,
                     SettingExample(settingName)
                 );
                 continue;
@@ -1034,9 +1190,10 @@ bool Config::Load(const std::filesystem::path& filePath)
                 reportError(
                     parsedLine.lineNumber,
                     parsedLine.originalLine,
-                    "audio_sample_rate değeri 0 veya 8000 ile 192000 arasında "
-                    "tam sayı olmalı. 0 cihazın doğal örnekleme hızını kullanır. "
-                    "Girilen değer: " + parsedLine.rightSide,
+                    std::string{Localization::Text(
+                        "audio_sample_rate değeri 0 veya 8000 ile 192000 arasında tam sayı olmalı. 0 cihazın doğal örnekleme hızını kullanır. Girilen değer: ",
+                        "audio_sample_rate must be 0 or an integer between 8000 and 192000. 0 uses the device's native sample rate. Entered value: "
+                    )} + parsedLine.rightSide,
                     SettingExample(settingName)
                 );
                 continue;
@@ -1062,9 +1219,10 @@ bool Config::Load(const std::filesystem::path& filePath)
                 reportError(
                     parsedLine.lineNumber,
                     parsedLine.originalLine,
-                    "audio_buffer_ms değeri 0 veya 2 ile 100 arasında tam sayı "
-                    "olmalı. 0 miniaudio/Windows varsayılanını kullanır. "
-                    "Girilen değer: " + parsedLine.rightSide,
+                    std::string{Localization::Text(
+                        "audio_buffer_ms değeri 0 veya 2 ile 100 arasında tam sayı olmalı. 0 miniaudio/Windows varsayılanını kullanır. Girilen değer: ",
+                        "audio_buffer_ms must be 0 or an integer between 2 and 100. 0 uses the miniaudio/Windows default. Entered value: "
+                    )} + parsedLine.rightSide,
                     SettingExample(settingName)
                 );
                 continue;
@@ -1225,10 +1383,16 @@ bool Config::Load(const std::filesystem::path& filePath)
         reportError(
             errorControl.source->lineNumber,
             errorControl.source->originalLine,
-            std::string{"Kontrol hotkey'i başka bir kontrolle çakışıyor: "} +
-                std::string{errorControl.settingName} + " ve " +
-                std::string{otherControl.settingName} + " aynı tuşu kullanıyor (" +
-                std::string{errorControl.keyName} + ").",
+            std::string{Localization::Text(
+                "Kontrol hotkey'i başka bir kontrolle çakışıyor: ",
+                "A control hotkey conflicts with another control: "
+            )} + std::string{errorControl.settingName} +
+                Localization::Text(" ve ", " and ") +
+                std::string{otherControl.settingName} +
+                Localization::Text(
+                    " aynı tuşu kullanıyor (",
+                    " use the same key ("
+                ) + std::string{errorControl.keyName} + ").",
             errorControl.example
         );
     }
@@ -1261,8 +1425,10 @@ bool Config::Load(const std::filesystem::path& filePath)
             reportError(
                 parsedLine.lineNumber,
                 parsedLine.originalLine,
-                "Sol taraf ne desteklenen bir ayar adı ne de geçerli bir hotkey. " +
-                    hotkeyError,
+                std::string{Localization::Text(
+                    "Sol taraf ne desteklenen bir ayar adı ne de geçerli bir hotkey. ",
+                    "The left side is neither a supported setting name nor a valid hotkey. "
+                )} + hotkeyError,
                 "CTRL+F3=example.mp3|volume=0.80|mode=restart"
             );
             continue;
@@ -1279,8 +1445,10 @@ bool Config::Load(const std::filesystem::path& filePath)
             reportError(
                 parsedLine.lineNumber,
                 parsedLine.originalLine,
-                "Bu hotkey daha önce kullanılmış veya kontrol tuşlarından biri için "
-                "rezerve edilmiş: " + hotkey->canonicalName,
+                std::string{Localization::Text(
+                    "Bu hotkey daha önce kullanılmış veya kontrol tuşlarından biri için rezerve edilmiş: ",
+                    "This hotkey is already used or reserved for a control: "
+                )} + hotkey->canonicalName,
                 "CTRL+F3=example.mp3|volume=0.80|mode=restart"
             );
             continue;
@@ -1324,9 +1492,15 @@ bool Config::Load(const std::filesystem::path& filePath)
     if (errorCount != 0)
     {
         std::cerr
-            << "\nConfig yüklenmedi. Toplam hata: "
+            << Localization::Text(
+                "\nConfig yüklenmedi. Toplam hata: ",
+                "\nConfig was not loaded. Total errors: "
+            )
             << errorCount
-            << "\nYukarıdaki satırları düzeltip tekrar reload yapın.\n";
+            << Localization::Text(
+                "\nYukarıdaki satırları düzeltip tekrar reload yapın.\n",
+                "\nFix the lines above and reload again.\n"
+            );
 
         return false;
     }
@@ -1336,7 +1510,10 @@ bool Config::Load(const std::filesystem::path& filePath)
         PrintConfigError(
             0,
             {},
-            "Config dosyasında hiç geçerli ses ataması yok.",
+            Localization::Text(
+                "Config dosyasında hiç geçerli ses ataması yok.",
+                "The config file contains no valid sound assignments."
+            ),
             "F1=example.wav|volume=1.00|mode=restart"
         );
 
@@ -1344,6 +1521,11 @@ bool Config::Load(const std::filesystem::path& filePath)
     }
 
     return true;
+}
+
+Language Config::GetLanguage() const
+{
+    return language_;
 }
 
 const std::string& Config::GetOutputDevice() const

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0-alpha.1
+
+- Added embedded Turkish and English localization infrastructure
+- Added `language=tr` and `language=en` config support
+- Localized console, tray, hotkey, audio and config diagnostics
+- Added alpha-version metadata and prerelease-tag validation
+- Documented the v2 standalone audio architecture and driver boundary
+- Preserved compatibility with v1 configuration keys and sound bindings
+
+
 ## 1.0.0
 
 - Global Win32 hotkeys with live config reload

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "localization/Localization.hpp"
 #include "sound/PlaybackMode.hpp"
 
 #include <filesystem>
@@ -20,6 +21,8 @@ class Config
 {
 public:
     bool Load(const std::filesystem::path& filePath);
+
+    Language GetLanguage() const;
 
     const std::string& GetOutputDevice() const;
     float GetOutputVolume() const;
@@ -53,6 +56,8 @@ public:
     const std::vector<SoundBinding>& GetBindings() const;
 
 private:
+    Language language_ = Language::Turkish;
+
     std::string outputDevice_ = "default";
     float outputVolume_ = 1.0f;
 

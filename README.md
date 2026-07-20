@@ -15,6 +15,8 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
+**v2 development status:** this branch is an alpha foundation and is not a stable replacement for v1.0.0 yet.
+
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
 There is no installer, database or GUI framework. Runtime behavior is controlled by `config.txt`, and changes can be reloaded without closing the program.
@@ -31,6 +33,7 @@ There is no installer, database or GUI framework. Runtime behavior is controlled
 - Live config reload with rollback on failure
 - Automatic recovery after audio-device disconnects
 - WASAPI with configurable sample rate and buffer target
+- Turkish and English runtime messages selected from `config.txt`
 - UTF-8 console and Unicode file-path support
 - Tray menu and single-instance protection
 - Portable Release ZIP generation with CMake
@@ -54,6 +57,9 @@ SoundBoardFasaFiso/
 ## Configuration
 
 ```ini
+# LANGUAGE: tr or en
+language=tr
+
 # AUDIO OUTPUTS
 output=CABLE Input
 output_volume=1.00
@@ -78,6 +84,8 @@ F2=example.mp3|volume=1.00|mode=toggle
 F3=example.flac|volume=0.60|mode=loop
 F4=example.wav|volume=1.00|mode=overlap
 ```
+
+`language=tr` selects Turkish messages and `language=en` selects English messages. The setting is applied during startup and live reload.
 
 `default` selects the current Windows default playback device. `none` disables the monitor output. Device names also support unique partial matches.
 
@@ -183,7 +191,7 @@ CMakeLists.txt   Build and packaging rules
 
 This repository vendors [miniaudio](https://github.com/mackron/miniaudio). Its license notice remains in the original header.
 
-VB-CABLE is optional and is not bundled with this project.
+VB-CABLE is optional and is not bundled with this project. Local playback works without it. Presenting the mixed signal to other applications as a microphone requires a virtual audio endpoint; the v2 architecture keeps this as a separate bridge layer. See [docs/V2_ARCHITECTURE.md](docs/V2_ARCHITECTURE.md).
 
 ## Changelog
 

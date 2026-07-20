@@ -1,3 +1,7 @@
+# DİL / LANGUAGE
+# tr = Türkçe, en = English
+language=en
+
 # SES ÇIKIŞLARI
 # output ana çıkıştır. VB-CABLE kullanıyorsan genellikle "CABLE Input" yazılır.
 output=CABLE Input
