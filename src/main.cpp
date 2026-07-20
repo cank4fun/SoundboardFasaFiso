@@ -562,6 +562,29 @@ int WINAPI wWinMain(
     int
 )
 {
+    using SetProcessDpiAwarenessContextFunction =
+        BOOL(WINAPI*)(HANDLE);
+
+    const HMODULE user32Module = GetModuleHandleW(L"user32.dll");
+    const auto setProcessDpiAwarenessContext =
+        user32Module != nullptr
+            ? reinterpret_cast<SetProcessDpiAwarenessContextFunction>(
+                GetProcAddress(
+                    user32Module,
+                    "SetProcessDpiAwarenessContext"
+                )
+            )
+            : nullptr;
+
+    const HANDLE perMonitorV2Context = reinterpret_cast<HANDLE>(
+        static_cast<INT_PTR>(-4)
+    );
+
+    if (setProcessDpiAwarenessContext == nullptr ||
+        setProcessDpiAwarenessContext(perMonitorV2Context) == FALSE)
+    {
+        SetProcessDPIAware();
+    }
 
     const auto executablePath = GetExecutablePath();
 

@@ -80,8 +80,10 @@ private:
         Hotkeys
     };
 
-    static constexpr int MinimumClientWidth = 960;
-    static constexpr int MinimumClientHeight = 700;
+    static constexpr int InitialClientWidth = 960;
+    static constexpr int InitialClientHeight = 640;
+    static constexpr int MinimumClientWidth = 800;
+    static constexpr int MinimumClientHeight = 540;
 
     static constexpr int IdApplySettings = 1000;
     static constexpr int IdReload = 1001;
@@ -133,11 +135,15 @@ private:
     bool CreateControls();
     bool CreateAccelerators();
     void LayoutControls(int clientWidth, int clientHeight);
+    void HandleDpiChanged(UINT dpi, const RECT& suggestedRectangle);
+    int Scale(int value) const noexcept;
+    int Unscale(int value) const noexcept;
     void SetActivePage(ControlPage page);
     void UpdatePageVisibility();
     void RefreshLocalizedText();
     void ApplyTheme();
     void ApplyFonts();
+    void ReleaseFonts();
     void RecreateThemeResources();
     void ReleaseThemeResources();
     void UpdateWindowChrome();
@@ -198,6 +204,7 @@ private:
     HWND window_ = nullptr;
     HACCEL acceleratorTable_ = nullptr;
     DWORD mainThreadId_ = 0;
+    UINT currentDpi_ = USER_DEFAULT_SCREEN_DPI;
     ControlWindowCommandIds commandIds_{};
     Audio* audio_ = nullptr;
 

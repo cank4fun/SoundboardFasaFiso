@@ -40,11 +40,11 @@ namespace
     constexpr int SettingsToolsGroupHeight = 112;
     constexpr int ControlHotkeysGroupHeight = 188;
     constexpr int MainQuickGroupHeight = 112;
-    constexpr int BindingEditorWidth = 360;
+    constexpr int BindingEditorWidth = 420;
     constexpr int ButtonHeight = 34;
     constexpr int ButtonGap = 8;
     constexpr int RowHeight = 28;
-    constexpr int ThemeToggleWidth = 148;
+    constexpr int ThemeToggleWidth = 190;
     constexpr int CardRadius = 12;
     constexpr int MaximumContentWidth = 1260;
 
@@ -162,6 +162,18 @@ bool ControlWindow::Initialize(
     playbackDevices_ = playbackDevices;
     captureDevices_ = captureDevices;
 
+    HDC screenContext = GetDC(nullptr);
+    if (screenContext != nullptr)
+    {
+        const int detectedDpi = GetDeviceCaps(screenContext, LOGPIXELSX);
+        ReleaseDC(nullptr, screenContext);
+
+        if (detectedDpi > 0)
+        {
+            currentDpi_ = static_cast<UINT>(detectedDpi);
+        }
+    }
+
     if (instance_ == nullptr)
     {
         return false;
@@ -222,8 +234,8 @@ bool ControlWindow::Initialize(
     RECT windowRectangle{
         0,
         0,
-        MinimumClientWidth,
-        MinimumClientHeight
+        Scale(InitialClientWidth),
+        Scale(InitialClientHeight)
     };
 
     AdjustWindowRectEx(
@@ -324,6 +336,7 @@ void ControlWindow::Shutdown()
     classRegistered_ = false;
     instance_ = nullptr;
     mainThreadId_ = 0;
+    currentDpi_ = USER_DEFAULT_SCREEN_DPI;
     commandIds_ = {};
     audio_ = nullptr;
     configPath_.clear();
@@ -1111,6 +1124,20 @@ LRESULT ControlWindow::HandleWindowMessage(
             break;
         }
 
+        case WM_DPICHANGED:
+        {
+            const UINT dpi = HIWORD(wParam);
+            const auto* suggestedRectangle =
+                reinterpret_cast<const RECT*>(lParam);
+
+            if (suggestedRectangle != nullptr)
+            {
+                HandleDpiChanged(dpi, *suggestedRectangle);
+            }
+
+            return 0;
+        }
+
         case WM_SIZE:
             LayoutControls(
                 LOWORD(lParam),
@@ -1126,8 +1153,8 @@ LRESULT ControlWindow::HandleWindowMessage(
             RECT rectangle{
                 0,
                 0,
-                MinimumClientWidth,
-                MinimumClientHeight
+                Scale(MinimumClientWidth),
+                Scale(MinimumClientHeight)
             };
 
             AdjustWindowRectEx(
@@ -1575,15 +1602,43 @@ void ControlWindow::LayoutControls(
         return;
     }
 
-    const int availableWidth = std::max(0, clientWidth - BaseMargin * 2);
-    const int contentWidth = std::min(availableWidth, MaximumContentWidth);
-    const int contentX = (clientWidth - contentWidth) / 2;
+    const int logicalClientWidth = Unscale(clientWidth);
+    const int logicalClientHeight = Unscale(clientHeight);
+
+    const auto moveWindow = [this](
+        const HWND control,
+        const int x,
+        const int y,
+        const int width,
+        const int height,
+        const BOOL repaint
+    )
+    {
+        ::MoveWindow(
+            control,
+            Scale(x),
+            Scale(y),
+            Scale(width),
+            Scale(height),
+            repaint
+        );
+    };
+
+    const int availableWidth = std::max(
+        0,
+        logicalClientWidth - BaseMargin * 2
+    );
+    const int contentWidth = std::min(
+        availableWidth,
+        MaximumContentWidth
+    );
+    const int contentX = (logicalClientWidth - contentWidth) / 2;
 
     SendMessageW(window_, WM_SETREDRAW, FALSE, 0);
 
     int y = BaseMargin;
 
-    MoveWindow(
+    moveWindow(
         headerLabel_,
         contentX,
         y,
@@ -1591,7 +1646,7 @@ void ControlWindow::LayoutControls(
         HeaderHeight,
         TRUE
     );
-    MoveWindow(
+    moveWindow(
         themeToggleButton_,
         contentX + contentWidth - ThemeToggleWidth,
         y,
@@ -1599,7 +1654,7 @@ void ControlWindow::LayoutControls(
         ButtonHeight,
         TRUE
     );
-    MoveWindow(
+    moveWindow(
         subtitleLabel_,
         contentX,
         y + HeaderHeight,
@@ -1617,7 +1672,7 @@ void ControlWindow::LayoutControls(
 
     for (std::size_t index = 0; index < std::size(tabs); ++index)
     {
-        MoveWindow(
+        moveWindow(
             tabs[index],
             contentX + static_cast<int>(index) * (tabWidth + tabGap),
             y,
@@ -1628,8 +1683,8 @@ void ControlWindow::LayoutControls(
     }
     y += NavigationHeight + 8;
 
-    MoveWindow(statusCaption_, contentX + 14, y + 9, 70, 20, TRUE);
-    MoveWindow(
+    moveWindow(statusCaption_, contentX + 14, y + 9, 70, 20, TRUE);
+    moveWindow(
         statusValue_,
         contentX + 84,
         y + 9,
@@ -1642,7 +1697,7 @@ void ControlWindow::LayoutControls(
     const int pageY = y;
     const int pageHeight = std::max(
         0,
-        clientHeight - pageY - BaseMargin
+        logicalClientHeight - pageY - BaseMargin
     );
 
     if (activePage_ == ControlPage::Main)
@@ -1652,7 +1707,7 @@ void ControlWindow::LayoutControls(
             pageHeight - MainQuickGroupHeight - 8
         );
 
-        MoveWindow(
+        moveWindow(
             bindingsGroup_,
             contentX,
             pageY,
@@ -1667,7 +1722,7 @@ void ControlWindow::LayoutControls(
         const int bindingsInnerHeight = bindingsHeight - 43;
         const int editorWidth = std::clamp(
             bindingsInnerWidth * 38 / 100,
-            330,
+            360,
             BindingEditorWidth
         );
         const int bindingGap = 10;
@@ -1676,7 +1731,7 @@ void ControlWindow::LayoutControls(
             bindingsInnerWidth - editorWidth - bindingGap
         );
 
-        MoveWindow(
+        moveWindow(
             bindingsList_,
             bindingsInnerX,
             bindingsInnerY,
@@ -1686,7 +1741,7 @@ void ControlWindow::LayoutControls(
         );
 
         const int editorX = bindingsInnerX + listWidth + bindingGap;
-        MoveWindow(
+        moveWindow(
             bindingEditorGroup_,
             editorX,
             bindingsInnerY,
@@ -1702,7 +1757,7 @@ void ControlWindow::LayoutControls(
         const int editorContentWidth = editorWidth - editorMargin * 2;
         int editorY = bindingsInnerY + 32;
 
-        MoveWindow(
+        moveWindow(
             bindingHotkeyCaption_,
             editorContentX,
             editorY + 4,
@@ -1710,7 +1765,7 @@ void ControlWindow::LayoutControls(
             20,
             TRUE
         );
-        MoveWindow(
+        moveWindow(
             bindingHotkeyEdit_,
             editorContentX + editorLabelWidth,
             editorY,
@@ -1719,7 +1774,7 @@ void ControlWindow::LayoutControls(
             25,
             TRUE
         );
-        MoveWindow(
+        moveWindow(
             captureHotkeyButton_,
             editorContentX + editorContentWidth - editorButtonWidth,
             editorY,
@@ -1730,7 +1785,7 @@ void ControlWindow::LayoutControls(
 
         editorY += 30;
 
-        MoveWindow(
+        moveWindow(
             bindingFileCaption_,
             editorContentX,
             editorY + 4,
@@ -1738,7 +1793,7 @@ void ControlWindow::LayoutControls(
             20,
             TRUE
         );
-        MoveWindow(
+        moveWindow(
             bindingFileEdit_,
             editorContentX + editorLabelWidth,
             editorY,
@@ -1747,7 +1802,7 @@ void ControlWindow::LayoutControls(
             25,
             TRUE
         );
-        MoveWindow(
+        moveWindow(
             browseSoundButton_,
             editorContentX + editorContentWidth - editorButtonWidth,
             editorY,
@@ -1758,7 +1813,7 @@ void ControlWindow::LayoutControls(
 
         editorY += 30;
 
-        MoveWindow(
+        moveWindow(
             bindingModeCaption_,
             editorContentX,
             editorY + 4,
@@ -1766,7 +1821,7 @@ void ControlWindow::LayoutControls(
             20,
             TRUE
         );
-        MoveWindow(
+        moveWindow(
             bindingModeCombo_,
             editorContentX + editorLabelWidth,
             editorY,
@@ -1777,7 +1832,7 @@ void ControlWindow::LayoutControls(
 
         editorY += 30;
 
-        MoveWindow(
+        moveWindow(
             bindingVolumeCaption_,
             editorContentX,
             editorY + 4,
@@ -1785,7 +1840,7 @@ void ControlWindow::LayoutControls(
             20,
             TRUE
         );
-        MoveWindow(
+        moveWindow(
             bindingVolumeSlider_,
             editorContentX + editorLabelWidth,
             editorY + 1,
@@ -1793,7 +1848,7 @@ void ControlWindow::LayoutControls(
             24,
             TRUE
         );
-        MoveWindow(
+        moveWindow(
             bindingVolumeValue_,
             editorContentX + editorContentWidth - 38,
             editorY + 4,
@@ -1802,12 +1857,14 @@ void ControlWindow::LayoutControls(
             TRUE
         );
 
-        const int editorActionGap = 5;
+        const int editorActionGap = 6;
         const int editorActionWidth =
-            (editorContentWidth - editorActionGap * 3) / 4;
+            (editorContentWidth - editorActionGap) / 2;
+        const int editorActionsHeight =
+            ButtonHeight * 2 + editorActionGap;
         const int minimumActionY = editorY + 32;
         const int bottomActionY = bindingsInnerY + bindingsInnerHeight -
-            ButtonHeight - 9;
+            editorActionsHeight - 9;
         const int actionY = std::max(minimumActionY, bottomActionY);
         const HWND editorActions[]{
             addBindingButton_, updateBindingButton_,
@@ -1818,19 +1875,22 @@ void ControlWindow::LayoutControls(
             index < std::size(editorActions);
             ++index)
         {
-            MoveWindow(
+            const int column = static_cast<int>(index % 2);
+            const int row = static_cast<int>(index / 2);
+
+            moveWindow(
                 editorActions[index],
-                editorContentX + static_cast<int>(index) *
+                editorContentX + column *
                     (editorActionWidth + editorActionGap),
-                actionY,
+                actionY + row *
+                    (ButtonHeight + editorActionGap),
                 editorActionWidth,
                 ButtonHeight,
                 TRUE
             );
         }
-
         const int quickY = pageY + bindingsHeight + 8;
-        MoveWindow(
+        moveWindow(
             mainQuickGroup_,
             contentX,
             quickY,
@@ -1861,7 +1921,7 @@ void ControlWindow::LayoutControls(
         {
             const int x = quickInnerX + static_cast<int>(index) *
                 (meterColumnWidth + meterGap);
-            MoveWindow(
+            moveWindow(
                 meterCaptions[index],
                 x,
                 quickY + 29,
@@ -1869,7 +1929,7 @@ void ControlWindow::LayoutControls(
                 18,
                 TRUE
             );
-            MoveWindow(
+            moveWindow(
                 meters[index],
                 x,
                 quickY + 51,
@@ -1891,7 +1951,7 @@ void ControlWindow::LayoutControls(
             index < std::size(quickButtons);
             ++index)
         {
-            MoveWindow(
+            moveWindow(
                 quickButtons[index],
                 quickInnerX + static_cast<int>(index) *
                     (quickButtonWidth + quickButtonGap),
@@ -1904,7 +1964,7 @@ void ControlWindow::LayoutControls(
     }
     else if (activePage_ == ControlPage::Settings)
     {
-        MoveWindow(
+        moveWindow(
             settingsGroup_,
             contentX,
             pageY,
@@ -1942,8 +2002,8 @@ void ControlWindow::LayoutControls(
             const int currentY
         )
         {
-            MoveWindow(caption, innerX, currentY + 4, labelWidth, 20, TRUE);
-            MoveWindow(
+            moveWindow(caption, innerX, currentY + 4, labelWidth, 20, TRUE);
+            moveWindow(
                 combo,
                 innerX + labelWidth,
                 currentY,
@@ -1953,7 +2013,7 @@ void ControlWindow::LayoutControls(
             );
 
             int volumeX = innerX + labelWidth + comboWidth + sectionGap;
-            MoveWindow(
+            moveWindow(
                 volumeCaption,
                 volumeX,
                 currentY + 4,
@@ -1962,7 +2022,7 @@ void ControlWindow::LayoutControls(
                 TRUE
             );
             volumeX += volumeCaptionWidth + fieldGap;
-            MoveWindow(
+            moveWindow(
                 slider,
                 volumeX,
                 currentY,
@@ -1970,7 +2030,7 @@ void ControlWindow::LayoutControls(
                 20,
                 TRUE
             );
-            MoveWindow(
+            moveWindow(
                 levelMeter,
                 volumeX + 7,
                 currentY + 22,
@@ -1978,7 +2038,7 @@ void ControlWindow::LayoutControls(
                 5,
                 TRUE
             );
-            MoveWindow(
+            moveWindow(
                 volumeValue,
                 volumeX + volumeSliderWidth + fieldGap,
                 currentY + 4,
@@ -2012,7 +2072,7 @@ void ControlWindow::LayoutControls(
         const int microphoneCheckWidth =
             (microphoneChecksWidth - microphoneCheckGap * 2) / 3;
 
-        MoveWindow(
+        moveWindow(
             microphoneEnabledCheck_,
             microphoneChecksX,
             rowY,
@@ -2020,7 +2080,7 @@ void ControlWindow::LayoutControls(
             22,
             TRUE
         );
-        MoveWindow(
+        moveWindow(
             microphoneToOutputCheck_,
             microphoneChecksX + microphoneCheckWidth + microphoneCheckGap,
             rowY,
@@ -2028,7 +2088,7 @@ void ControlWindow::LayoutControls(
             22,
             TRUE
         );
-        MoveWindow(
+        moveWindow(
             microphoneToMonitorCheck_,
             microphoneChecksX +
                 (microphoneCheckWidth + microphoneCheckGap) * 2,
@@ -2043,29 +2103,29 @@ void ControlWindow::LayoutControls(
         const int smallLabelWidth = 130;
         const int smallControlWidth = halfWidth - smallLabelWidth;
 
-        MoveWindow(
+        moveWindow(
             sampleRateCaption_, innerX, rowY + 4,
             smallLabelWidth, 20, TRUE
         );
-        MoveWindow(
+        moveWindow(
             sampleRateCombo_, innerX + smallLabelWidth, rowY,
             smallControlWidth, 160, TRUE
         );
 
         const int rightColumnX = innerX + halfWidth + sectionGap;
-        MoveWindow(
+        moveWindow(
             bufferCaption_, rightColumnX, rowY + 4,
             smallLabelWidth, 20, TRUE
         );
-        MoveWindow(
+        moveWindow(
             bufferCombo_, rightColumnX + smallLabelWidth, rowY,
             smallControlWidth, 160, TRUE
         );
         rowY += RowHeight + 6;
 
-        MoveWindow(languageCaption_, innerX, rowY + 4, labelWidth, 20, TRUE);
-        MoveWindow(languageCombo_, innerX + labelWidth, rowY, 170, 140, TRUE);
-        MoveWindow(
+        moveWindow(languageCaption_, innerX, rowY + 4, labelWidth, 20, TRUE);
+        moveWindow(languageCombo_, innerX + labelWidth, rowY, 170, 140, TRUE);
+        moveWindow(
             checkUpdatesOnStartCheck_,
             innerX + labelWidth + 190,
             rowY + 3,
@@ -2075,12 +2135,12 @@ void ControlWindow::LayoutControls(
         );
         rowY += RowHeight + 6;
 
-        MoveWindow(startWithWindowsCheck_, innerX, rowY + 4, 194, 22, TRUE);
-        MoveWindow(showConsoleOnStartCheck_, 0, 0, 0, 0, FALSE);
+        moveWindow(startWithWindowsCheck_, innerX, rowY + 4, 194, 22, TRUE);
+        moveWindow(showConsoleOnStartCheck_, 0, 0, 0, 0, FALSE);
 
         const int actionButtonWidth = 164;
         const int applyX = innerX + innerWidth - actionButtonWidth;
-        MoveWindow(
+        moveWindow(
             applySettingsButton_,
             applyX,
             rowY,
@@ -2088,7 +2148,7 @@ void ControlWindow::LayoutControls(
             ButtonHeight,
             TRUE
         );
-        MoveWindow(
+        moveWindow(
             refreshDevicesButton_,
             applyX - actionButtonWidth - ButtonGap,
             rowY,
@@ -2098,7 +2158,7 @@ void ControlWindow::LayoutControls(
         );
 
         const int toolsY = pageY + SettingsGroupHeight + 8;
-        MoveWindow(
+        moveWindow(
             settingsToolsGroup_,
             contentX,
             toolsY,
@@ -2124,11 +2184,11 @@ void ControlWindow::LayoutControls(
         {
             const int x = toolsInnerX + static_cast<int>(index) *
                 (toolButtonWidth + toolGap);
-            MoveWindow(
+            moveWindow(
                 firstTools[index], x, toolsY + 29,
                 toolButtonWidth, ButtonHeight, TRUE
             );
-            MoveWindow(
+            moveWindow(
                 secondTools[index], x,
                 toolsY + 29 + ButtonHeight + 7,
                 toolButtonWidth, ButtonHeight, TRUE
@@ -2137,7 +2197,7 @@ void ControlWindow::LayoutControls(
     }
     else
     {
-        MoveWindow(
+        moveWindow(
             controlHotkeysGroup_,
             contentX,
             pageY,
@@ -2161,8 +2221,8 @@ void ControlWindow::LayoutControls(
             const int fieldY
         )
         {
-            MoveWindow(caption, x, fieldY + 4, labelWidth, 20, TRUE);
-            MoveWindow(
+            moveWindow(caption, x, fieldY + 4, labelWidth, 20, TRUE);
+            moveWindow(
                 edit,
                 x + labelWidth,
                 fieldY,
@@ -2193,7 +2253,7 @@ void ControlWindow::LayoutControls(
             innerX, pageY + 114
         );
 
-        MoveWindow(
+        moveWindow(
             applySettingsButton_,
             contentX + contentWidth - 14 - 180,
             pageY + ControlHotkeysGroupHeight - ButtonHeight - 12,
@@ -2204,6 +2264,82 @@ void ControlWindow::LayoutControls(
     }
 
     SendMessageW(window_, WM_SETREDRAW, TRUE, 0);
+    RedrawWindow(
+        window_,
+        nullptr,
+        nullptr,
+        RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN |
+            RDW_FRAME | RDW_UPDATENOW
+    );
+}
+
+int ControlWindow::Scale(const int value) const noexcept
+{
+    return MulDiv(
+        value,
+        static_cast<int>(currentDpi_),
+        USER_DEFAULT_SCREEN_DPI
+    );
+}
+
+int ControlWindow::Unscale(const int value) const noexcept
+{
+    return MulDiv(
+        value,
+        USER_DEFAULT_SCREEN_DPI,
+        static_cast<int>(currentDpi_)
+    );
+}
+
+void ControlWindow::ReleaseFonts()
+{
+    HFONT* fonts[]{
+        &headerFont_, &subtitleFont_, &bodyFont_,
+        &sectionFont_, &buttonFont_
+    };
+
+    for (HFONT* font : fonts)
+    {
+        if (*font != nullptr)
+        {
+            DeleteObject(*font);
+            *font = nullptr;
+        }
+    }
+}
+
+void ControlWindow::HandleDpiChanged(
+    const UINT dpi,
+    const RECT& suggestedRectangle
+)
+{
+    if (window_ == nullptr)
+    {
+        return;
+    }
+
+    currentDpi_ = dpi == 0 ? USER_DEFAULT_SCREEN_DPI : dpi;
+
+    ReleaseFonts();
+    ApplyFonts();
+
+    SetWindowPos(
+        window_,
+        nullptr,
+        suggestedRectangle.left,
+        suggestedRectangle.top,
+        suggestedRectangle.right - suggestedRectangle.left,
+        suggestedRectangle.bottom - suggestedRectangle.top,
+        SWP_NOACTIVATE | SWP_NOZORDER
+    );
+
+    RECT clientRectangle{};
+    GetClientRect(window_, &clientRectangle);
+    LayoutControls(
+        clientRectangle.right - clientRectangle.left,
+        clientRectangle.bottom - clientRectangle.top
+    );
+
     RedrawWindow(
         window_,
         nullptr,
@@ -2425,7 +2561,7 @@ void ControlWindow::ApplyFonts()
     if (headerFont_ == nullptr)
     {
         headerFont_ = CreateFontW(
-            -28, 0, 0, 0, 600, FALSE, FALSE, FALSE,
+            -Scale(28), 0, 0, 0, 600, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
         );
@@ -2434,7 +2570,7 @@ void ControlWindow::ApplyFonts()
     if (subtitleFont_ == nullptr)
     {
         subtitleFont_ = CreateFontW(
-            -15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            -Scale(15), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
         );
@@ -2443,7 +2579,7 @@ void ControlWindow::ApplyFonts()
     if (bodyFont_ == nullptr)
     {
         bodyFont_ = CreateFontW(
-            -16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            -Scale(16), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
         );
@@ -2452,7 +2588,7 @@ void ControlWindow::ApplyFonts()
     if (sectionFont_ == nullptr)
     {
         sectionFont_ = CreateFontW(
-            -17, 0, 0, 0, 600, FALSE, FALSE, FALSE,
+            -Scale(17), 0, 0, 0, 600, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
         );
@@ -2461,7 +2597,7 @@ void ControlWindow::ApplyFonts()
     if (buttonFont_ == nullptr)
     {
         buttonFont_ = CreateFontW(
-            -15, 0, 0, 0, 600, FALSE, FALSE, FALSE,
+            -Scale(15), 0, 0, 0, 600, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
         );
