@@ -236,6 +236,84 @@ namespace
     }
 }
 
+
+std::vector<std::string> Audio::EnumeratePlaybackDevices()
+{
+    ma_context context{};
+
+    const ma_backend preferredBackends[]{
+        ma_backend_wasapi
+    };
+
+    ma_result result = ma_context_init(
+        preferredBackends,
+        1,
+        nullptr,
+        &context
+    );
+
+    if (result != MA_SUCCESS)
+    {
+        std::memset(&context, 0, sizeof(context));
+        result = ma_context_init(
+            nullptr,
+            0,
+            nullptr,
+            &context
+        );
+    }
+
+    if (result != MA_SUCCESS)
+    {
+        return {};
+    }
+
+    ma_device_info* playbackDevices = nullptr;
+    ma_uint32 playbackDeviceCount = 0;
+
+    result = ma_context_get_devices(
+        &context,
+        &playbackDevices,
+        &playbackDeviceCount,
+        nullptr,
+        nullptr
+    );
+
+    std::vector<std::string> deviceNames;
+
+    if (result == MA_SUCCESS)
+    {
+        deviceNames.reserve(
+            static_cast<std::size_t>(playbackDeviceCount)
+        );
+
+        for (
+            ma_uint32 index = 0;
+            index < playbackDeviceCount;
+            ++index
+        )
+        {
+            const std::string deviceName =
+                playbackDevices[index].name;
+
+            if (!deviceName.empty())
+            {
+                deviceNames.push_back(deviceName);
+            }
+        }
+    }
+
+    ma_context_uninit(&context);
+
+    std::sort(deviceNames.begin(), deviceNames.end());
+    deviceNames.erase(
+        std::unique(deviceNames.begin(), deviceNames.end()),
+        deviceNames.end()
+    );
+
+    return deviceNames;
+}
+
 Audio::~Audio()
 {
     Shutdown();

@@ -15,11 +15,11 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 development status:** Alpha 2 adds the first native control panel. It is still a development build and is not a stable replacement for v1.0.0 yet.
+**v2 development status:** Alpha 3 turns the native control panel into a safe core-settings editor. It is still a development build and is not a stable replacement for v1.0.0 yet.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
-There is no installer, database or GUI framework. Runtime behavior is controlled by `config.txt`, and changes can be reloaded without closing the program.
+There is no installer, database or GUI framework. Core audio settings can be edited from the native control panel, while `config.txt` remains available for advanced binding edits.
 
 ## Features
 
@@ -34,7 +34,7 @@ There is no installer, database or GUI framework. Runtime behavior is controlled
 - Automatic recovery after audio-device disconnects
 - WASAPI with configurable sample rate and buffer target
 - Turkish and English runtime messages selected from `config.txt`
-- Native Win32 control panel with live status and sound-binding overview
+- Native Win32 control panel with live status, device selectors and safe settings application
 - UTF-8 console and Unicode file-path support
 - Tray menu and single-instance protection
 - Portable Release ZIP generation with CMake
@@ -123,9 +123,9 @@ Windows rejects a hotkey already owned by another application. SoundBoardFasaFis
 
 ## Control panel
 
-Alpha 2 includes a native Win32 control panel without Qt, .NET or another GUI runtime. It shows the active language, requested devices, volume targets, audio settings and configured sound bindings. Buttons provide quick access to reload, stop all sounds, toggle either output mute, open `config.txt`, open the `sounds` folder, show or hide the console, and exit.
+Alpha 3 includes a native Win32 settings editor without Qt, .NET or another GUI runtime. The panel enumerates playback devices and lets the user change the main output, monitor output, both volume targets, language, sample rate and buffer target. `Save and apply` writes a pending configuration, validates it, rebuilds the runtime and only replaces the active config after the new audio setup succeeds. A failure restores the previous working runtime.
 
-Closing the control-panel window only hides it; the soundboard continues running in the tray. Config editing is still file-based in Alpha 2. A full visual binding editor and device selectors are planned for later v2 milestones.
+The configured sound bindings remain visible in the panel. Binding and control-hotkey editing is the next v2 GUI milestone; those values are preserved when core settings are saved. Closing the control-panel window only hides it, so the soundboard continues running in the tray.
 
 ## Tray menu
 

@@ -21,6 +21,15 @@ class Config
 {
 public:
     bool Load(const std::filesystem::path& filePath);
+    bool Save(const std::filesystem::path& filePath) const;
+
+    void SetLanguage(Language language);
+    void SetOutputDevice(std::string deviceName);
+    bool SetOutputVolume(float volume);
+    void SetMonitorDevice(std::string deviceName);
+    bool SetMonitorVolume(float volume);
+    bool SetAudioSampleRate(unsigned int sampleRate);
+    bool SetAudioBufferMilliseconds(unsigned int bufferMilliseconds);
 
     Language GetLanguage() const;
 

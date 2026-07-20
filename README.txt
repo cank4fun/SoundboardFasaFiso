@@ -13,7 +13,8 @@ HIZLI KULLANIM
 1. Ses dosyalarını sounds klasörüne koy.
 2. config.txt içindeki cihazları ve tuşları ayarla.
 3. SoundBoardFasaFiso.exe dosyasını çalıştır; kontrol paneli açılır.
-4. Config değişikliklerinden sonra panelde yenileye bas veya CTRL+SHIFT+F11'e bas.
+4. Temel ses ayarlarını panelden değiştirip Kaydet ve uygula'ya bas.
+5. Gelişmiş tuş atamalarını config.txt üzerinden düzenleyip yenileye bas.
 
 KLASÖR YAPISI
 -------------
@@ -66,10 +67,11 @@ CTRL+SHIFT+F12  : Programı kapat
 
 KONTROL PANELİ
 ---------------
-Panel aktif cihazları, ses ayarlarını ve tuş atamalarını gösterir. Buradan
-config'i yenileyebilir, sesleri durdurabilir, çıkışları susturabilir,
-config dosyasını veya sounds klasörünü açabilirsin. Pencerenin X düğmesi
-programı kapatmaz; paneli tray'e gizler.
+Panelden ana/monitör cihazı, iki ses seviyesi, dil, örnekleme hızı ve
+buffer ayarlanabilir. Kaydet ve uygula yeni ayarları önce doğrular; ses
+sistemi açılamazsa önceki çalışan ayarlar geri yüklenir. Tuş atamaları
+şimdilik config.txt üzerinden düzenlenir. Pencerenin X düğmesi programı
+kapatmaz; paneli tray'e gizler.
 
 TRAY MENÜSÜ
 -----------

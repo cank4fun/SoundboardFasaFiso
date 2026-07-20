@@ -10,10 +10,12 @@
 #include <cctype>
 #include <cstdint>
 #include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -1520,6 +1522,220 @@ bool Config::Load(const std::filesystem::path& filePath)
         return false;
     }
 
+    return true;
+}
+
+
+bool Config::Save(const std::filesystem::path& filePath) const
+{
+    if (filePath.empty())
+    {
+        return false;
+    }
+
+    std::filesystem::path temporaryPath = filePath;
+    temporaryPath += L".tmp";
+
+    std::filesystem::path backupPath = filePath;
+    backupPath += L".bak";
+
+    std::error_code error;
+    std::filesystem::remove(temporaryPath, error);
+    error.clear();
+
+    std::ofstream file(
+        temporaryPath,
+        std::ios::binary | std::ios::trunc
+    );
+
+    if (!file.is_open())
+    {
+        std::cerr
+            << Localization::Text(
+                "Config geçici dosyası oluşturulamadı: ",
+                "The temporary config file could not be created: "
+            )
+            << PathToUtf8(temporaryPath)
+            << '\n';
+        return false;
+    }
+
+    file
+        << "# SoundBoardFasaFiso configuration\n"
+        << "# This file can be edited manually or from the control panel.\n\n"
+        << "# DİL / LANGUAGE\n"
+        << "language=" << Localization::LanguageCode(language_) << "\n\n"
+        << "# SES ÇIKIŞLARI / AUDIO OUTPUTS\n"
+        << "output=" << outputDevice_ << '\n'
+        << std::fixed << std::setprecision(2)
+        << "output_volume=" << outputVolume_ << '\n'
+        << "monitor=" << monitorDevice_ << '\n'
+        << "monitor_volume=" << monitorVolume_ << "\n\n"
+        << "# AUDIO GECİKME AYARLARI / AUDIO LATENCY SETTINGS\n"
+        << "audio_sample_rate=" << audioSampleRate_ << '\n'
+        << "audio_buffer_ms=" << audioBufferMilliseconds_ << "\n\n"
+        << "# KONTROLLER / CONTROLS\n"
+        << "stop=" << stopKeyName_ << '\n'
+        << "output_mute=" << outputMuteKeyName_ << '\n'
+        << "monitor_mute=" << monitorMuteKeyName_ << '\n'
+        << "reload=" << reloadKeyName_ << '\n'
+        << "exit=" << exitKeyName_ << "\n\n"
+        << "# TUŞ ATAMALARI / SOUND BINDINGS\n";
+
+    for (const SoundBinding& binding : bindings_)
+    {
+        file
+            << binding.keyName
+            << '='
+            << PathToUtf8(binding.soundFile)
+            << "|volume="
+            << std::fixed
+            << std::setprecision(2)
+            << binding.volume
+            << "|mode="
+            << PlaybackModeName(binding.mode)
+            << '\n';
+    }
+
+    file.flush();
+
+    if (!file.good())
+    {
+        file.close();
+        std::filesystem::remove(temporaryPath, error);
+
+        std::cerr
+            << Localization::Text(
+                "Config geçici dosyasına yazılamadı: ",
+                "The temporary config file could not be written: "
+            )
+            << PathToUtf8(temporaryPath)
+            << '\n';
+        return false;
+    }
+
+    file.close();
+
+    const bool destinationExists =
+        std::filesystem::exists(filePath, error) && !error;
+
+    error.clear();
+    std::filesystem::remove(backupPath, error);
+    error.clear();
+
+    if (destinationExists)
+    {
+        std::filesystem::rename(filePath, backupPath, error);
+
+        if (error)
+        {
+            std::filesystem::remove(temporaryPath, error);
+            std::cerr
+                << Localization::Text(
+                    "Mevcut config yedeklenemedi. Dosya başka bir programda açık olabilir: ",
+                    "The current config could not be backed up. The file may be open in another program: "
+                )
+                << PathToUtf8(filePath)
+                << '\n';
+            return false;
+        }
+    }
+
+    error.clear();
+    std::filesystem::rename(temporaryPath, filePath, error);
+
+    if (error)
+    {
+        const std::error_code renameError = error;
+
+        if (destinationExists)
+        {
+            error.clear();
+            std::filesystem::rename(backupPath, filePath, error);
+        }
+
+        error.clear();
+        std::filesystem::remove(temporaryPath, error);
+
+        std::cerr
+            << Localization::Text(
+                "Yeni config dosyası etkinleştirilemedi. Hata kodu: ",
+                "The new config file could not be activated. Error code: "
+            )
+            << renameError.value()
+            << '\n';
+        return false;
+    }
+
+    if (destinationExists)
+    {
+        error.clear();
+        std::filesystem::remove(backupPath, error);
+    }
+
+    return true;
+}
+
+void Config::SetLanguage(const Language language)
+{
+    language_ = language;
+}
+
+void Config::SetOutputDevice(std::string deviceName)
+{
+    outputDevice_ = std::move(deviceName);
+}
+
+bool Config::SetOutputVolume(const float volume)
+{
+    if (volume < 0.0f || volume > 1.0f)
+    {
+        return false;
+    }
+
+    outputVolume_ = volume;
+    return true;
+}
+
+void Config::SetMonitorDevice(std::string deviceName)
+{
+    monitorDevice_ = std::move(deviceName);
+}
+
+bool Config::SetMonitorVolume(const float volume)
+{
+    if (volume < 0.0f || volume > 1.0f)
+    {
+        return false;
+    }
+
+    monitorVolume_ = volume;
+    return true;
+}
+
+bool Config::SetAudioSampleRate(const unsigned int sampleRate)
+{
+    if (sampleRate != 0 &&
+        (sampleRate < 8000 || sampleRate > 192000))
+    {
+        return false;
+    }
+
+    audioSampleRate_ = sampleRate;
+    return true;
+}
+
+bool Config::SetAudioBufferMilliseconds(
+    const unsigned int bufferMilliseconds
+)
+{
+    if (bufferMilliseconds != 0 &&
+        (bufferMilliseconds < 2 || bufferMilliseconds > 100))
+    {
+        return false;
+    }
+
+    audioBufferMilliseconds_ = bufferMilliseconds;
     return true;
 }
 

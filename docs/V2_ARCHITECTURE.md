@@ -46,14 +46,19 @@ A first-party virtual microphone driver can be added later without rewriting the
 - Sound-binding overview and command dispatch to the existing runtime
 - Tray-first lifecycle where closing the panel keeps the soundboard running
 
-### Alpha 3 — visual configuration and profiles
+### Alpha 3 — core settings editor
 
-- Sound list and hotkey editor
-- Device enumeration and selectors
-- Save, validate and reload profiles from the GUI
-- Structured in-application diagnostics
+- Device enumeration and main/monitor selectors
+- Volume, language, sample-rate and buffer controls
+- Pending-config validation, atomic save and runtime rollback
 
-### Alpha 4 — microphone mixer
+### Alpha 4 — sound and hotkey editor
+
+- Add, edit and remove sound bindings
+- Hotkey capture and conflict validation
+- File picker and optional copy into the `sounds` folder
+
+### Alpha 5 — microphone mixer
 
 - Physical microphone capture
 - Soundboard + microphone gain and mute controls

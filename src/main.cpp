@@ -24,12 +24,14 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <utility>
 #include <vector>
 
 namespace
 {
     constexpr int FirstSoundHotkeyId = 100;
+    constexpr int ApplySettingsCommandId = 992;
     constexpr int OpenControlPanelCommandId = 993;
     constexpr int ToggleConsoleCommandId = 994;
     constexpr int OutputMuteHotkeyId = 995;
@@ -477,6 +479,9 @@ int main()
     const std::filesystem::path configPath =
         *programFolder / "config.txt";
 
+    std::filesystem::path pendingConfigPath = configPath;
+    pendingConfigPath += L".pending";
+
     Config config;
 
     if (!config.Load(configPath))
@@ -553,6 +558,7 @@ int main()
     ControlWindow controlWindow;
 
     const ControlWindowCommandIds controlWindowCommandIds{
+        .applySettings = ApplySettingsCommandId,
         .stop = StopHotkeyId,
         .outputMute = OutputMuteHotkeyId,
         .monitorMute = MonitorMuteHotkeyId,
@@ -565,6 +571,7 @@ int main()
         config,
         configPath,
         soundsFolder,
+        Audio::EnumeratePlaybackDevices(),
         controlWindowCommandIds
     ))
     {
@@ -719,6 +726,142 @@ int main()
                 );
             }
 
+            continue;
+        }
+
+        if (hotkeyId == ApplySettingsCommandId)
+        {
+            std::cout << Localization::Text(
+                "\nGUI ayarları doğrulanıyor ve uygulanıyor...\n",
+                "\nValidating and applying GUI settings...\n"
+            );
+
+            const Language oldLanguage = config.GetLanguage();
+            const Config oldConfig = config;
+            Config newConfig;
+
+            if (!newConfig.Load(pendingConfigPath))
+            {
+                Localization::SetLanguage(oldLanguage);
+
+                std::error_code removeError;
+                std::filesystem::remove(
+                    pendingConfigPath,
+                    removeError
+                );
+
+                std::cerr << Localization::Text(
+                    "GUI ayarları geçersiz. Önceki ayarlar korunuyor.\n",
+                    "The GUI settings are invalid. Previous settings are being kept.\n"
+                );
+
+                controlWindow.UpdateConfig(config);
+                controlWindow.SetStatus(Localization::Text(
+                    L"Yeni ayarlar geçersiz; önceki ayarlar korunuyor.",
+                    L"New settings are invalid; previous settings kept."
+                ));
+                continue;
+            }
+
+            ClearRuntime(audio, hotkeys, activeBindings);
+
+            const bool runtimeStarted = BuildRuntime(
+                newConfig,
+                soundsFolder,
+                audio,
+                hotkeys,
+                activeBindings,
+                true
+            );
+
+            const bool configSaved =
+                runtimeStarted && newConfig.Save(configPath);
+
+            std::error_code removeError;
+            std::filesystem::remove(
+                pendingConfigPath,
+                removeError
+            );
+
+            if (runtimeStarted && configSaved)
+            {
+                config = std::move(newConfig);
+                audioRecoveryWarningShown = false;
+                nextAudioConnectionCheck =
+                    std::chrono::steady_clock::now() +
+                    std::chrono::seconds(1);
+
+                std::cout << Localization::Text(
+                    "GUI ayarları kaydedildi ve uygulandı.\nSoundboard hazır.\n",
+                    "GUI settings were saved and applied.\nSoundboard ready.\n"
+                );
+
+                controlWindow.UpdateConfig(config);
+                controlWindow.SetStatus(Localization::Text(
+                    L"Ayarlar kaydedildi ve uygulandı. Soundboard hazır.",
+                    L"Settings saved and applied. Soundboard ready."
+                ));
+                continue;
+            }
+
+            Localization::SetLanguage(oldLanguage);
+
+            if (runtimeStarted && !configSaved)
+            {
+                std::cerr << Localization::Text(
+                    "Yeni ayarlar çalıştı ancak config dosyasına kaydedilemedi. Önceki ayarlar geri yükleniyor...\n",
+                    "The new settings worked but could not be saved to the config file. Restoring previous settings...\n"
+                );
+            }
+            else
+            {
+                std::cerr << Localization::Text(
+                    "Yeni ayarlar başlatılamadı. Önceki ayarlar geri yükleniyor...\n",
+                    "The new settings could not be initialized. Restoring previous settings...\n"
+                );
+            }
+
+            ClearRuntime(audio, hotkeys, activeBindings);
+
+            if (!BuildRuntime(
+                oldConfig,
+                soundsFolder,
+                audio,
+                hotkeys,
+                activeBindings
+            ))
+            {
+                std::cerr << Localization::Text(
+                    "Önceki ayarlar geri yüklenemedi. Program kapatılıyor.\n",
+                    "The previous settings could not be restored. The program is shutting down.\n"
+                );
+
+                controlWindow.SetStatus(Localization::Text(
+                    L"Ayarlar geri yüklenemedi; program kapatılıyor.",
+                    L"Settings could not be restored; shutting down."
+                ));
+                running = false;
+                continue;
+            }
+
+            config = oldConfig;
+            audioRecoveryWarningShown = false;
+            nextAudioConnectionCheck =
+                std::chrono::steady_clock::now() +
+                std::chrono::seconds(1);
+
+            controlWindow.UpdateConfig(config);
+            controlWindow.SetStatus(
+                runtimeStarted
+                    ? Localization::Text(
+                        L"Config kaydedilemedi; önceki ayarlar geri yüklendi.",
+                        L"Config could not be saved; previous settings restored."
+                    )
+                    : Localization::Text(
+                        L"Yeni ayarlar uygulanamadı; önceki ayarlar geri yüklendi.",
+                        L"New settings failed; previous settings restored."
+                    )
+            );
             continue;
         }
 

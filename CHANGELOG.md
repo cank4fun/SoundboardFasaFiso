@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0-alpha.3
+
+- Added editable main and monitor device selectors backed by live device enumeration
+- Added GUI volume sliders, language selection, sample-rate and buffer controls
+- Added safe `Save and apply` flow using a pending config and runtime rollback
+- Added atomic config writing with temporary and backup files
+- Added a device refresh command without restarting the application
+- Kept sound bindings and control hotkeys intact while saving core settings
+- Preserved the standalone native Win32 GUI with no external runtime
+
 ## 2.0.0-alpha.2
 
 - Added a native Win32 control panel with no GUI framework dependency

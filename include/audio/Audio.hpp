@@ -46,6 +46,8 @@ public:
     Audio(Audio&&) = delete;
     Audio& operator=(Audio&&) = delete;
 
+    static std::vector<std::string> EnumeratePlaybackDevices();
+
     bool Initialize(
         const std::string& requestedOutputDevice,
         const std::string& requestedMonitorDevice,

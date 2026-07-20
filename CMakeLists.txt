@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(SOUNDBOARD_VERSION "2.0.0-alpha.2")
+set(SOUNDBOARD_VERSION "2.0.0-alpha.3")
 
 project(SoundBoardFasaFiso VERSION 2.0.0 LANGUAGES CXX)
 
@@ -113,6 +113,7 @@ target_link_libraries(
     PRIVATE
         user32
         shell32
+        comctl32
 )
 
 add_custom_target(
