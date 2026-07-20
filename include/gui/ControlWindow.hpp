@@ -59,6 +59,8 @@ public:
     void Hide();
     bool ToggleVisibility();
     bool IsVisible() const;
+    HWND NativeHandle() const noexcept;
+    HACCEL AcceleratorTable() const noexcept;
 
     void UpdateConfig(const Config& config);
     void SetPlaybackDevices(
@@ -108,6 +110,7 @@ private:
     static constexpr int IdMainTab = 1024;
     static constexpr int IdSettingsTab = 1025;
     static constexpr int IdHotkeysTab = 1026;
+    static constexpr int IdCancelHotkeyCapture = 1027;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -128,6 +131,7 @@ private:
     );
 
     bool CreateControls();
+    bool CreateAccelerators();
     void LayoutControls(int clientWidth, int clientHeight);
     void SetActivePage(ControlPage page);
     void UpdatePageVisibility();
@@ -192,6 +196,7 @@ private:
 
     HINSTANCE instance_ = nullptr;
     HWND window_ = nullptr;
+    HACCEL acceleratorTable_ = nullptr;
     DWORD mainThreadId_ = 0;
     ControlWindowCommandIds commandIds_{};
     Audio* audio_ = nullptr;

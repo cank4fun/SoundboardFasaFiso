@@ -790,7 +790,11 @@ int WINAPI wWinMain(
 
     while (running)
     {
-        const int hotkeyId = hotkeys.WaitForPress(250);
+        const int hotkeyId = hotkeys.WaitForPress(
+            250,
+            controlWindow.NativeHandle(),
+            controlWindow.AcceleratorTable()
+        );
 
         if (hotkeyId < 0)
         {

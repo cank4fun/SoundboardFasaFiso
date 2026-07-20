@@ -254,7 +254,7 @@ bool ControlWindow::Initialize(
         return false;
     }
 
-    if (!CreateControls())
+    if (!CreateControls() || !CreateAccelerators())
     {
         Shutdown();
         return false;
@@ -300,6 +300,12 @@ void ControlWindow::Shutdown()
     }
 
     updateCheckRunning_.store(false);
+
+    if (acceleratorTable_ != nullptr)
+    {
+        DestroyAcceleratorTable(acceleratorTable_);
+        acceleratorTable_ = nullptr;
+    }
 
     if (window_ != nullptr)
     {
@@ -484,6 +490,16 @@ bool ControlWindow::IsVisible() const
 {
     return window_ != nullptr &&
         IsWindowVisible(window_) != FALSE;
+}
+
+HWND ControlWindow::NativeHandle() const noexcept
+{
+    return window_;
+}
+
+HACCEL ControlWindow::AcceleratorTable() const noexcept
+{
+    return acceleratorTable_;
 }
 
 void ControlWindow::UpdateConfig(const Config& config)
@@ -900,7 +916,9 @@ LRESULT ControlWindow::HandleWindowMessage(
                 return 0;
             }
 
-            if (notificationCode != BN_CLICKED)
+            constexpr int AcceleratorNotificationCode = 1;
+            if (notificationCode != BN_CLICKED &&
+                notificationCode != AcceleratorNotificationCode)
             {
                 break;
             }
@@ -1031,6 +1049,18 @@ LRESULT ControlWindow::HandleWindowMessage(
 
                 case IdExit:
                     PostApplicationCommand(commandIds_.exit);
+                    return 0;
+
+                case IdCancelHotkeyCapture:
+                    if (capturingBindingHotkey_)
+                    {
+                        capturingBindingHotkey_ = false;
+                        RefreshLocalizedText();
+                        SetStatus(Localization::Text(
+                            L"Hotkey yakalama iptal edildi.",
+                            L"Hotkey capture cancelled."
+                        ));
+                    }
                     return 0;
 
                 default:
@@ -1509,6 +1539,30 @@ bool ControlWindow::CreateControls()
             return control != nullptr;
         }
     );
+}
+
+bool ControlWindow::CreateAccelerators()
+{
+    if (acceleratorTable_ != nullptr)
+    {
+        DestroyAcceleratorTable(acceleratorTable_);
+        acceleratorTable_ = nullptr;
+    }
+
+    const ACCEL accelerators[]{
+        {FCONTROL | FVIRTKEY, static_cast<WORD>('1'), IdMainTab},
+        {FCONTROL | FVIRTKEY, static_cast<WORD>('2'), IdSettingsTab},
+        {FCONTROL | FVIRTKEY, static_cast<WORD>('3'), IdHotkeysTab},
+        {FCONTROL | FVIRTKEY, static_cast<WORD>('S'), IdApplySettings},
+        {FVIRTKEY, VK_ESCAPE, IdCancelHotkeyCapture}
+    };
+
+    acceleratorTable_ = CreateAcceleratorTableW(
+        const_cast<ACCEL*>(accelerators),
+        static_cast<int>(std::size(accelerators))
+    );
+
+    return acceleratorTable_ != nullptr;
 }
 
 void ControlWindow::LayoutControls(
@@ -3277,8 +3331,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         subtitleLabel_,
         Localization::Text(
-            L"Ses atamaları, ayarlar ve hotkey'ler tek pencerede.",
-            L"Sound bindings, settings, and hotkeys in one window."
+            L"Tek pencere • Ctrl+1/2/3: sekmeler • Ctrl+S: kaydet",
+            L"Single window • Ctrl+1/2/3: tabs • Ctrl+S: save"
         )
     );
     SetControlText(

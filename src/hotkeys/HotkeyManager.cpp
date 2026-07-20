@@ -57,7 +57,9 @@ bool HotkeyManager::Register(
 }
 
 int HotkeyManager::WaitForPress(
-    const unsigned int timeoutMilliseconds
+    const unsigned int timeoutMilliseconds,
+    const HWND dialogWindow,
+    const HACCEL acceleratorTable
 )
 {
     const DWORD waitResult = MsgWaitForMultipleObjectsEx(
@@ -104,6 +106,24 @@ int HotkeyManager::WaitForPress(
         if (message.message == WM_HOTKEY)
         {
             return static_cast<int>(message.wParam);
+        }
+
+        if (dialogWindow != nullptr &&
+            acceleratorTable != nullptr &&
+            TranslateAcceleratorW(
+                dialogWindow,
+                acceleratorTable,
+                &message
+            ) != 0)
+        {
+            continue;
+        }
+
+        if (dialogWindow != nullptr &&
+            IsWindow(dialogWindow) != FALSE &&
+            IsDialogMessageW(dialogWindow, &message) != FALSE)
+        {
+            continue;
         }
 
         TranslateMessage(&message);
