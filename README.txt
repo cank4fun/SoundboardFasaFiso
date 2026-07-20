@@ -8,6 +8,14 @@ DİL / LANGUAGE
 language=tr : Türkçe
 language=en : English
 
+TEMA / THEME
+------------
+theme=dark  : Koyu tema
+theme=light : Açık tema
+
+Tema panelin sağ üstündeki switch ile anında önizlenir. Kalıcı olması için
+Kaydet ve uygula düğmesine basılır.
+
 HIZLI KULLANIM
 --------------
 1. Ses dosyalarını sounds klasörüne koy.
@@ -90,7 +98,8 @@ CTRL+SHIFT+F12  : Programı kapat
 
 KONTROL PANELİ
 ---------------
-Panelden ana/monitör/mikrofon cihazı, ses seviyeleri, mikrofon yönlendirmesi,
+Panel modern kart düzeni ve açık/koyu tema desteği kullanır. Panelden
+ana/monitör/mikrofon cihazı, ses seviyeleri, mikrofon yönlendirmesi,
 dil, örnekleme hızı, buffer, Windows başlangıcı, konsol başlangıcı,
 kontrol hotkey'leri ve ses atamaları düzenlenebilir. Ses ataması eklerken
 WAV/MP3/FLAC seçilebilir; dışarıdaki dosya isteğe bağlı olarak sounds

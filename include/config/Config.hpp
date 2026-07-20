@@ -7,6 +7,12 @@
 #include <string>
 #include <vector>
 
+enum class AppTheme
+{
+    Light,
+    Dark
+};
+
 struct SoundBinding
 {
     std::string keyName;
@@ -24,6 +30,7 @@ public:
     bool Save(const std::filesystem::path& filePath) const;
 
     void SetLanguage(Language language);
+    void SetTheme(AppTheme theme);
     void SetOutputDevice(std::string deviceName);
     bool SetOutputVolume(float volume);
     void SetMonitorDevice(std::string deviceName);
@@ -52,6 +59,7 @@ public:
     bool SetBindings(std::vector<SoundBinding> bindings);
 
     Language GetLanguage() const;
+    AppTheme GetTheme() const;
 
     const std::string& GetOutputDevice() const;
     float GetOutputVolume() const;
@@ -95,6 +103,7 @@ public:
 
 private:
     Language language_ = Language::Turkish;
+    AppTheme theme_ = AppTheme::Dark;
 
     std::string outputDevice_ = "default";
     float outputVolume_ = 1.0f;

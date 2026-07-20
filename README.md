@@ -15,7 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 development status:** Alpha 6 adds persistent session logs, optional per-user Windows startup registration, and console-free startup while preserving the native microphone mixer. It is still a development build and is not a stable replacement for v1.0.0 yet.
+**v2 development status:** Alpha 7 introduces the modern native UI foundation with persistent light and dark themes, custom cards, flat controls, and Windows 11-aware window chrome. It is still a development build and is not a stable replacement for v1.0.0 yet.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
@@ -37,7 +37,7 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 - Automatic recovery after audio-device disconnects
 - WASAPI with configurable sample rate and buffer target
 - Turkish and English runtime messages selected from `config.txt`
-- Native Win32 control panel with device selectors, hotkey capture and sound-binding editing
+- Modern native Win32 control panel with persistent light/dark themes, device selectors, hotkey capture and sound-binding editing
 - UTF-8 console and Unicode file-path support
 - Tray menu and single-instance protection
 - Portable Release ZIP generation with CMake
@@ -62,8 +62,9 @@ SoundBoardFasaFiso/
 ## Configuration
 
 ```ini
-# LANGUAGE: tr or en
+# LANGUAGE AND APPEARANCE
 language=tr
+theme=dark
 
 # AUDIO OUTPUTS
 output=CABLE Input
@@ -101,7 +102,7 @@ F3=example.flac|volume=0.60|mode=loop
 F4=example.wav|volume=1.00|mode=overlap
 ```
 
-`language=tr` selects Turkish messages and `language=en` selects English messages. The setting is applied during startup and live reload.
+`language=tr` selects Turkish messages and `language=en` selects English messages. `theme=dark` and `theme=light` select the persistent interface theme. Both settings are applied during startup and live reload.
 
 `default` selects the current Windows default playback or capture device. `none` disables the monitor output. Device names also support unique partial matches.
 
@@ -140,7 +141,7 @@ Windows rejects a hotkey already owned by another application. SoundBoardFasaFis
 
 ## Control panel
 
-Alpha 6 uses a native Win32 settings editor without Qt, .NET or another GUI runtime. The panel enumerates playback and capture devices and lets the user configure main output, monitor output, microphone input, all three gain targets, microphone routes, language, sample rate, buffer target, Windows startup, console startup, control hotkeys and sound bindings.
+Alpha 7 uses a modernized native Win32 settings editor without Qt, .NET or another GUI runtime. The panel provides custom light/dark rendering, enumerates playback and capture devices, and lets the user configure main output, monitor output, microphone input, all three gain targets, microphone routes, language, sample rate, buffer target, Windows startup, console startup, control hotkeys and sound bindings.
 
 `Save and apply` writes a pending configuration, validates it, rebuilds the complete playback/capture runtime and only replaces the active config after every device and hotkey succeeds. A failure restores the previous working runtime. Closing the control-panel window only hides it, so the soundboard continues running in the tray.
 

@@ -156,6 +156,11 @@ namespace
             return "language=tr";
         }
 
+        if (settingName == "THEME")
+        {
+            return "theme=dark";
+        }
+
         if (settingName == "OUTPUT")
         {
             return "output=CABLE Input";
@@ -906,6 +911,7 @@ namespace
     bool IsKnownSetting(const std::string& settingName)
     {
         return settingName == "LANGUAGE" ||
+            settingName == "THEME" ||
             settingName == "OUTPUT" ||
             settingName == "OUTPUT_VOLUME" ||
             settingName == "MONITOR" ||
@@ -931,6 +937,7 @@ bool Config::Load(const std::filesystem::path& filePath)
 {
     language_ = Language::Turkish;
     Localization::SetLanguage(language_);
+    theme_ = AppTheme::Dark;
 
     outputDevice_ = "default";
     outputVolume_ = 1.0f;
@@ -1186,6 +1193,35 @@ bool Config::Load(const std::filesystem::path& filePath)
 
             language_ = *language;
             Localization::SetLanguage(language_);
+            continue;
+        }
+
+        if (settingName == "THEME")
+        {
+            const std::string normalizedTheme =
+                ToUpper(parsedLine.rightSide);
+
+            if (normalizedTheme == "LIGHT")
+            {
+                theme_ = AppTheme::Light;
+                continue;
+            }
+
+            if (normalizedTheme == "DARK")
+            {
+                theme_ = AppTheme::Dark;
+                continue;
+            }
+
+            reportError(
+                parsedLine.lineNumber,
+                parsedLine.originalLine,
+                std::string{Localization::Text(
+                    "theme değeri 'light' veya 'dark' olmalı. Girilen değer: ",
+                    "theme must be 'light' or 'dark'. Entered value: "
+                )} + parsedLine.rightSide,
+                SettingExample(settingName)
+            );
             continue;
         }
 
@@ -1799,8 +1835,10 @@ bool Config::Save(const std::filesystem::path& filePath) const
     file
         << "# SoundBoardFasaFiso configuration\n"
         << "# This file can be edited manually or from the control panel.\n\n"
-        << "# DİL / LANGUAGE\n"
-        << "language=" << Localization::LanguageCode(language_) << "\n\n"
+        << "# DİL VE GÖRÜNÜM / LANGUAGE AND APPEARANCE\n"
+        << "language=" << Localization::LanguageCode(language_) << '\n'
+        << "theme="
+        << (theme_ == AppTheme::Dark ? "dark" : "light") << "\n\n"
         << "# SES ÇIKIŞLARI / AUDIO OUTPUTS\n"
         << "output=" << outputDevice_ << '\n'
         << std::fixed << std::setprecision(2)
@@ -1929,6 +1967,11 @@ bool Config::Save(const std::filesystem::path& filePath) const
 void Config::SetLanguage(const Language language)
 {
     language_ = language;
+}
+
+void Config::SetTheme(const AppTheme theme)
+{
+    theme_ = theme;
 }
 
 void Config::SetOutputDevice(std::string deviceName)
@@ -2166,6 +2209,11 @@ bool Config::SetBindings(std::vector<SoundBinding> bindings)
 Language Config::GetLanguage() const
 {
     return language_;
+}
+
+AppTheme Config::GetTheme() const
+{
+    return theme_;
 }
 
 const std::string& Config::GetOutputDevice() const

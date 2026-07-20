@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.0.0-alpha.7
+
+- Added persistent `theme=light` and `theme=dark` configuration
+- Added an instant light/dark theme switch to the control-panel header
+- Replaced legacy group boxes and push buttons with custom-rendered cards and flat controls
+- Added modern typography, spacing, rounded surfaces, accent actions and danger actions
+- Added dark title-bar and rounded-window integration on supported Windows versions
+- Added theme-aware custom volume sliders so light mode no longer renders black tracks
+- Compacted and centered the responsive layout to prevent controls overlapping when maximized
+- Preserved the standalone native Win32 architecture with no GUI runtime dependency
+- Kept the final visual-polish pass for the beta/release stage
+
 ## 2.0.0-alpha.6
 
 - Added persistent session logging with automatic `latest.log` and `previous.log` rotation

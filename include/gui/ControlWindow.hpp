@@ -62,8 +62,8 @@ public:
     void SetStatus(const std::wstring& status);
 
 private:
-    static constexpr int MinimumClientWidth = 1020;
-    static constexpr int MinimumClientHeight = 940;
+    static constexpr int MinimumClientWidth = 960;
+    static constexpr int MinimumClientHeight = 850;
 
     static constexpr int IdApplySettings = 1000;
     static constexpr int IdReload = 1001;
@@ -87,6 +87,7 @@ private:
     static constexpr int IdClearBinding = 1019;
     static constexpr int IdMicrophoneVolumeSlider = 1020;
     static constexpr int IdOpenLogs = 1021;
+    static constexpr int IdThemeToggle = 1022;
 
     static LRESULT CALLBACK WindowProcedure(
         HWND window,
@@ -105,6 +106,21 @@ private:
     bool CreateControls();
     void LayoutControls(int clientWidth, int clientHeight);
     void RefreshLocalizedText();
+    void ApplyTheme();
+    void ApplyFonts();
+    void RecreateThemeResources();
+    void ReleaseThemeResources();
+    void UpdateWindowChrome();
+    void DrawOwnerDrawControl(const DRAWITEMSTRUCT& item);
+    void DrawCard(const DRAWITEMSTRUCT& item);
+    void DrawModernButton(const DRAWITEMSTRUCT& item);
+    void DrawModernSlider(HWND slider, HDC deviceContext) const;
+    void PaintWindowBackground();
+    bool IsCardControl(HWND control) const;
+    bool IsSliderControl(HWND control) const;
+    bool IsPrimaryButton(HWND control) const;
+    bool IsDangerButton(HWND control) const;
+    HBRUSH StaticBrushFor(HWND control) const;
     void PopulateBindings();
     void PopulateEditorControls();
     void PopulateDeviceCombos();
@@ -159,6 +175,8 @@ private:
     std::vector<SoundBinding> pendingBindings_;
 
     HWND headerLabel_ = nullptr;
+    HWND subtitleLabel_ = nullptr;
+    HWND themeToggleButton_ = nullptr;
     HWND statusCaption_ = nullptr;
     HWND statusValue_ = nullptr;
 
@@ -232,6 +250,28 @@ private:
     HWND openLogsButton_ = nullptr;
     HWND consoleButton_ = nullptr;
     HWND exitButton_ = nullptr;
+
+    AppTheme activeTheme_ = AppTheme::Dark;
+
+    HFONT headerFont_ = nullptr;
+    HFONT subtitleFont_ = nullptr;
+    HFONT bodyFont_ = nullptr;
+    HFONT sectionFont_ = nullptr;
+    HFONT buttonFont_ = nullptr;
+
+    HBRUSH backgroundBrush_ = nullptr;
+    HBRUSH cardBrush_ = nullptr;
+    HBRUSH inputBrush_ = nullptr;
+
+    COLORREF backgroundColor_ = RGB(15, 17, 23);
+    COLORREF cardColor_ = RGB(24, 28, 36);
+    COLORREF inputColor_ = RGB(17, 21, 29);
+    COLORREF textColor_ = RGB(244, 246, 250);
+    COLORREF mutedTextColor_ = RGB(154, 164, 178);
+    COLORREF borderColor_ = RGB(42, 49, 64);
+    COLORREF accentColor_ = RGB(124, 92, 255);
+    COLORREF accentHoverColor_ = RGB(139, 108, 255);
+    COLORREF dangerColor_ = RGB(224, 82, 82);
 
     int selectedBindingIndex_ = -1;
     bool capturingBindingHotkey_ = false;

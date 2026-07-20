@@ -73,6 +73,14 @@ A first-party virtual microphone driver can be added later without rewriting the
 - Console-free startup with the console still available on demand
 - GUI access to diagnostic files
 
+### Alpha 7 — modern native UI foundation
+
+- Persistent `light` and `dark` interface themes
+- Custom-rendered cards, buttons, typography and status surfaces
+- Windows dark title-bar and rounded-corner integration where supported
+- Theme preview in the panel with persistence through the safe config transaction
+- Final iconography, spacing and accessibility polish deferred to beta
+
 ### Beta — packaging and migration
 
 - v1 config migration and final config cleanup

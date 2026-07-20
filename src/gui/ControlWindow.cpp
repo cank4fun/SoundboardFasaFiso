@@ -10,8 +10,11 @@
 #include <commctrl.h>
 #include <commdlg.h>
 #include <shellapi.h>
+#include <dwmapi.h>
+#include <uxtheme.h>
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cstddef>
 #include <cwctype>
@@ -26,15 +29,94 @@ namespace
     constexpr wchar_t ControlWindowClassName[] =
         L"SoundBoardFasaFiso.ControlWindow";
 
-    constexpr int BaseMargin = 16;
-    constexpr int HeaderHeight = 28;
-    constexpr int StatusHeight = 24;
-    constexpr int SettingsGroupHeight = 356;
-    constexpr int ControlHotkeysGroupHeight = 94;
-    constexpr int BindingEditorWidth = 372;
+    constexpr int BaseMargin = 14;
+    constexpr int HeaderHeight = 32;
+    constexpr int SubtitleHeight = 18;
+    constexpr int StatusHeight = 38;
+    constexpr int SettingsGroupHeight = 300;
+    constexpr int ControlHotkeysGroupHeight = 88;
+    constexpr int BindingEditorWidth = 360;
     constexpr int ButtonHeight = 34;
     constexpr int ButtonGap = 8;
-    constexpr int RowHeight = 30;
+    constexpr int RowHeight = 28;
+    constexpr int ThemeToggleWidth = 148;
+    constexpr int CardRadius = 12;
+    constexpr int MaximumContentWidth = 1260;
+
+    COLORREF BlendColor(
+        const COLORREF first,
+        const COLORREF second,
+        const int secondWeight
+    )
+    {
+        const int firstWeight = 100 - secondWeight;
+        return RGB(
+            (GetRValue(first) * firstWeight +
+                GetRValue(second) * secondWeight) / 100,
+            (GetGValue(first) * firstWeight +
+                GetGValue(second) * secondWeight) / 100,
+            (GetBValue(first) * firstWeight +
+                GetBValue(second) * secondWeight) / 100
+        );
+    }
+
+    void FillRoundedRectangle(
+        const HDC deviceContext,
+        const RECT& rectangle,
+        const COLORREF color,
+        const int radius
+    )
+    {
+        HBRUSH brush = CreateSolidBrush(color);
+        HPEN pen = CreatePen(PS_NULL, 0, color);
+        const HGDIOBJ oldBrush = SelectObject(deviceContext, brush);
+        const HGDIOBJ oldPen = SelectObject(deviceContext, pen);
+
+        RoundRect(
+            deviceContext,
+            rectangle.left,
+            rectangle.top,
+            rectangle.right,
+            rectangle.bottom,
+            radius,
+            radius
+        );
+
+        SelectObject(deviceContext, oldPen);
+        SelectObject(deviceContext, oldBrush);
+        DeleteObject(pen);
+        DeleteObject(brush);
+    }
+
+    void DrawRoundedBorder(
+        const HDC deviceContext,
+        const RECT& rectangle,
+        const COLORREF color,
+        const int radius,
+        const int width = 1
+    )
+    {
+        HPEN pen = CreatePen(PS_SOLID, width, color);
+        const HGDIOBJ oldPen = SelectObject(deviceContext, pen);
+        const HGDIOBJ oldBrush = SelectObject(
+            deviceContext,
+            GetStockObject(HOLLOW_BRUSH)
+        );
+
+        RoundRect(
+            deviceContext,
+            rectangle.left,
+            rectangle.top,
+            rectangle.right,
+            rectangle.bottom,
+            radius,
+            radius
+        );
+
+        SelectObject(deviceContext, oldBrush);
+        SelectObject(deviceContext, oldPen);
+        DeleteObject(pen);
+    }
 
     std::wstring BuildVolumeText(const float volume)
     {
@@ -69,6 +151,7 @@ bool ControlWindow::Initialize(
     soundsFolder_ = soundsFolder;
     logsFolder_ = configPath.parent_path() / L"logs";
     currentConfig_ = config;
+    activeTheme_ = config.GetTheme();
     playbackDevices_ = playbackDevices;
     captureDevices_ = captureDevices;
 
@@ -76,6 +159,8 @@ bool ControlWindow::Initialize(
     {
         return false;
     }
+
+    RecreateThemeResources();
 
     INITCOMMONCONTROLSEX commonControls{};
     commonControls.dwSize = sizeof(commonControls);
@@ -107,7 +192,7 @@ bool ControlWindow::Initialize(
         LR_DEFAULTCOLOR
     ));
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    windowClass.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+    windowClass.hbrBackground = nullptr;
     windowClass.lpszClassName = ControlWindowClassName;
 
     const ATOM classAtom = RegisterClassExW(&windowClass);
@@ -197,6 +282,8 @@ void ControlWindow::Shutdown()
         UnregisterClassW(ControlWindowClassName, instance_);
     }
 
+    ReleaseThemeResources();
+
     classRegistered_ = false;
     instance_ = nullptr;
     mainThreadId_ = 0;
@@ -212,6 +299,8 @@ void ControlWindow::Shutdown()
     capturingBindingHotkey_ = false;
 
     headerLabel_ = nullptr;
+    subtitleLabel_ = nullptr;
+    themeToggleButton_ = nullptr;
     statusCaption_ = nullptr;
     statusValue_ = nullptr;
     settingsGroup_ = nullptr;
@@ -335,10 +424,14 @@ void ControlWindow::UpdateConfig(const Config& config)
     }
 
     currentConfig_ = config;
+    activeTheme_ = config.GetTheme();
     pendingBindings_ = config.GetBindings();
     selectedBindingIndex_ = -1;
     capturingBindingHotkey_ = false;
 
+    RecreateThemeResources();
+    ApplyFonts();
+    ApplyTheme();
     RefreshLocalizedText();
     PopulateDeviceCombos();
     PopulateNumericCombos();
@@ -377,6 +470,17 @@ void ControlWindow::SetCaptureDevices(
 void ControlWindow::SetStatus(const std::wstring& status)
 {
     SetControlText(statusValue_, status);
+
+    if (window_ != nullptr)
+    {
+        RedrawWindow(
+            window_,
+            nullptr,
+            nullptr,
+            RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN |
+                RDW_UPDATENOW
+        );
+    }
 }
 
 LRESULT CALLBACK ControlWindow::WindowProcedure(
@@ -428,6 +532,74 @@ LRESULT ControlWindow::HandleWindowMessage(
 {
     switch (message)
     {
+        case WM_ERASEBKGND:
+            return 1;
+
+        case WM_PAINT:
+            PaintWindowBackground();
+            return 0;
+
+        case WM_DRAWITEM:
+            if (lParam != 0)
+            {
+                DrawOwnerDrawControl(
+                    *reinterpret_cast<const DRAWITEMSTRUCT*>(lParam)
+                );
+                return TRUE;
+            }
+            break;
+
+        case WM_CTLCOLORSTATIC:
+        {
+            const HDC deviceContext = reinterpret_cast<HDC>(wParam);
+            const HWND control = reinterpret_cast<HWND>(lParam);
+            SetTextColor(
+                deviceContext,
+                control == subtitleLabel_ || control == statusCaption_
+                    ? mutedTextColor_
+                    : textColor_
+            );
+            SetBkMode(deviceContext, TRANSPARENT);
+            return reinterpret_cast<LRESULT>(StaticBrushFor(control));
+        }
+
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORLISTBOX:
+        {
+            const HDC deviceContext = reinterpret_cast<HDC>(wParam);
+            SetTextColor(deviceContext, textColor_);
+            SetBkColor(deviceContext, inputColor_);
+            return reinterpret_cast<LRESULT>(inputBrush_);
+        }
+
+        case WM_CTLCOLORBTN:
+        {
+            const HDC deviceContext = reinterpret_cast<HDC>(wParam);
+            SetTextColor(deviceContext, textColor_);
+            SetBkColor(deviceContext, cardColor_);
+            SetBkMode(deviceContext, TRANSPARENT);
+            return reinterpret_cast<LRESULT>(cardBrush_);
+        }
+
+        case WM_NOTIFY:
+            if (lParam != 0)
+            {
+                const auto* customDraw =
+                    reinterpret_cast<const NMCUSTOMDRAW*>(lParam);
+
+                if (customDraw->hdr.code == NM_CUSTOMDRAW &&
+                    customDraw->dwDrawStage == CDDS_PREPAINT &&
+                    IsSliderControl(customDraw->hdr.hwndFrom))
+                {
+                    DrawModernSlider(
+                        customDraw->hdr.hwndFrom,
+                        customDraw->hdc
+                    );
+                    return CDRF_SKIPDEFAULT;
+                }
+            }
+            break;
+
         case WM_COMMAND:
         {
             const int controlId = LOWORD(wParam);
@@ -450,6 +622,19 @@ LRESULT ControlWindow::HandleWindowMessage(
             {
                 case IdApplySettings:
                     SavePendingSettings();
+                    return 0;
+
+                case IdThemeToggle:
+                    activeTheme_ = activeTheme_ == AppTheme::Dark
+                        ? AppTheme::Light
+                        : AppTheme::Dark;
+                    RecreateThemeResources();
+                    ApplyTheme();
+                    RefreshLocalizedText();
+                    SetStatus(Localization::Text(
+                        L"Tema önizlemesi değiştirildi. Kalıcı olması için Kaydet ve uygula'ya basın.",
+                        L"Theme preview changed. Select Save and apply to keep it."
+                    ));
                     return 0;
 
                 case IdRefreshDevices:
@@ -562,20 +747,36 @@ LRESULT ControlWindow::HandleWindowMessage(
             break;
 
         case WM_HSCROLL:
-            if (reinterpret_cast<HWND>(lParam) == outputVolumeSlider_ ||
-                reinterpret_cast<HWND>(lParam) == monitorVolumeSlider_ ||
-                reinterpret_cast<HWND>(lParam) == microphoneVolumeSlider_)
+        {
+            const HWND slider = reinterpret_cast<HWND>(lParam);
+
+            if (slider == outputVolumeSlider_ ||
+                slider == monitorVolumeSlider_ ||
+                slider == microphoneVolumeSlider_)
             {
                 UpdateVolumeLabels();
+                RedrawWindow(
+                    slider,
+                    nullptr,
+                    nullptr,
+                    RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW
+                );
                 return 0;
             }
 
-            if (reinterpret_cast<HWND>(lParam) == bindingVolumeSlider_)
+            if (slider == bindingVolumeSlider_)
             {
                 UpdateBindingVolumeLabel();
+                RedrawWindow(
+                    slider,
+                    nullptr,
+                    nullptr,
+                    RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW
+                );
                 return 0;
             }
             break;
+        }
 
         case WM_SIZE:
             LayoutControls(
@@ -666,11 +867,23 @@ bool ControlWindow::CreateControls()
         SS_LEFT,
         0
     );
+    subtitleLabel_ = createControl(
+        L"STATIC",
+        L"",
+        SS_LEFT,
+        0
+    );
+    themeToggleButton_ = createControl(
+        L"BUTTON",
+        L"",
+        BS_OWNERDRAW | WS_TABSTOP,
+        IdThemeToggle
+    );
 
     statusCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     statusValue_ = createControl(L"STATIC", L"", SS_LEFT, 0);
 
-    settingsGroup_ = createControl(L"BUTTON", L"", BS_GROUPBOX, 0);
+    settingsGroup_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
     outputCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     outputCombo_ = createControl(
         L"COMBOBOX",
@@ -779,13 +992,13 @@ bool ControlWindow::CreateControls()
     refreshDevicesButton_ = createControl(
         L"BUTTON",
         L"",
-        BS_PUSHBUTTON | WS_TABSTOP,
+        BS_OWNERDRAW | WS_TABSTOP,
         IdRefreshDevices
     );
     applySettingsButton_ = createControl(
         L"BUTTON",
         L"",
-        BS_DEFPUSHBUTTON | WS_TABSTOP,
+        BS_OWNERDRAW | WS_TABSTOP,
         IdApplySettings
     );
 
@@ -796,7 +1009,7 @@ bool ControlWindow::CreateControls()
     SendMessageW(monitorVolumeSlider_, TBM_SETPAGESIZE, 0, 5);
     SendMessageW(microphoneVolumeSlider_, TBM_SETPAGESIZE, 0, 5);
 
-    controlHotkeysGroup_ = createControl(L"BUTTON", L"", BS_GROUPBOX, 0);
+    controlHotkeysGroup_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
     stopHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     stopHotkeyEdit_ = createControl(
         L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
@@ -818,7 +1031,7 @@ bool ControlWindow::CreateControls()
         L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
     );
 
-    bindingsGroup_ = createControl(L"BUTTON", L"", BS_GROUPBOX, 0);
+    bindingsGroup_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
     bindingsList_ = createControl(
         L"LISTBOX",
         L"",
@@ -828,20 +1041,20 @@ bool ControlWindow::CreateControls()
         WS_EX_CLIENTEDGE
     );
 
-    bindingEditorGroup_ = createControl(L"BUTTON", L"", BS_GROUPBOX, 0);
+    bindingEditorGroup_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
     bindingHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     bindingHotkeyEdit_ = createControl(
         L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
     );
     captureHotkeyButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdCaptureHotkey
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdCaptureHotkey
     );
     bindingFileCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     bindingFileEdit_ = createControl(
         L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
     );
     browseSoundButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdBrowseSound
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdBrowseSound
     );
     bindingModeCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     bindingModeCombo_ = createControl(
@@ -860,47 +1073,47 @@ bool ControlWindow::CreateControls()
     );
     bindingVolumeValue_ = createControl(L"STATIC", L"", SS_RIGHT, 0);
     addBindingButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdAddBinding
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdAddBinding
     );
     updateBindingButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdUpdateBinding
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdUpdateBinding
     );
     removeBindingButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdRemoveBinding
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdRemoveBinding
     );
     clearBindingButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdClearBinding
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdClearBinding
     );
 
     SendMessageW(bindingVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
     SendMessageW(bindingVolumeSlider_, TBM_SETPAGESIZE, 0, 5);
 
     reloadButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdReload
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdReload
     );
     stopButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdStopAll
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdStopAll
     );
     outputMuteButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdOutputMute
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdOutputMute
     );
     monitorMuteButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdMonitorMute
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdMonitorMute
     );
     openConfigButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdOpenConfig
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdOpenConfig
     );
     openSoundsButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdOpenSounds
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdOpenSounds
     );
     openLogsButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdOpenLogs
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdOpenLogs
     );
     consoleButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdToggleConsole
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdToggleConsole
     );
     exitButton_ = createControl(
-        L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, IdExit
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdExit
     );
 
     AddComboItem(bindingModeCombo_, L"restart");
@@ -909,7 +1122,8 @@ bool ControlWindow::CreateControls()
     AddComboItem(bindingModeCombo_, L"overlap");
 
     const HWND controls[] = {
-        headerLabel_, statusCaption_, statusValue_, settingsGroup_,
+        headerLabel_, subtitleLabel_, themeToggleButton_,
+        statusCaption_, statusValue_, settingsGroup_,
         outputCaption_, outputCombo_, outputVolumeCaption_,
         outputVolumeSlider_, outputVolumeValue_, monitorCaption_,
         monitorCombo_, monitorVolumeCaption_, monitorVolumeSlider_,
@@ -955,219 +1169,238 @@ void ControlWindow::LayoutControls(
         return;
     }
 
-    const int contentWidth = clientWidth - BaseMargin * 2;
-    const int buttonWidth =
+    const int availableWidth = std::max(0, clientWidth - BaseMargin * 2);
+    const int contentWidth = std::min(availableWidth, MaximumContentWidth);
+    const int contentX = (clientWidth - contentWidth) / 2;
+    const int firstRowButtonWidth =
         (contentWidth - ButtonGap * 3) / 4;
+
+    SendMessageW(window_, WM_SETREDRAW, FALSE, 0);
 
     int y = BaseMargin;
 
-    MoveWindow(headerLabel_, BaseMargin, y, contentWidth, HeaderHeight, TRUE);
-    y += HeaderHeight + 4;
+    MoveWindow(
+        headerLabel_,
+        contentX,
+        y,
+        contentWidth - ThemeToggleWidth - ButtonGap,
+        HeaderHeight,
+        TRUE
+    );
+    MoveWindow(
+        themeToggleButton_,
+        contentX + contentWidth - ThemeToggleWidth,
+        y,
+        ThemeToggleWidth,
+        ButtonHeight,
+        TRUE
+    );
+    MoveWindow(
+        subtitleLabel_,
+        contentX,
+        y + HeaderHeight,
+        contentWidth - ThemeToggleWidth - ButtonGap,
+        SubtitleHeight,
+        TRUE
+    );
+    y += HeaderHeight + SubtitleHeight + 8;
 
-    MoveWindow(statusCaption_, BaseMargin, y, 72, StatusHeight, TRUE);
+    MoveWindow(
+        statusCaption_,
+        contentX + 14,
+        y + 9,
+        70,
+        20,
+        TRUE
+    );
     MoveWindow(
         statusValue_,
-        BaseMargin + 72,
-        y,
-        contentWidth - 72,
-        StatusHeight,
+        contentX + 84,
+        y + 9,
+        contentWidth - 98,
+        20,
         TRUE
     );
     y += StatusHeight + 8;
 
     MoveWindow(
         settingsGroup_,
-        BaseMargin,
+        contentX,
         y,
         contentWidth,
         SettingsGroupHeight,
         TRUE
     );
 
-    const int innerX = BaseMargin + 14;
+    const int innerX = contentX + 14;
     const int innerWidth = contentWidth - 28;
-    const int labelWidth = 118;
-    const int comboWidth = std::max(280, innerWidth * 38 / 100);
-    const int volumeCaptionWidth = 72;
-    const int volumeValueWidth = 46;
-    const int fieldGap = 8;
-    const int sectionGap = 16;
+    const int labelWidth = 104;
+    const int comboWidth = std::clamp(
+        innerWidth * 36 / 100,
+        260,
+        430
+    );
+    const int volumeCaptionWidth = 64;
+    const int volumeValueWidth = 42;
+    const int fieldGap = 6;
+    const int sectionGap = 12;
     const int volumeSliderWidth = std::max(
-        120,
+        100,
         innerWidth - labelWidth - comboWidth - volumeCaptionWidth -
             volumeValueWidth - fieldGap * 3 - sectionGap
     );
 
-    int rowY = y + 28;
+    int rowY = y + 32;
 
-    MoveWindow(outputCaption_, innerX, rowY + 5, labelWidth, 22, TRUE);
-    MoveWindow(outputCombo_, innerX + labelWidth, rowY, comboWidth, 220, TRUE);
+    const auto layoutAudioRow = [=](
+        const HWND caption,
+        const HWND combo,
+        const HWND volumeCaption,
+        const HWND slider,
+        const HWND volumeValue,
+        const int currentY
+    )
+    {
+        MoveWindow(caption, innerX, currentY + 4, labelWidth, 20, TRUE);
+        MoveWindow(
+            combo,
+            innerX + labelWidth,
+            currentY,
+            comboWidth,
+            200,
+            TRUE
+        );
 
-    int volumeX = innerX + labelWidth + comboWidth + sectionGap;
-    MoveWindow(
-        outputVolumeCaption_,
-        volumeX,
-        rowY + 5,
-        volumeCaptionWidth,
-        22,
-        TRUE
+        int volumeX = innerX + labelWidth + comboWidth + sectionGap;
+        MoveWindow(
+            volumeCaption,
+            volumeX,
+            currentY + 4,
+            volumeCaptionWidth,
+            20,
+            TRUE
+        );
+        volumeX += volumeCaptionWidth + fieldGap;
+        MoveWindow(
+            slider,
+            volumeX,
+            currentY + 1,
+            volumeSliderWidth,
+            24,
+            TRUE
+        );
+        MoveWindow(
+            volumeValue,
+            volumeX + volumeSliderWidth + fieldGap,
+            currentY + 4,
+            volumeValueWidth,
+            20,
+            TRUE
+        );
+    };
+
+    layoutAudioRow(
+        outputCaption_, outputCombo_, outputVolumeCaption_,
+        outputVolumeSlider_, outputVolumeValue_, rowY
     );
-    volumeX += volumeCaptionWidth + fieldGap;
-    MoveWindow(outputVolumeSlider_, volumeX, rowY, volumeSliderWidth, 28, TRUE);
-    MoveWindow(
-        outputVolumeValue_,
-        volumeX + volumeSliderWidth + fieldGap,
-        rowY + 5,
-        volumeValueWidth,
-        22,
-        TRUE
+    rowY += RowHeight + 6;
+
+    layoutAudioRow(
+        monitorCaption_, monitorCombo_, monitorVolumeCaption_,
+        monitorVolumeSlider_, monitorVolumeValue_, rowY
     );
+    rowY += RowHeight + 6;
 
-    rowY += RowHeight + 8;
-
-    MoveWindow(monitorCaption_, innerX, rowY + 5, labelWidth, 22, TRUE);
-    MoveWindow(monitorCombo_, innerX + labelWidth, rowY, comboWidth, 220, TRUE);
-
-    volumeX = innerX + labelWidth + comboWidth + sectionGap;
-    MoveWindow(
-        monitorVolumeCaption_,
-        volumeX,
-        rowY + 5,
-        volumeCaptionWidth,
-        22,
-        TRUE
+    layoutAudioRow(
+        microphoneCaption_, microphoneCombo_, microphoneVolumeCaption_,
+        microphoneVolumeSlider_, microphoneVolumeValue_, rowY
     );
-    volumeX += volumeCaptionWidth + fieldGap;
-    MoveWindow(monitorVolumeSlider_, volumeX, rowY, volumeSliderWidth, 28, TRUE);
-    MoveWindow(
-        monitorVolumeValue_,
-        volumeX + volumeSliderWidth + fieldGap,
-        rowY + 5,
-        volumeValueWidth,
-        22,
-        TRUE
-    );
+    rowY += RowHeight + 2;
 
-    rowY += RowHeight + 8;
+    const int microphoneChecksX = innerX + labelWidth;
+    const int microphoneChecksWidth = innerWidth - labelWidth;
+    const int microphoneCheckGap = 8;
+    const int microphoneCheckWidth =
+        (microphoneChecksWidth - microphoneCheckGap * 2) / 3;
 
-    MoveWindow(microphoneCaption_, innerX, rowY + 5, labelWidth, 22, TRUE);
-    MoveWindow(
-        microphoneCombo_,
-        innerX + labelWidth,
-        rowY,
-        comboWidth,
-        220,
-        TRUE
-    );
-
-    volumeX = innerX + labelWidth + comboWidth + sectionGap;
-    MoveWindow(
-        microphoneVolumeCaption_,
-        volumeX,
-        rowY + 5,
-        volumeCaptionWidth,
-        22,
-        TRUE
-    );
-    volumeX += volumeCaptionWidth + fieldGap;
-    MoveWindow(
-        microphoneVolumeSlider_,
-        volumeX,
-        rowY,
-        volumeSliderWidth,
-        28,
-        TRUE
-    );
-    MoveWindow(
-        microphoneVolumeValue_,
-        volumeX + volumeSliderWidth + fieldGap,
-        rowY + 5,
-        volumeValueWidth,
-        22,
-        TRUE
-    );
-
-    rowY += RowHeight + 4;
-
-    const int microphoneCheckWidth = std::max(160, innerWidth / 4);
     MoveWindow(
         microphoneEnabledCheck_,
-        innerX + labelWidth,
+        microphoneChecksX,
         rowY,
         microphoneCheckWidth,
-        24,
+        22,
         TRUE
     );
     MoveWindow(
         microphoneToOutputCheck_,
-        innerX + labelWidth + microphoneCheckWidth + 12,
+        microphoneChecksX + microphoneCheckWidth + microphoneCheckGap,
         rowY,
         microphoneCheckWidth,
-        24,
+        22,
         TRUE
     );
     MoveWindow(
         microphoneToMonitorCheck_,
-        innerX + labelWidth + (microphoneCheckWidth + 12) * 2,
+        microphoneChecksX + (microphoneCheckWidth + microphoneCheckGap) * 2,
         rowY,
         microphoneCheckWidth,
-        24,
+        22,
         TRUE
     );
 
-    rowY += RowHeight + 8;
+    rowY += RowHeight + 2;
 
     const int halfWidth = (innerWidth - sectionGap) / 2;
-    const int smallLabelWidth = 150;
+    const int smallLabelWidth = 130;
     const int smallControlWidth = halfWidth - smallLabelWidth;
 
-    MoveWindow(sampleRateCaption_, innerX, rowY + 5, smallLabelWidth, 22, TRUE);
+    MoveWindow(sampleRateCaption_, innerX, rowY + 4, smallLabelWidth, 20, TRUE);
     MoveWindow(
         sampleRateCombo_,
         innerX + smallLabelWidth,
         rowY,
         smallControlWidth,
-        180,
+        160,
         TRUE
     );
 
     const int rightColumnX = innerX + halfWidth + sectionGap;
-    MoveWindow(bufferCaption_, rightColumnX, rowY + 5, smallLabelWidth, 22, TRUE);
+    MoveWindow(bufferCaption_, rightColumnX, rowY + 4, smallLabelWidth, 20, TRUE);
     MoveWindow(
         bufferCombo_,
         rightColumnX + smallLabelWidth,
         rowY,
         smallControlWidth,
-        180,
+        160,
         TRUE
     );
 
-    rowY += RowHeight + 12;
+    rowY += RowHeight + 6;
 
-    MoveWindow(languageCaption_, innerX, rowY + 5, labelWidth, 22, TRUE);
-    MoveWindow(languageCombo_, innerX + labelWidth, rowY, 190, 150, TRUE);
+    MoveWindow(languageCaption_, innerX, rowY + 4, labelWidth, 20, TRUE);
+    MoveWindow(languageCombo_, innerX + labelWidth, rowY, 170, 140, TRUE);
 
-    rowY += RowHeight + 8;
+    rowY += RowHeight + 6;
 
-    const int applicationCheckWidth = 220;
+    const int applicationCheckWidth = 194;
     MoveWindow(
         startWithWindowsCheck_,
         innerX,
-        rowY + 5,
+        rowY + 4,
         applicationCheckWidth,
-        24,
+        22,
         TRUE
     );
     MoveWindow(
         showConsoleOnStartCheck_,
-        innerX + applicationCheckWidth + 12,
-        rowY + 5,
+        innerX + applicationCheckWidth + 8,
+        rowY + 4,
         applicationCheckWidth,
-        24,
+        22,
         TRUE
     );
 
-    const int actionButtonWidth = 190;
+    const int actionButtonWidth = 164;
     const int applyX = innerX + innerWidth - actionButtonWidth;
     MoveWindow(
         applySettingsButton_,
@@ -1186,19 +1419,19 @@ void ControlWindow::LayoutControls(
         TRUE
     );
 
-    y += SettingsGroupHeight + 8;
+    y += SettingsGroupHeight + 6;
 
     MoveWindow(
         controlHotkeysGroup_,
-        BaseMargin,
+        contentX,
         y,
         contentWidth,
         ControlHotkeysGroupHeight,
         TRUE
     );
 
-    const int hotkeyGap = 10;
-    const int hotkeyInnerX = BaseMargin + 14;
+    const int hotkeyGap = 8;
+    const int hotkeyInnerX = contentX + 14;
     const int hotkeyInnerWidth = contentWidth - 28;
     const int hotkeyColumnWidth =
         (hotkeyInnerWidth - hotkeyGap * 4) / 5;
@@ -1222,33 +1455,31 @@ void ControlWindow::LayoutControls(
         const int x = hotkeyInnerX +
             static_cast<int>(index) * (hotkeyColumnWidth + hotkeyGap);
 
-        MoveWindow(hotkeyCaptions[index], x, y + 24, hotkeyColumnWidth, 20, TRUE);
-        MoveWindow(hotkeyEdits[index], x, y + 46, hotkeyColumnWidth, 26, TRUE);
+        MoveWindow(hotkeyCaptions[index], x, y + 27, hotkeyColumnWidth, 18, TRUE);
+        MoveWindow(hotkeyEdits[index], x, y + 48, hotkeyColumnWidth, 25, TRUE);
     }
 
-    y += ControlHotkeysGroupHeight + 8;
+    y += ControlHotkeysGroupHeight + 6;
 
-    const int buttonsAreaHeight =
-        ButtonHeight * 2 + ButtonGap + BaseMargin;
+    const int buttonsAreaHeight = ButtonHeight * 2 + ButtonGap;
+    const int availableBindingsHeight =
+        clientHeight - y - buttonsAreaHeight - BaseMargin - 6;
+    const int bindingsHeight = std::max(220, availableBindingsHeight);
 
-    const int bindingsHeight = std::max(
-        240,
-        clientHeight - y - buttonsAreaHeight
+    MoveWindow(bindingsGroup_, contentX, y, contentWidth, bindingsHeight, TRUE);
+
+    const int bindingsInnerX = contentX + 14;
+    const int bindingsInnerY = y + 31;
+    const int bindingsInnerWidth = contentWidth - 28;
+    const int bindingsInnerHeight = bindingsHeight - 43;
+    const int editorWidth = std::clamp(
+        bindingsInnerWidth * 38 / 100,
+        330,
+        BindingEditorWidth
     );
-
-    MoveWindow(bindingsGroup_, BaseMargin, y, contentWidth, bindingsHeight, TRUE);
-
-    const int bindingsInnerX = BaseMargin + 12;
-    const int bindingsInnerY = y + 24;
-    const int bindingsInnerWidth = contentWidth - 24;
-    const int bindingsInnerHeight = bindingsHeight - 36;
-    const int editorWidth = std::min(
-        BindingEditorWidth,
-        std::max(330, bindingsInnerWidth * 42 / 100)
-    );
-    const int bindingGap = 12;
+    const int bindingGap = 10;
     const int listWidth = std::max(
-        260,
+        250,
         bindingsInnerWidth - editorWidth - bindingGap
     );
 
@@ -1271,19 +1502,19 @@ void ControlWindow::LayoutControls(
         TRUE
     );
 
-    const int editorMargin = 12;
-    const int editorLabelWidth = 78;
-    const int editorButtonWidth = 96;
+    const int editorMargin = 10;
+    const int editorLabelWidth = 72;
+    const int editorButtonWidth = 88;
     const int editorContentX = editorX + editorMargin;
     const int editorContentWidth = editorWidth - editorMargin * 2;
-    int editorY = bindingsInnerY + 28;
+    int editorY = bindingsInnerY + 32;
 
     MoveWindow(
         bindingHotkeyCaption_,
         editorContentX,
-        editorY + 5,
+        editorY + 4,
         editorLabelWidth,
-        22,
+        20,
         TRUE
     );
     MoveWindow(
@@ -1291,7 +1522,7 @@ void ControlWindow::LayoutControls(
         editorContentX + editorLabelWidth,
         editorY,
         editorContentWidth - editorLabelWidth - editorButtonWidth - ButtonGap,
-        26,
+        25,
         TRUE
     );
     MoveWindow(
@@ -1299,18 +1530,18 @@ void ControlWindow::LayoutControls(
         editorContentX + editorContentWidth - editorButtonWidth,
         editorY,
         editorButtonWidth,
-        26,
+        25,
         TRUE
     );
 
-    editorY += 36;
+    editorY += 30;
 
     MoveWindow(
         bindingFileCaption_,
         editorContentX,
-        editorY + 5,
+        editorY + 4,
         editorLabelWidth,
-        22,
+        20,
         TRUE
     );
     MoveWindow(
@@ -1318,7 +1549,7 @@ void ControlWindow::LayoutControls(
         editorContentX + editorLabelWidth,
         editorY,
         editorContentWidth - editorLabelWidth - editorButtonWidth - ButtonGap,
-        26,
+        25,
         TRUE
     );
     MoveWindow(
@@ -1326,18 +1557,18 @@ void ControlWindow::LayoutControls(
         editorContentX + editorContentWidth - editorButtonWidth,
         editorY,
         editorButtonWidth,
-        26,
+        25,
         TRUE
     );
 
-    editorY += 36;
+    editorY += 30;
 
     MoveWindow(
         bindingModeCaption_,
         editorContentX,
-        editorY + 5,
+        editorY + 4,
         editorLabelWidth,
-        22,
+        20,
         TRUE
     );
     MoveWindow(
@@ -1345,79 +1576,64 @@ void ControlWindow::LayoutControls(
         editorContentX + editorLabelWidth,
         editorY,
         editorContentWidth - editorLabelWidth,
-        140,
+        130,
         TRUE
     );
 
-    editorY += 36;
+    editorY += 30;
 
     MoveWindow(
         bindingVolumeCaption_,
         editorContentX,
-        editorY + 5,
+        editorY + 4,
         editorLabelWidth,
-        22,
+        20,
         TRUE
     );
     MoveWindow(
         bindingVolumeSlider_,
         editorContentX + editorLabelWidth,
-        editorY,
-        editorContentWidth - editorLabelWidth - 46,
-        28,
+        editorY + 1,
+        editorContentWidth - editorLabelWidth - 42,
+        24,
         TRUE
     );
     MoveWindow(
         bindingVolumeValue_,
-        editorContentX + editorContentWidth - 42,
-        editorY + 5,
-        42,
-        22,
+        editorContentX + editorContentWidth - 38,
+        editorY + 4,
+        38,
+        20,
         TRUE
     );
 
-    const int actionGap = 6;
-    const int actionWidth =
-        (editorContentWidth - actionGap) / 2;
-    const int actionY = std::max(
-        editorY + 42,
-        bindingsInnerY + bindingsInnerHeight - ButtonHeight * 2 - actionGap - 12
-    );
+    const int editorActionGap = 5;
+    const int editorActionWidth =
+        (editorContentWidth - editorActionGap * 3) / 4;
+    const int minimumActionY = editorY + 32;
+    const int bottomActionY = bindingsInnerY + bindingsInnerHeight -
+        ButtonHeight - 9;
+    const int actionY = std::max(minimumActionY, bottomActionY);
 
-    MoveWindow(
-        addBindingButton_,
-        editorContentX,
-        actionY,
-        actionWidth,
-        ButtonHeight,
-        TRUE
-    );
-    MoveWindow(
-        updateBindingButton_,
-        editorContentX + actionWidth + actionGap,
-        actionY,
-        actionWidth,
-        ButtonHeight,
-        TRUE
-    );
-    MoveWindow(
-        removeBindingButton_,
-        editorContentX,
-        actionY + ButtonHeight + actionGap,
-        actionWidth,
-        ButtonHeight,
-        TRUE
-    );
-    MoveWindow(
-        clearBindingButton_,
-        editorContentX + actionWidth + actionGap,
-        actionY + ButtonHeight + actionGap,
-        actionWidth,
-        ButtonHeight,
-        TRUE
-    );
+    const HWND editorActions[] = {
+        addBindingButton_, updateBindingButton_,
+        removeBindingButton_, clearBindingButton_
+    };
 
-    y += bindingsHeight + 8;
+    for (std::size_t index = 0; index < 4; ++index)
+    {
+        MoveWindow(
+            editorActions[index],
+            editorContentX + static_cast<int>(index) *
+                (editorActionWidth + editorActionGap),
+            actionY,
+            editorActionWidth,
+            ButtonHeight,
+            TRUE
+        );
+    }
+
+    y += bindingsHeight + 6;
 
     const HWND firstRow[] = {
         reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_
@@ -1429,9 +1645,17 @@ void ControlWindow::LayoutControls(
 
     for (std::size_t index = 0; index < 4; ++index)
     {
-        const int x = BaseMargin +
-            static_cast<int>(index) * (buttonWidth + ButtonGap);
-        MoveWindow(firstRow[index], x, y, buttonWidth, ButtonHeight, TRUE);
+        const int x = contentX +
+            static_cast<int>(index) *
+                (firstRowButtonWidth + ButtonGap);
+        MoveWindow(
+            firstRow[index],
+            x,
+            y,
+            firstRowButtonWidth,
+            ButtonHeight,
+            TRUE
+        );
     }
 
     y += ButtonHeight + ButtonGap;
@@ -1441,8 +1665,9 @@ void ControlWindow::LayoutControls(
 
     for (std::size_t index = 0; index < 5; ++index)
     {
-        const int x = BaseMargin +
-            static_cast<int>(index) * (secondRowButtonWidth + ButtonGap);
+        const int x = contentX +
+            static_cast<int>(index) *
+                (secondRowButtonWidth + ButtonGap);
         MoveWindow(
             secondRow[index],
             x,
@@ -1452,7 +1677,836 @@ void ControlWindow::LayoutControls(
             TRUE
         );
     }
+
+    SendMessageW(window_, WM_SETREDRAW, TRUE, 0);
+    RedrawWindow(
+        window_,
+        nullptr,
+        nullptr,
+        RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN |
+            RDW_FRAME | RDW_UPDATENOW
+    );
 }
+
+void ControlWindow::ApplyTheme()
+{
+    if (window_ == nullptr)
+    {
+        return;
+    }
+
+    if (backgroundBrush_ == nullptr || cardBrush_ == nullptr ||
+        inputBrush_ == nullptr)
+    {
+        RecreateThemeResources();
+    }
+
+    UpdateWindowChrome();
+
+    const bool dark = activeTheme_ == AppTheme::Dark;
+    const wchar_t* explorerTheme = dark
+        ? L"DarkMode_Explorer"
+        : L"Explorer";
+    const wchar_t* comboTheme = dark
+        ? L"DarkMode_CFD"
+        : L"Explorer";
+
+    const std::array<HWND, 5> combos{
+        outputCombo_, monitorCombo_, microphoneCombo_,
+        sampleRateCombo_, bufferCombo_
+    };
+
+    for (const HWND control : combos)
+    {
+        if (control != nullptr)
+        {
+            SetWindowTheme(control, comboTheme, nullptr);
+        }
+    }
+
+    if (languageCombo_ != nullptr)
+    {
+        SetWindowTheme(languageCombo_, comboTheme, nullptr);
+    }
+
+    if (bindingModeCombo_ != nullptr)
+    {
+        SetWindowTheme(bindingModeCombo_, comboTheme, nullptr);
+    }
+
+    const std::array<HWND, 8> edits{
+        stopHotkeyEdit_, outputMuteHotkeyEdit_, monitorMuteHotkeyEdit_,
+        reloadHotkeyEdit_, exitHotkeyEdit_, bindingHotkeyEdit_,
+        bindingFileEdit_, bindingsList_
+    };
+
+    for (const HWND control : edits)
+    {
+        if (control != nullptr)
+        {
+            SetWindowTheme(control, explorerTheme, nullptr);
+        }
+    }
+
+    const std::array<HWND, 4> sliders{
+        outputVolumeSlider_, monitorVolumeSlider_,
+        microphoneVolumeSlider_, bindingVolumeSlider_
+    };
+
+    for (const HWND control : sliders)
+    {
+        if (control != nullptr)
+        {
+            SetWindowTheme(control, L"", L"");
+            InvalidateRect(control, nullptr, TRUE);
+        }
+    }
+
+    const std::array<HWND, 5> checkBoxes{
+        microphoneEnabledCheck_, microphoneToOutputCheck_,
+        microphoneToMonitorCheck_, startWithWindowsCheck_,
+        showConsoleOnStartCheck_
+    };
+
+    for (const HWND control : checkBoxes)
+    {
+        if (control != nullptr)
+        {
+            SetWindowTheme(control, explorerTheme, nullptr);
+        }
+    }
+
+    RedrawWindow(
+        window_,
+        nullptr,
+        nullptr,
+        RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME
+    );
+}
+
+void ControlWindow::ApplyFonts()
+{
+    if (headerFont_ == nullptr)
+    {
+        headerFont_ = CreateFontW(
+            -28, 0, 0, 0, 600, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
+        );
+    }
+
+    if (subtitleFont_ == nullptr)
+    {
+        subtitleFont_ = CreateFontW(
+            -15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
+        );
+    }
+
+    if (bodyFont_ == nullptr)
+    {
+        bodyFont_ = CreateFontW(
+            -16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
+        );
+    }
+
+    if (sectionFont_ == nullptr)
+    {
+        sectionFont_ = CreateFontW(
+            -17, 0, 0, 0, 600, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
+        );
+    }
+
+    if (buttonFont_ == nullptr)
+    {
+        buttonFont_ = CreateFontW(
+            -15, 0, 0, 0, 600, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
+        );
+    }
+
+    const std::array<HWND, 63> bodyControls{
+        statusCaption_, statusValue_, outputCaption_, outputCombo_,
+        outputVolumeCaption_, outputVolumeSlider_, outputVolumeValue_,
+        monitorCaption_, monitorCombo_, monitorVolumeCaption_,
+        monitorVolumeSlider_, monitorVolumeValue_, microphoneCaption_,
+        microphoneCombo_, microphoneVolumeCaption_, microphoneVolumeSlider_,
+        microphoneVolumeValue_, microphoneEnabledCheck_,
+        microphoneToOutputCheck_, microphoneToMonitorCheck_,
+        sampleRateCaption_, sampleRateCombo_, bufferCaption_, bufferCombo_,
+        languageCaption_, languageCombo_, startWithWindowsCheck_,
+        showConsoleOnStartCheck_, stopHotkeyCaption_, stopHotkeyEdit_,
+        outputMuteHotkeyCaption_, outputMuteHotkeyEdit_,
+        monitorMuteHotkeyCaption_, monitorMuteHotkeyEdit_,
+        reloadHotkeyCaption_, reloadHotkeyEdit_, exitHotkeyCaption_,
+        exitHotkeyEdit_, bindingsList_, bindingHotkeyCaption_,
+        bindingHotkeyEdit_, bindingFileCaption_, bindingFileEdit_,
+        bindingModeCaption_, bindingModeCombo_, bindingVolumeCaption_,
+        bindingVolumeSlider_, bindingVolumeValue_, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        nullptr, nullptr, nullptr, nullptr
+    };
+
+    for (const HWND control : bodyControls)
+    {
+        if (control != nullptr)
+        {
+            SendMessageW(
+                control,
+                WM_SETFONT,
+                reinterpret_cast<WPARAM>(bodyFont_),
+                TRUE
+            );
+        }
+    }
+
+    const std::array<HWND, 15> buttons{
+        themeToggleButton_, refreshDevicesButton_, applySettingsButton_,
+        captureHotkeyButton_, browseSoundButton_, addBindingButton_,
+        updateBindingButton_, removeBindingButton_, clearBindingButton_,
+        reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_,
+        openConfigButton_, openSoundsButton_
+    };
+
+    for (const HWND control : buttons)
+    {
+        if (control != nullptr)
+        {
+            SendMessageW(
+                control,
+                WM_SETFONT,
+                reinterpret_cast<WPARAM>(buttonFont_),
+                TRUE
+            );
+        }
+    }
+
+    const std::array<HWND, 4> remainingButtons{
+        openLogsButton_, consoleButton_, exitButton_, clearBindingButton_
+    };
+
+    for (const HWND control : remainingButtons)
+    {
+        if (control != nullptr)
+        {
+            SendMessageW(
+                control,
+                WM_SETFONT,
+                reinterpret_cast<WPARAM>(buttonFont_),
+                TRUE
+            );
+        }
+    }
+
+    SendMessageW(
+        headerLabel_,
+        WM_SETFONT,
+        reinterpret_cast<WPARAM>(headerFont_),
+        TRUE
+    );
+    SendMessageW(
+        subtitleLabel_,
+        WM_SETFONT,
+        reinterpret_cast<WPARAM>(subtitleFont_),
+        TRUE
+    );
+
+    const std::array<HWND, 4> cards{
+        settingsGroup_, controlHotkeysGroup_,
+        bindingsGroup_, bindingEditorGroup_
+    };
+
+    for (const HWND control : cards)
+    {
+        if (control != nullptr)
+        {
+            SendMessageW(
+                control,
+                WM_SETFONT,
+                reinterpret_cast<WPARAM>(sectionFont_),
+                TRUE
+            );
+        }
+    }
+}
+
+void ControlWindow::RecreateThemeResources()
+{
+    if (backgroundBrush_ != nullptr)
+    {
+        DeleteObject(backgroundBrush_);
+        backgroundBrush_ = nullptr;
+    }
+
+    if (cardBrush_ != nullptr)
+    {
+        DeleteObject(cardBrush_);
+        cardBrush_ = nullptr;
+    }
+
+    if (inputBrush_ != nullptr)
+    {
+        DeleteObject(inputBrush_);
+        inputBrush_ = nullptr;
+    }
+
+    if (activeTheme_ == AppTheme::Dark)
+    {
+        backgroundColor_ = RGB(15, 17, 23);
+        cardColor_ = RGB(24, 28, 36);
+        inputColor_ = RGB(17, 21, 29);
+        textColor_ = RGB(244, 246, 250);
+        mutedTextColor_ = RGB(154, 164, 178);
+        borderColor_ = RGB(42, 49, 64);
+        accentColor_ = RGB(124, 92, 255);
+        accentHoverColor_ = RGB(139, 108, 255);
+        dangerColor_ = RGB(224, 82, 82);
+    }
+    else
+    {
+        backgroundColor_ = RGB(244, 246, 250);
+        cardColor_ = RGB(255, 255, 255);
+        inputColor_ = RGB(249, 250, 252);
+        textColor_ = RGB(27, 31, 40);
+        mutedTextColor_ = RGB(104, 115, 134);
+        borderColor_ = RGB(221, 226, 234);
+        accentColor_ = RGB(93, 70, 215);
+        accentHoverColor_ = RGB(108, 85, 229);
+        dangerColor_ = RGB(201, 64, 64);
+    }
+
+    backgroundBrush_ = CreateSolidBrush(backgroundColor_);
+    cardBrush_ = CreateSolidBrush(cardColor_);
+    inputBrush_ = CreateSolidBrush(inputColor_);
+}
+
+void ControlWindow::ReleaseThemeResources()
+{
+    if (backgroundBrush_ != nullptr)
+    {
+        DeleteObject(backgroundBrush_);
+        backgroundBrush_ = nullptr;
+    }
+
+    if (cardBrush_ != nullptr)
+    {
+        DeleteObject(cardBrush_);
+        cardBrush_ = nullptr;
+    }
+
+    if (inputBrush_ != nullptr)
+    {
+        DeleteObject(inputBrush_);
+        inputBrush_ = nullptr;
+    }
+
+    HFONT* fonts[] = {
+        &headerFont_, &subtitleFont_, &bodyFont_,
+        &sectionFont_, &buttonFont_
+    };
+
+    for (HFONT* font : fonts)
+    {
+        if (*font != nullptr)
+        {
+            DeleteObject(*font);
+            *font = nullptr;
+        }
+    }
+}
+
+void ControlWindow::UpdateWindowChrome()
+{
+    if (window_ == nullptr)
+    {
+        return;
+    }
+
+    const BOOL useDarkMode = activeTheme_ == AppTheme::Dark;
+    constexpr DWORD immersiveDarkModeAttribute = 20;
+    constexpr DWORD legacyImmersiveDarkModeAttribute = 19;
+    constexpr DWORD cornerPreferenceAttribute = 33;
+    constexpr int roundedCornerPreference = 2;
+
+    if (FAILED(DwmSetWindowAttribute(
+            window_,
+            immersiveDarkModeAttribute,
+            &useDarkMode,
+            sizeof(useDarkMode)
+        )))
+    {
+        DwmSetWindowAttribute(
+            window_,
+            legacyImmersiveDarkModeAttribute,
+            &useDarkMode,
+            sizeof(useDarkMode)
+        );
+    }
+
+    DwmSetWindowAttribute(
+        window_,
+        cornerPreferenceAttribute,
+        &roundedCornerPreference,
+        sizeof(roundedCornerPreference)
+    );
+}
+
+void ControlWindow::DrawOwnerDrawControl(const DRAWITEMSTRUCT& item)
+{
+    if (IsCardControl(item.hwndItem))
+    {
+        DrawCard(item);
+        return;
+    }
+
+    DrawModernButton(item);
+}
+
+void ControlWindow::DrawCard(const DRAWITEMSTRUCT& item)
+{
+    RECT rectangle = item.rcItem;
+    rectangle.right -= 1;
+    rectangle.bottom -= 1;
+
+    FillRoundedRectangle(item.hDC, rectangle, cardColor_, CardRadius);
+    DrawRoundedBorder(item.hDC, rectangle, borderColor_, CardRadius);
+
+    std::wstring title = GetControlText(item.hwndItem);
+    if (title.empty())
+    {
+        return;
+    }
+
+    RECT titleRectangle = rectangle;
+    titleRectangle.left += 18;
+    titleRectangle.top += 10;
+    titleRectangle.right -= 18;
+    titleRectangle.bottom = titleRectangle.top + 24;
+
+    SetBkMode(item.hDC, TRANSPARENT);
+    SetTextColor(item.hDC, textColor_);
+    const HGDIOBJ oldFont = SelectObject(item.hDC, sectionFont_);
+    DrawTextW(
+        item.hDC,
+        title.c_str(),
+        static_cast<int>(title.size()),
+        &titleRectangle,
+        DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS
+    );
+    SelectObject(item.hDC, oldFont);
+}
+
+void ControlWindow::DrawModernButton(const DRAWITEMSTRUCT& item)
+{
+    RECT rectangle = item.rcItem;
+    rectangle.right -= 1;
+    rectangle.bottom -= 1;
+
+    const bool pressed = (item.itemState & ODS_SELECTED) != 0;
+    const bool disabled = (item.itemState & ODS_DISABLED) != 0;
+    const bool focused = (item.itemState & ODS_FOCUS) != 0;
+    const bool hot = (item.itemState & ODS_HOTLIGHT) != 0;
+
+    if (item.hwndItem == themeToggleButton_)
+    {
+        COLORREF surface = hot
+            ? BlendColor(cardColor_, accentColor_, 9)
+            : cardColor_;
+        if (pressed)
+        {
+            surface = BlendColor(surface, accentColor_, 16);
+        }
+
+        FillRoundedRectangle(item.hDC, rectangle, surface, 12);
+        DrawRoundedBorder(item.hDC, rectangle, borderColor_, 12);
+
+        RECT textRectangle = rectangle;
+        textRectangle.left += 14;
+        textRectangle.right -= 60;
+
+        const std::wstring text = GetControlText(item.hwndItem);
+        SetBkMode(item.hDC, TRANSPARENT);
+        SetTextColor(item.hDC, textColor_);
+        const HGDIOBJ oldFont = SelectObject(item.hDC, buttonFont_);
+        DrawTextW(
+            item.hDC,
+            text.c_str(),
+            static_cast<int>(text.size()),
+            &textRectangle,
+            DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS
+        );
+
+        RECT track{
+            rectangle.right - 50,
+            rectangle.top + (rectangle.bottom - rectangle.top - 22) / 2,
+            rectangle.right - 12,
+            rectangle.top + (rectangle.bottom - rectangle.top - 22) / 2 + 22
+        };
+        const bool dark = activeTheme_ == AppTheme::Dark;
+        FillRoundedRectangle(
+            item.hDC,
+            track,
+            dark ? accentColor_ : borderColor_,
+            22
+        );
+
+        RECT knob{
+            dark ? track.right - 19 : track.left + 3,
+            track.top + 3,
+            dark ? track.right - 3 : track.left + 19,
+            track.bottom - 3
+        };
+        FillRoundedRectangle(
+            item.hDC,
+            knob,
+            RGB(255, 255, 255),
+            16
+        );
+        SelectObject(item.hDC, oldFont);
+        return;
+    }
+
+    COLORREF fillColor = inputColor_;
+    COLORREF buttonTextColor = textColor_;
+
+    if (IsPrimaryButton(item.hwndItem))
+    {
+        fillColor = hot ? accentHoverColor_ : accentColor_;
+        buttonTextColor = RGB(255, 255, 255);
+    }
+    else if (IsDangerButton(item.hwndItem))
+    {
+        fillColor = hot
+            ? BlendColor(dangerColor_, RGB(255, 255, 255), 10)
+            : dangerColor_;
+        buttonTextColor = RGB(255, 255, 255);
+    }
+    else if (hot)
+    {
+        fillColor = BlendColor(inputColor_, accentColor_, 10);
+    }
+
+    if (pressed)
+    {
+        fillColor = BlendColor(fillColor, backgroundColor_, 22);
+    }
+
+    if (disabled)
+    {
+        fillColor = BlendColor(fillColor, backgroundColor_, 45);
+        buttonTextColor = mutedTextColor_;
+    }
+
+    FillRoundedRectangle(item.hDC, rectangle, fillColor, 10);
+    DrawRoundedBorder(
+        item.hDC,
+        rectangle,
+        focused ? accentColor_ : borderColor_,
+        10,
+        focused ? 2 : 1
+    );
+
+    const std::wstring text = GetControlText(item.hwndItem);
+    SetBkMode(item.hDC, TRANSPARENT);
+    SetTextColor(item.hDC, buttonTextColor);
+    const HGDIOBJ oldFont = SelectObject(item.hDC, buttonFont_);
+    RECT textRectangle = rectangle;
+    textRectangle.left += 10;
+    textRectangle.right -= 10;
+    DrawTextW(
+        item.hDC,
+        text.c_str(),
+        static_cast<int>(text.size()),
+        &textRectangle,
+        DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS
+    );
+    SelectObject(item.hDC, oldFont);
+}
+
+bool ControlWindow::IsSliderControl(const HWND control) const
+{
+    return control == outputVolumeSlider_ ||
+        control == monitorVolumeSlider_ ||
+        control == microphoneVolumeSlider_ ||
+        control == bindingVolumeSlider_;
+}
+
+void ControlWindow::DrawModernSlider(
+    const HWND slider,
+    const HDC deviceContext
+) const
+{
+    if (slider == nullptr || deviceContext == nullptr)
+    {
+        return;
+    }
+
+    RECT clientRectangle{};
+    GetClientRect(slider, &clientRectangle);
+
+    const int clientWidth =
+        static_cast<int>(clientRectangle.right - clientRectangle.left);
+    const int clientHeight =
+        static_cast<int>(clientRectangle.bottom - clientRectangle.top);
+
+    if (clientWidth <= 0 || clientHeight <= 0)
+    {
+        return;
+    }
+
+    HDC bufferContext = CreateCompatibleDC(deviceContext);
+    HBITMAP bufferBitmap = bufferContext != nullptr
+        ? CreateCompatibleBitmap(deviceContext, clientWidth, clientHeight)
+        : nullptr;
+    HGDIOBJ previousBitmap = nullptr;
+    HDC drawContext = deviceContext;
+
+    if (bufferContext != nullptr && bufferBitmap != nullptr)
+    {
+        previousBitmap = SelectObject(bufferContext, bufferBitmap);
+        drawContext = bufferContext;
+    }
+    else
+    {
+        if (bufferBitmap != nullptr)
+        {
+            DeleteObject(bufferBitmap);
+            bufferBitmap = nullptr;
+        }
+
+        if (bufferContext != nullptr)
+        {
+            DeleteDC(bufferContext);
+            bufferContext = nullptr;
+        }
+    }
+
+    FillRect(drawContext, &clientRectangle, cardBrush_);
+
+    RECT channelRectangle{};
+    SendMessageW(
+        slider,
+        TBM_GETCHANNELRECT,
+        0,
+        reinterpret_cast<LPARAM>(&channelRectangle)
+    );
+
+    RECT thumbRectangle{};
+    SendMessageW(
+        slider,
+        TBM_GETTHUMBRECT,
+        0,
+        reinterpret_cast<LPARAM>(&thumbRectangle)
+    );
+
+    const int centerY = clientHeight / 2;
+
+    int trackLeft = static_cast<int>(channelRectangle.left);
+    int trackRight = static_cast<int>(channelRectangle.right);
+    if (trackRight <= trackLeft)
+    {
+        trackLeft = 8;
+        trackRight = std::max(trackLeft + 1, clientWidth - 8);
+    }
+
+    const int thumbCenter = std::clamp(
+        static_cast<int>((thumbRectangle.left + thumbRectangle.right) / 2),
+        trackLeft,
+        trackRight
+    );
+
+    RECT trackRectangle{
+        static_cast<LONG>(trackLeft),
+        static_cast<LONG>(centerY - 3),
+        static_cast<LONG>(trackRight),
+        static_cast<LONG>(centerY + 3)
+    };
+    FillRoundedRectangle(
+        drawContext,
+        trackRectangle,
+        BlendColor(inputColor_, borderColor_, 45),
+        6
+    );
+
+    RECT activeRectangle = trackRectangle;
+    activeRectangle.right = std::max<LONG>(
+        activeRectangle.left,
+        static_cast<LONG>(thumbCenter)
+    );
+    if (activeRectangle.right > activeRectangle.left)
+    {
+        FillRoundedRectangle(
+            drawContext,
+            activeRectangle,
+            accentColor_,
+            6
+        );
+    }
+
+    RECT knobRectangle{
+        static_cast<LONG>(thumbCenter - 8),
+        static_cast<LONG>(centerY - 8),
+        static_cast<LONG>(thumbCenter + 8),
+        static_cast<LONG>(centerY + 8)
+    };
+
+    if (GetFocus() == slider)
+    {
+        RECT focusHalo = knobRectangle;
+        InflateRect(&focusHalo, 3, 3);
+        DrawRoundedBorder(
+            drawContext,
+            focusHalo,
+            BlendColor(accentColor_, backgroundColor_, 35),
+            22,
+            2
+        );
+    }
+
+    FillRoundedRectangle(
+        drawContext,
+        knobRectangle,
+        accentColor_,
+        16
+    );
+    DrawRoundedBorder(
+        drawContext,
+        knobRectangle,
+        BlendColor(accentColor_, RGB(255, 255, 255), 28),
+        16,
+        1
+    );
+
+    if (bufferContext != nullptr && bufferBitmap != nullptr)
+    {
+        BitBlt(
+            deviceContext,
+            0,
+            0,
+            clientWidth,
+            clientHeight,
+            bufferContext,
+            0,
+            0,
+            SRCCOPY
+        );
+
+        SelectObject(bufferContext, previousBitmap);
+        DeleteObject(bufferBitmap);
+        DeleteDC(bufferContext);
+    }
+}
+
+void ControlWindow::PaintWindowBackground()
+{
+    if (window_ == nullptr)
+    {
+        return;
+    }
+
+    if (backgroundBrush_ == nullptr || cardBrush_ == nullptr)
+    {
+        RecreateThemeResources();
+    }
+
+    PAINTSTRUCT paint{};
+    const HDC deviceContext = BeginPaint(window_, &paint);
+    if (deviceContext == nullptr)
+    {
+        return;
+    }
+
+    FillRect(deviceContext, &paint.rcPaint, backgroundBrush_);
+
+    RECT clientRectangle{};
+    GetClientRect(window_, &clientRectangle);
+
+    const int availableWidth = std::max(
+        0,
+        static_cast<int>(clientRectangle.right) - BaseMargin * 2
+    );
+    const int contentWidth = std::min(availableWidth, MaximumContentWidth);
+    const int contentX = (clientRectangle.right - contentWidth) / 2;
+
+    RECT accentRectangle{
+        contentX,
+        BaseMargin + 4,
+        contentX + 4,
+        BaseMargin + HeaderHeight - 4
+    };
+    HBRUSH accentBrush = CreateSolidBrush(accentColor_);
+    FillRect(deviceContext, &accentRectangle, accentBrush);
+    DeleteObject(accentBrush);
+
+    if (statusCaption_ != nullptr)
+    {
+        RECT statusRectangle{};
+        GetWindowRect(statusCaption_, &statusRectangle);
+        MapWindowPoints(
+            HWND_DESKTOP,
+            window_,
+            reinterpret_cast<POINT*>(&statusRectangle),
+            2
+        );
+        statusRectangle.left = contentX;
+        statusRectangle.right = contentX + contentWidth;
+        statusRectangle.top -= 12;
+        statusRectangle.bottom = statusRectangle.top + StatusHeight;
+
+        FillRoundedRectangle(
+            deviceContext,
+            statusRectangle,
+            cardColor_,
+            12
+        );
+        DrawRoundedBorder(
+            deviceContext,
+            statusRectangle,
+            borderColor_,
+            12
+        );
+    }
+
+    EndPaint(window_, &paint);
+}
+
+bool ControlWindow::IsCardControl(const HWND control) const
+{
+    return control == settingsGroup_ ||
+        control == controlHotkeysGroup_ ||
+        control == bindingsGroup_ ||
+        control == bindingEditorGroup_;
+}
+
+bool ControlWindow::IsPrimaryButton(const HWND control) const
+{
+    return control == applySettingsButton_ ||
+        control == addBindingButton_ ||
+        control == updateBindingButton_;
+}
+
+bool ControlWindow::IsDangerButton(const HWND control) const
+{
+    return control == exitButton_ ||
+        control == removeBindingButton_;
+}
+
+HBRUSH ControlWindow::StaticBrushFor(const HWND control) const
+{
+    if (control == headerLabel_ || control == subtitleLabel_)
+    {
+        return backgroundBrush_;
+    }
+
+    return cardBrush_;
+}
+
 
 void ControlWindow::RefreshLocalizedText()
 {
@@ -1473,6 +2527,19 @@ void ControlWindow::RefreshLocalizedText()
         headerLabel_,
         std::wstring{L"SoundBoardFasaFiso v"} +
             Utf8ToWide(std::string{AppVersion::String})
+    );
+    SetControlText(
+        subtitleLabel_,
+        Localization::Text(
+            L"Sesler, hotkey'ler ve mikrofon miksleme tek panelde.",
+            L"Sounds, hotkeys, and microphone mixing in one panel."
+        )
+    );
+    SetControlText(
+        themeToggleButton_,
+        activeTheme_ == AppTheme::Dark
+            ? Localization::Text(L"Koyu tema", L"Dark theme")
+            : Localization::Text(L"Açık tema", L"Light theme")
     );
 
     SetControlText(statusCaption_, Localization::Text(L"Durum:", L"Status:"));
@@ -2057,6 +3124,7 @@ bool ControlWindow::SavePendingSettings()
             ? Language::English
             : Language::Turkish
     );
+    candidate.SetTheme(activeTheme_);
     candidate.SetOutputDevice(outputDevice);
     candidate.SetMonitorDevice(monitorDevice);
     candidate.SetMicrophoneEnabled(microphoneEnabled);
