@@ -1148,7 +1148,7 @@ bool Config::Load(const std::filesystem::path& filePath)
 
     std::unordered_set<std::string> seenSettings;
 
-    // Önce genel ayarları oku. Böylece config sırası önemli olmaz.
+    // Parse general settings first so config order does not matter.
     for (const ParsedLine& parsedLine : parsedLines)
     {
         const std::string settingName =
@@ -1672,7 +1672,7 @@ bool Config::Load(const std::filesystem::path& filePath)
         );
     }
 
-    // Kontrol hotkey'lerini ses atamalarından rezerve et.
+    // Reserve control hotkeys before validating sound bindings.
     std::unordered_set<std::uint64_t> usedHotkeys;
 
     for (const ControlHotkey& control : controlHotkeys)
@@ -1680,7 +1680,7 @@ bool Config::Load(const std::filesystem::path& filePath)
         usedHotkeys.insert(control.identity);
     }
 
-    // Sonra ses hotkey'lerini oku.
+    // Parse sound bindings after the control hotkeys are known.
     for (const ParsedLine& parsedLine : parsedLines)
     {
         const std::string settingName =
@@ -2310,11 +2310,6 @@ unsigned int Config::GetAudioBufferMilliseconds() const
 bool Config::GetStartWithWindows() const
 {
     return startWithWindows_;
-}
-
-bool Config::GetShowConsoleOnStart() const
-{
-    return showConsoleOnStart_;
 }
 
 bool Config::GetCheckUpdatesOnStart() const

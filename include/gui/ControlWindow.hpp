@@ -264,7 +264,6 @@ private:
     HWND languageCaption_ = nullptr;
     HWND languageCombo_ = nullptr;
     HWND startWithWindowsCheck_ = nullptr;
-    HWND showConsoleOnStartCheck_ = nullptr;
     HWND checkUpdatesOnStartCheck_ = nullptr;
     HWND refreshDevicesButton_ = nullptr;
     HWND applySettingsButton_ = nullptr;

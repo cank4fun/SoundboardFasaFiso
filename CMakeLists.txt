@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(SOUNDBOARD_VERSION "2.0.0-beta.3")
+set(SOUNDBOARD_VERSION "2.0.0-rc.1")
 
 project(SoundBoardFasaFiso VERSION 2.0.0 LANGUAGES CXX)
 
@@ -85,15 +85,35 @@ if(MSVC)
             /W4
             /permissive-
             /utf-8
+            /sdl
+            /guard:cf
     )
 
     if(SOUNDBOARD_WARNINGS_AS_ERRORS)
         target_compile_options(SoundBoardFasaFiso PRIVATE /WX)
     endif()
 
+    target_compile_options(
+        SoundBoardFasaFiso
+        PRIVATE
+            $<$<CONFIG:Release>:/Gy>
+            $<$<CONFIG:Release>:/Gw>
+    )
+
+    target_link_options(
+        SoundBoardFasaFiso
+        PRIVATE
+            /guard:cf
+            /DYNAMICBASE
+            /NXCOMPAT
+            $<$<CONFIG:Release>:/OPT:REF>
+            $<$<CONFIG:Release>:/OPT:ICF>
+            $<$<CONFIG:Release>:/INCREMENTAL:NO>
+    )
+
     set_source_files_properties(
         src/audio/miniaudio_impl.cpp
-        PROPERTIES COMPILE_OPTIONS /W0
+        PROPERTIES COMPILE_OPTIONS "/W0;/sdl-"
     )
 
     set_property(
@@ -136,11 +156,12 @@ add_custom_target(
         "${CMAKE_CURRENT_SOURCE_DIR}/sounds"
         "${CMAKE_CURRENT_BINARY_DIR}/sounds"
 
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/config.txt"
-        "${CMAKE_CURRENT_BINARY_DIR}/config.txt"
+    COMMAND ${CMAKE_COMMAND}
+        "-DSOURCE_CONFIG=${CMAKE_CURRENT_SOURCE_DIR}/config.txt"
+        "-DDEST_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/config.txt"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SyncConfigIfMissing.cmake"
 
-    COMMENT "Copying config and sounds to the active build directory..."
+    COMMENT "Syncing example sounds and creating config.txt when missing..."
     VERBATIM
 )
 
@@ -149,7 +170,14 @@ add_dependencies(SoundBoardFasaFiso SyncRuntimeFiles)
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(PORTABLE_RELEASE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/portable")
     set(PORTABLE_RELEASE_DIR "${PORTABLE_RELEASE_ROOT}/SoundBoardFasaFiso")
-    set(PORTABLE_RELEASE_ZIP "${CMAKE_CURRENT_BINARY_DIR}/SoundBoardFasaFiso-portable.zip")
+    set(
+        PORTABLE_RELEASE_BASENAME
+        "SoundBoardFasaFiso-v${SOUNDBOARD_VERSION}-windows-x64-portable"
+    )
+    set(
+        PORTABLE_RELEASE_ZIP
+        "${CMAKE_CURRENT_BINARY_DIR}/${PORTABLE_RELEASE_BASENAME}.zip"
+    )
 
     add_custom_target(
         PortableRelease ALL
@@ -178,6 +206,14 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/README.txt"
             "${PORTABLE_RELEASE_DIR}/README.txt"
+
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+            "${PORTABLE_RELEASE_DIR}/LICENSE"
+
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.txt"
+            "${PORTABLE_RELEASE_DIR}/THIRD_PARTY_NOTICES.txt"
 
         COMMAND ${CMAKE_COMMAND} -E rm -f
             "${PORTABLE_RELEASE_ZIP}"

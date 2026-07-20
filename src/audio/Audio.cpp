@@ -1557,6 +1557,15 @@ bool Audio::LoadSoundIntoRuntime(
     LoadedSound loadedSound;
     loadedSound.mode = definition.mode;
 
+    if (definition.mode == PlaybackMode::Overlap)
+    {
+        loadedSound.voices.reserve(OverlapVoiceCount);
+    }
+    else
+    {
+        loadedSound.voices.reserve(1);
+    }
+
     Voice primaryVoice;
 
     if (!InitializeVoiceFromFile(
@@ -1573,10 +1582,6 @@ bool Audio::LoadSoundIntoRuntime(
 
     if (definition.mode == PlaybackMode::Overlap)
     {
-        loadedSound.voices.reserve(
-            OverlapVoiceCount
-        );
-
         while (loadedSound.voices.size() <
             OverlapVoiceCount)
         {

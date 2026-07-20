@@ -1,5 +1,46 @@
 # Changelog
 
+## 2.0.0-rc.1
+
+- Marked the v2 feature set as release-candidate complete
+- Changed the portable first-run config to use the Windows default output with monitoring disabled
+- Stopped rebuilds from overwriting an existing build-directory config
+- Added versioned Windows x64 portable archives and SHA-256 checksum files
+- Added release-package validation for required files, supported sample formats and unexpected top-level content
+- Marked prerelease tags correctly when publishing GitHub Releases
+- Added MSVC control-flow protection, SDL checks and Release linker optimization
+- Reduced hidden-window and inactive-tab meter work
+- Improved high-DPI window sizing on constrained monitor work areas
+- Removed the unused hidden console-startup control while keeping config compatibility
+- Reduced absolute path exposure in normal session logs
+- Included the MIT license in portable packages
+
+## 2.0.0-beta.3
+
+- Added per-monitor DPI awareness and live DPI changes when moving between monitors
+- Scaled fonts, controls, margins and minimum window sizing from logical coordinates
+- Improved responsive sizing for the theme toggle and sound-binding editor
+- Changed binding actions to a two-row layout so translated labels remain readable
+
+## 2.0.0-beta.2
+
+- Added keyboard navigation with `Tab` and `Shift+Tab`
+- Added `Ctrl+1`, `Ctrl+2`, `Ctrl+3` tab switching and `Ctrl+S` save/apply
+- Added `Esc` cancellation during hotkey capture
+- Kept global soundboard hotkeys ahead of local panel shortcuts
+
+## 2.0.0-beta.1
+
+- Reworked the control panel into one window with Main, Settings and Hotkeys tabs
+- Kept pending edits intact while changing tabs
+- Moved daily controls, device settings and control hotkeys into clearer sections
+
+## 2.0.0-alpha.10
+
+- Switched the executable to the Windows GUI subsystem
+- Kept the diagnostic console available on demand
+- Fixed single-click window closing so the panel hides to the tray immediately
+
 ## 2.0.0-alpha.9
 
 - Added a dependency-free update checker backed by WinHTTP and the public GitHub Releases API

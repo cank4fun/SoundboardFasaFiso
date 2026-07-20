@@ -39,7 +39,8 @@ x86/
 *.lastbuildstate
 
 # Generated packages
-SoundBoardFasaFiso-portable.zip
+SoundBoardFasaFiso-v*-windows-x64-portable.zip
+*.sha256
 portable/
 
 # Temporary and OS files

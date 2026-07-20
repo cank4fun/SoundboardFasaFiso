@@ -287,6 +287,8 @@ namespace
     )
     {
         activeBindings.clear();
+        activeBindings.reserve(config.GetBindings().size());
+
         bool bindingError = false;
 
         PrintConfigSummary(config);
@@ -338,7 +340,7 @@ namespace
                         "Ses dosyası bulunamadı: ",
                         "Sound file not found: "
                     )
-                    << PathToUtf8(soundPath)
+                    << PathToUtf8(binding.soundFile)
                     << '\n';
 
                 bindingError = true;
@@ -690,7 +692,7 @@ int WINAPI wWinMain(
             "Kullanılan config: ",
             "Config in use: "
         )
-        << PathToUtf8(configPath)
+        << PathToUtf8(configPath.filename())
         << '\n';
 
     if (!logger.GetLogPath().empty())
@@ -700,7 +702,9 @@ int WINAPI wWinMain(
                 "Oturum logu: ",
                 "Session log: "
             )
-            << PathToUtf8(logger.GetLogPath())
+            << PathToUtf8(
+                logsFolder.filename() / logger.GetLogPath().filename()
+            )
             << '\n';
     }
 

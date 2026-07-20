@@ -78,7 +78,6 @@ public:
     unsigned int GetAudioBufferMilliseconds() const;
 
     bool GetStartWithWindows() const;
-    bool GetShowConsoleOnStart() const;
     bool GetCheckUpdatesOnStart() const;
 
     const std::string& GetStopKeyName() const;

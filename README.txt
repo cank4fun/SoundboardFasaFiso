@@ -30,6 +30,8 @@ SoundBoardFasaFiso.exe
 config.txt
 sounds\
 README.txt
+LICENSE
+THIRD_PARTY_NOTICES.txt
 
 DESTEKLENEN FORMATLAR
 --------------------
@@ -50,11 +52,12 @@ loop    : Döngüye alır, tekrar basışta durdurur.
 
 CİHAZ AYARLARI
 --------------
-output=CABLE Input
-monitor=default
+output=default
+monitor=none
 
 "default" Windows varsayılan cihazını kullanır.
 "none" monitör çıkışını kapatır.
+VB-CABLE kullanıyorsan output alanına genellikle "CABLE Input" yazılır.
 Cihaz adlarında tam isim yerine ayırt edici bir bölüm yazılabilir.
 
 MİKROFON MİKSERİ
@@ -81,12 +84,12 @@ olursa audio_buffer_ms değerini yükselt.
 UYGULAMA VE LOGLAR
 ------------------
 start_with_windows=false
-show_console_on_start=true
+show_console_on_start=false
 check_updates_on_start=true
 
 Windows ile başlatma kullanıcı hesabına özel olarak ayarlanır ve yönetici
-izni istemez. Konsol başlangıçta gizlense bile panel veya tray üzerinden
-tekrar açılabilir. check_updates_on_start=true en güncel kararlı GitHub
+izni istemez. Uygulama konsolsuz açılır; hata ayıklama konsolu panel veya
+tray üzerinden gerektiğinde gösterilebilir. check_updates_on_start=true en güncel kararlı GitHub
 Release sürümünü arka planda denetler. Panelden elle de denetim yapılabilir.
 Program dosya indirmez veya kendini otomatik değiştirmez; yalnızca resmi
 Release sayfasını açmayı teklif eder. Her oturum logs\latest.log dosyasına
@@ -102,14 +105,21 @@ CTRL+SHIFT+F12  : Programı kapat
 
 KONTROL PANELİ
 ---------------
-Panel modern kart düzeni, açık/koyu tema desteği ve canlı sinyal göstergeleri kullanır. Panelden
-ana/monitör/mikrofon cihazı, ses seviyeleri, mikrofon yönlendirmesi,
-dil, örnekleme hızı, buffer, Windows başlangıcı, konsol başlangıcı,
+Panel tek pencere içinde Ana ekran, Ayarlar ve Hotkey'ler sekmelerini
+kullanır. Açık/koyu tema, canlı sinyal göstergeleri ve DPI ölçeklendirme
+desteklenir. Panelden ana/monitör/mikrofon cihazı, ses seviyeleri,
+mikrofon yönlendirmesi, dil, örnekleme hızı, buffer, Windows başlangıcı,
 kontrol hotkey'leri ve ses atamaları düzenlenebilir. Ses ataması eklerken
 WAV/MP3/FLAC seçilebilir; dışarıdaki dosya isteğe bağlı olarak sounds
 klasörüne kopyalanır. Kaydet ve uygula tüm ayarları önce doğrular; hotkey
 çakışması veya ses sistemi hatasında önceki çalışan ayarlar geri yüklenir.
 Pencerenin X düğmesi programı kapatmaz; paneli tray'e gizler.
+
+PANEL KISAYOLLARI
+-----------------
+CTRL+1 / CTRL+2 / CTRL+3 : Sekmeler arasında geç
+CTRL+S                    : Kaydet ve uygula
+ESC                       : Hotkey yakalamayı iptal et
 
 TRAY MENÜSÜ
 -----------

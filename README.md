@@ -15,7 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 development status:** Alpha 9 adds a non-blocking GitHub Release update checker with manual and optional startup checks. It is still a development build and is not a stable replacement for v1.0.0 yet.
+**v2 release candidate:** `2.0.0-rc.1` is feature-complete and undergoing final regression and clean-machine testing before the stable `2.0.0` release.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
@@ -51,11 +51,15 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 4. Configure devices, control hotkeys, and sound bindings from the panel.
 5. Click **Save and apply**; invalid changes are rejected and the previous runtime is restored.
 
+The packaged default starts on the Windows default output with monitor routing disabled, so VB-CABLE is optional.
+
 ```text
 SoundBoardFasaFiso/
 ├── SoundBoardFasaFiso.exe
 ├── config.txt
 ├── README.txt
+├── LICENSE
+├── THIRD_PARTY_NOTICES.txt
 ├── logs/          # created automatically
 └── sounds/
 ```
@@ -68,10 +72,10 @@ language=tr
 theme=dark
 
 # AUDIO OUTPUTS
-output=CABLE Input
+output=default
 output_volume=1.00
 
-monitor=default
+monitor=none
 monitor_volume=0.30
 
 # MICROPHONE MIXER
@@ -87,7 +91,7 @@ audio_buffer_ms=5
 
 # APPLICATION
 start_with_windows=false
-show_console_on_start=true
+show_console_on_start=false
 check_updates_on_start=true
 
 # CONTROLS
@@ -143,15 +147,21 @@ Windows rejects a hotkey already owned by another application. SoundBoardFasaFis
 
 ## Control panel
 
-Alpha 9 uses a modernized native Win32 settings editor without Qt, .NET or another GUI runtime. The panel provides custom light/dark rendering, compact live microphone and output activity meters, enumerates playback and capture devices, and lets the user configure main output, monitor output, microphone input, all three gain targets, microphone routes, language, sample rate, buffer target, Windows startup, console startup, control hotkeys and sound bindings.
+The native Win32 control panel uses a single-window, tabbed layout with light/dark themes, live microphone and output meters, keyboard navigation, per-monitor DPI scaling, device selectors, hotkey capture and sound-binding editing. It does not require Qt, .NET or another GUI runtime.
 
 `Save and apply` writes a pending configuration, validates it, rebuilds the complete playback/capture runtime and only replaces the active config after every device and hotkey succeeds. A failure restores the previous working runtime. Closing the control-panel window only hides it, so the soundboard continues running in the tray.
+
+Keyboard shortcuts inside the panel:
+
+- `Ctrl+1`, `Ctrl+2`, `Ctrl+3` switch tabs
+- `Ctrl+S` saves and applies pending changes
+- `Esc` cancels hotkey capture
 
 ## Startup and diagnostics
 
 `start_with_windows=true` registers the current executable under the current user's Windows startup key, so no administrator permission is required. Moving the portable folder and launching the application again refreshes the registered path.
 
-`show_console_on_start=false` starts with the control panel and tray while keeping the diagnostic console hidden. The console remains available from the control panel or tray menu.
+The application starts without a console window. The diagnostic console remains available on demand from the control panel or tray menu. The legacy `show_console_on_start` key is retained for config compatibility and is normalized to `false` when settings are saved.
 
 `check_updates_on_start=true` performs a background check against the latest published stable GitHub Release. The control panel also provides a manual check. The updater never downloads, replaces, or executes files automatically; it only offers to open the official Release page.
 
@@ -191,6 +201,8 @@ The console prints the actual sample rate, period count and effective buffer rep
 
 Open the repository folder in Visual Studio and press `CTRL+SHIFT+B`.
 
+The build copies the default `config.txt` only when the build directory does not already contain one, so local test settings are not overwritten. Delete the build-directory copy to restore the packaged defaults.
+
 The default CMake output is normally:
 
 ```text
@@ -209,13 +221,14 @@ cmake --build out/build/x64-Release --target PortableRelease
 The distributable archive is created at:
 
 ```text
-out/build/x64-Release/SoundBoardFasaFiso-portable.zip
+out/build/x64-Release/SoundBoardFasaFiso-v2.0.0-rc.1-windows-x64-portable.zip
 ```
 
 ## Repository layout
 
 ```text
 assets/          Repository artwork
+cmake/           Small build helper scripts
 include/         Project headers and generated-file templates
 resources/       Windows icon and resource templates
 sounds/          Neutral example tones
@@ -223,11 +236,12 @@ src/             Application sources
 third_party/     Vendored third-party code
 config.txt       Default runtime configuration
 CMakeLists.txt   Build and packaging rules
+THIRD_PARTY_NOTICES.txt  Packaged dependency notice
 ```
 
 ## Third-party software
 
-This repository vendors [miniaudio](https://github.com/mackron/miniaudio). Its license notice remains in the original header.
+This repository vendors [miniaudio](https://github.com/mackron/miniaudio). Its complete license text remains in the original header and the portable package includes `THIRD_PARTY_NOTICES.txt`.
 
 VB-CABLE is optional and is not bundled with this project. Local playback works without it. Presenting the mixed signal to other applications as a microphone requires a virtual audio endpoint; the v2 architecture keeps this as a separate bridge layer. See [docs/V2_ARCHITECTURE.md](docs/V2_ARCHITECTURE.md).
 

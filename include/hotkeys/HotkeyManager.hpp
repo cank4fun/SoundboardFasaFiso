@@ -27,10 +27,7 @@ public:
         unsigned int virtualKey
     );
 
-    // Sonuc:
-    //  > 0 : Basılan hotkey ID'si
-    //    0 : Sure doldu, hotkey basilmedi
-    //   -1 : Windows mesaj dongusu kapandi veya hata verdi
+    // Positive: hotkey ID; zero: timeout; negative: message-loop failure.
     int WaitForPress(
         unsigned int timeoutMilliseconds,
         HWND dialogWindow = nullptr,

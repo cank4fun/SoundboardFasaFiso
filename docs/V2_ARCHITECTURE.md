@@ -30,62 +30,18 @@ This separation allows the GUI and mixer to work without VB-CABLE while keeping 
 or another installed virtual device as an optional bridge for voice-chat applications.
 A first-party virtual microphone driver can be added later without rewriting the core.
 
-## Planned milestones
+## Current application structure
 
-### Alpha 1 — localization foundation
+The v2 executable is divided into a small set of native components:
 
-- Embedded Turkish and English messages
-- `language=tr|en`
-- Existing config compatibility
-- No external language files required
+- **Audio runtime** — playback engines, RAM-backed sounds, voice pools, microphone capture and device recovery
+- **Configuration** — UTF-8 parsing, validation, atomic writes and rollback
+- **Control panel** — one native Win32 window with tabbed editing, DPI scaling and light/dark themes
+- **Hotkeys and tray** — global commands, tray lifecycle and single-instance behavior
+- **Diagnostics** — rotating session logs and an on-demand debug console
+- **Update check** — a read-only background request to the public GitHub Releases API
 
-### Alpha 2 — control-panel foundation
-
-- Native Win32 control panel without an external GUI runtime
-- Live runtime status and configuration summary
-- Sound-binding overview and command dispatch to the existing runtime
-- Tray-first lifecycle where closing the panel keeps the soundboard running
-
-### Alpha 3 — core settings editor
-
-- Device enumeration and main/monitor selectors
-- Volume, language, sample-rate and buffer controls
-- Pending-config validation, atomic save and runtime rollback
-
-### Alpha 4 — sound and hotkey editor
-
-- Add, edit and remove sound bindings from the native control panel
-- Capture supported hotkey combinations and edit control hotkeys
-- Select WAV/MP3/FLAC files and optionally copy them into `sounds`
-- Keep edits pending until full config and runtime validation succeeds
-
-### Alpha 5 — microphone mixer
-
-- Physical microphone capture through the selected Windows input device
-- Independent microphone enable and gain controls
-- Real-time routing to the main output, monitor output, or both
-- Shared device-recovery flow for playback and capture endpoints
-
-### Alpha 6 — startup and diagnostics
-
-- Persistent session logs with one-session rotation
-- Optional per-user Windows startup registration
-- Console-free startup with the console still available on demand
-- GUI access to diagnostic files
-
-### Alpha 7 — modern native UI foundation
-
-- Persistent `light` and `dark` interface themes
-- Custom-rendered cards, buttons, typography and status surfaces
-- Windows dark title-bar and rounded-corner integration where supported
-- Theme preview in the panel with persistence through the safe config transaction
-- Final iconography, spacing and accessibility polish deferred to beta
-
-### Beta — packaging and migration
-
-- v1 config migration and final config cleanup
-- Portable release and clean-machine testing
-- Visual polish, accessibility and final workflow validation
+All settings are applied as a transaction. A candidate config is written to a temporary file, validated, and used to rebuild the runtime. The active config is replaced only after devices, sounds and hotkeys initialize successfully.
 
 ## Driver boundary
 

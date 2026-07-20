@@ -245,6 +245,30 @@ bool ControlWindow::Initialize(
         0
     );
 
+    int initialWindowWidth =
+        windowRectangle.right - windowRectangle.left;
+    int initialWindowHeight =
+        windowRectangle.bottom - windowRectangle.top;
+
+    RECT workArea{};
+
+    if (SystemParametersInfoW(
+            SPI_GETWORKAREA,
+            0,
+            &workArea,
+            0
+        ) != FALSE)
+    {
+        initialWindowWidth = std::min(
+            initialWindowWidth,
+            static_cast<int>(workArea.right - workArea.left)
+        );
+        initialWindowHeight = std::min(
+            initialWindowHeight,
+            static_cast<int>(workArea.bottom - workArea.top)
+        );
+    }
+
     window_ = CreateWindowExW(
         0,
         ControlWindowClassName,
@@ -252,8 +276,8 @@ bool ControlWindow::Initialize(
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
-        windowRectangle.right - windowRectangle.left,
-        windowRectangle.bottom - windowRectangle.top,
+        initialWindowWidth,
+        initialWindowHeight,
         nullptr,
         nullptr,
         instance_,
@@ -393,7 +417,6 @@ void ControlWindow::Shutdown()
     languageCaption_ = nullptr;
     languageCombo_ = nullptr;
     startWithWindowsCheck_ = nullptr;
-    showConsoleOnStartCheck_ = nullptr;
     checkUpdatesOnStartCheck_ = nullptr;
     refreshDevicesButton_ = nullptr;
     applySettingsButton_ = nullptr;
@@ -1164,10 +1187,35 @@ LRESULT ControlWindow::HandleWindowMessage(
                 static_cast<DWORD>(GetWindowLongPtrW(window, GWL_EXSTYLE))
             );
 
-            minimumMaximum->ptMinTrackSize.x =
-                rectangle.right - rectangle.left;
-            minimumMaximum->ptMinTrackSize.y =
-                rectangle.bottom - rectangle.top;
+            int minimumWidth = rectangle.right - rectangle.left;
+            int minimumHeight = rectangle.bottom - rectangle.top;
+
+            const HMONITOR monitor = MonitorFromWindow(
+                window,
+                MONITOR_DEFAULTTONEAREST
+            );
+            MONITORINFO monitorInfo{};
+            monitorInfo.cbSize = sizeof(monitorInfo);
+
+            if (monitor != nullptr &&
+                GetMonitorInfoW(monitor, &monitorInfo) != FALSE)
+            {
+                minimumWidth = std::min(
+                    minimumWidth,
+                    static_cast<int>(
+                        monitorInfo.rcWork.right - monitorInfo.rcWork.left
+                    )
+                );
+                minimumHeight = std::min(
+                    minimumHeight,
+                    static_cast<int>(
+                        monitorInfo.rcWork.bottom - monitorInfo.rcWork.top
+                    )
+                );
+            }
+
+            minimumMaximum->ptMinTrackSize.x = minimumWidth;
+            minimumMaximum->ptMinTrackSize.y = minimumHeight;
             return 0;
         }
 
@@ -1372,13 +1420,6 @@ bool ControlWindow::CreateControls()
         BS_AUTOCHECKBOX | WS_TABSTOP,
         0
     );
-    showConsoleOnStartCheck_ = createControl(
-        L"BUTTON",
-        L"",
-        BS_AUTOCHECKBOX | WS_TABSTOP,
-        0
-    );
-    ShowWindow(showConsoleOnStartCheck_, SW_HIDE);
     checkUpdatesOnStartCheck_ = createControl(
         L"BUTTON",
         L"",
@@ -1540,8 +1581,8 @@ bool ControlWindow::CreateControls()
         microphoneToOutputCheck_, microphoneToMonitorCheck_,
         sampleRateCaption_, sampleRateCombo_,
         bufferCaption_, bufferCombo_, languageCaption_, languageCombo_,
-        startWithWindowsCheck_, showConsoleOnStartCheck_,
-        checkUpdatesOnStartCheck_, refreshDevicesButton_,
+        startWithWindowsCheck_, checkUpdatesOnStartCheck_,
+        refreshDevicesButton_,
         applySettingsButton_, controlHotkeysGroup_,
         stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
         outputMuteHotkeyEdit_, monitorMuteHotkeyCaption_,
@@ -2136,7 +2177,6 @@ void ControlWindow::LayoutControls(
         rowY += RowHeight + 6;
 
         moveWindow(startWithWindowsCheck_, innerX, rowY + 4, 194, 22, TRUE);
-        moveWindow(showConsoleOnStartCheck_, 0, 0, 0, 0, FALSE);
 
         const int actionButtonWidth = 164;
         const int applyX = innerX + innerWidth - actionButtonWidth;
@@ -2443,7 +2483,6 @@ void ControlWindow::UpdatePageVisibility()
     }
 
     setVisible(applySettingsButton_, true);
-    setVisible(showConsoleOnStartCheck_, false);
 
     RedrawWindow(
         mainTabButton_, nullptr, nullptr,
@@ -2534,10 +2573,10 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 6> checkBoxes{
+    const std::array<HWND, 5> checkBoxes{
         microphoneEnabledCheck_, microphoneToOutputCheck_,
         microphoneToMonitorCheck_, startWithWindowsCheck_,
-        showConsoleOnStartCheck_, checkUpdatesOnStartCheck_
+        checkUpdatesOnStartCheck_
     };
 
     for (const HWND control : checkBoxes)
@@ -2615,7 +2654,7 @@ void ControlWindow::ApplyFonts()
         microphoneToOutputCheck_, microphoneToMonitorCheck_,
         sampleRateCaption_, sampleRateCombo_, bufferCaption_, bufferCombo_,
         languageCaption_, languageCombo_, startWithWindowsCheck_,
-        showConsoleOnStartCheck_, checkUpdatesOnStartCheck_,
+        checkUpdatesOnStartCheck_,
         stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
         outputMuteHotkeyEdit_, monitorMuteHotkeyCaption_,
         monitorMuteHotkeyEdit_, reloadHotkeyCaption_, reloadHotkeyEdit_,
@@ -2764,19 +2803,7 @@ void ControlWindow::ReleaseThemeResources()
         inputBrush_ = nullptr;
     }
 
-    HFONT* fonts[] = {
-        &headerFont_, &subtitleFont_, &bodyFont_,
-        &sectionFont_, &buttonFont_
-    };
-
-    for (HFONT* font : fonts)
-    {
-        if (*font != nullptr)
-        {
-            DeleteObject(*font);
-            *font = nullptr;
-        }
-    }
+    ReleaseFonts();
 }
 
 void ControlWindow::UpdateWindowChrome()
@@ -3556,13 +3583,6 @@ void ControlWindow::RefreshLocalizedText()
         )
     );
     SetControlText(
-        showConsoleOnStartCheck_,
-        Localization::Text(
-            L"Başlangıçta hata ayıklama konsolunu aç",
-            L"Open debug console on startup"
-        )
-    );
-    SetControlText(
         checkUpdatesOnStartCheck_,
         Localization::Text(
             L"Başlangıçta güncellemeleri denetle",
@@ -3775,12 +3795,6 @@ void ControlWindow::PopulateEditorControls()
         0
     );
     SendMessageW(
-        showConsoleOnStartCheck_,
-        BM_SETCHECK,
-        BST_UNCHECKED,
-        0
-    );
-    SendMessageW(
         checkUpdatesOnStartCheck_,
         BM_SETCHECK,
         currentConfig_.GetCheckUpdatesOnStart() ? BST_CHECKED : BST_UNCHECKED,
@@ -3954,6 +3968,11 @@ void ControlWindow::UpdateVolumeLabels()
 
 void ControlWindow::UpdateLevelMeters()
 {
+    if (window_ == nullptr || IsWindowVisible(window_) == FALSE)
+    {
+        return;
+    }
+
     AudioLevelSnapshot snapshot;
 
     if (audio_ != nullptr)
@@ -3997,22 +4016,26 @@ void ControlWindow::UpdateLevelMeters()
     monitorMeterAvailable_ = snapshot.monitorAvailable;
     microphoneMeterAvailable_ = snapshot.microphoneAvailable;
 
-    const HWND meters[]{
-        outputLevelMeter_, monitorLevelMeter_, microphoneLevelMeter_,
-        mainOutputLevelMeter_, mainMonitorLevelMeter_,
-        mainMicrophoneLevelMeter_
-    };
+    const std::array<HWND, 3> meters =
+        activePage_ == ControlPage::Main
+            ? std::array<HWND, 3>{
+                mainOutputLevelMeter_,
+                mainMonitorLevelMeter_,
+                mainMicrophoneLevelMeter_
+            }
+            : activePage_ == ControlPage::Settings
+                ? std::array<HWND, 3>{
+                    outputLevelMeter_,
+                    monitorLevelMeter_,
+                    microphoneLevelMeter_
+                }
+                : std::array<HWND, 3>{nullptr, nullptr, nullptr};
 
     for (const HWND meter : meters)
     {
         if (meter != nullptr)
         {
-            RedrawWindow(
-                meter,
-                nullptr,
-                nullptr,
-                RDW_INVALIDATE | RDW_UPDATENOW
-            );
+            InvalidateRect(meter, nullptr, FALSE);
         }
     }
 }
@@ -4139,7 +4162,6 @@ bool ControlWindow::SavePendingSettings()
         0,
         0
     ) == BST_CHECKED;
-    constexpr bool showConsoleOnStart = false;
     const bool checkUpdatesOnStart = SendMessageW(
         checkUpdatesOnStartCheck_,
         BM_GETCHECK,
@@ -4184,7 +4206,7 @@ bool ControlWindow::SavePendingSettings()
     candidate.SetMicrophoneToOutput(microphoneToOutput);
     candidate.SetMicrophoneToMonitor(microphoneToMonitor);
     candidate.SetStartWithWindows(startWithWindows);
-    candidate.SetShowConsoleOnStart(showConsoleOnStart);
+    candidate.SetShowConsoleOnStart(false);
     candidate.SetCheckUpdatesOnStart(checkUpdatesOnStart);
     const bool hotkeysAccepted = candidate.SetControlHotkeys(
         WideToUtf8(stopHotkey),

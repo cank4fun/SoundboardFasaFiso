@@ -48,19 +48,19 @@ jobs:
         run: |
           $content = Get-Content "CMakeLists.txt" -Raw
           $match = [regex]::Match(
-              $content,
-              'set\(SOUNDBOARD_VERSION "([^"]+)"\)'
+            $content,
+            'set\(SOUNDBOARD_VERSION "([^"]+)"\)'
           )
 
           if (-not $match.Success) {
-              throw "Project version could not be read from CMakeLists.txt."
+            throw "Project version could not be read from CMakeLists.txt."
           }
 
           $expectedTag = "v$($match.Groups[1].Value)"
           $actualTag = "${{ github.ref_name }}"
 
           if ($actualTag -ne $expectedTag) {
-              throw "Tag $actualTag does not match project version $expectedTag."
+            throw "Tag $actualTag does not match project version $expectedTag."
           }
 
       - name: Configure Release build
@@ -78,50 +78,100 @@ jobs:
           --target PortableRelease
           --parallel
 
-      - name: Verify portable ZIP contents
+      - name: Verify portable package and create checksum
         shell: pwsh
         run: |
-          $zip = "out/build/ci-release/SoundBoardFasaFiso-portable.zip"
+          $archives = @(
+            Get-ChildItem "out/build/ci-release" `
+              -File `
+              -Filter "SoundBoardFasaFiso-v*-windows-x64-portable.zip"
+          )
 
-          if (-not (Test-Path $zip)) {
-              throw "Portable ZIP was not created: $zip"
+          if ($archives.Count -ne 1) {
+            throw "Expected exactly one versioned portable ZIP, found $($archives.Count)."
           }
 
+          $zip = $archives[0].FullName
           $extract = Join-Path $env:RUNNER_TEMP "soundboard-portable-check"
           Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive -Path $zip -DestinationPath $extract
 
           $root = Join-Path $extract "SoundBoardFasaFiso"
           $required = @(
-              "SoundBoardFasaFiso.exe",
-              "config.txt",
-              "README.txt",
-              "sounds"
+            "SoundBoardFasaFiso.exe",
+            "config.txt",
+            "README.txt",
+            "LICENSE",
+            "THIRD_PARTY_NOTICES.txt",
+            "sounds"
           )
 
           foreach ($item in $required) {
-              $path = Join-Path $root $item
-              if (-not (Test-Path $path)) {
-                  throw "Portable package is missing: $item"
-              }
+            $path = Join-Path $root $item
+            if (-not (Test-Path $path)) {
+              throw "Portable package is missing: $item"
+            }
           }
 
-          $sounds = Get-ChildItem (Join-Path $root "sounds") -File
+          $unexpected = @(
+            Get-ChildItem $root |
+              Where-Object { $_.Name -notin $required }
+          )
+
+          if ($unexpected.Count -ne 0) {
+            $names = ($unexpected.Name -join ", ")
+            throw "Portable package contains unexpected top-level items: $names"
+          }
+
+          $config = Get-Content (Join-Path $root "config.txt") -Raw
+          $requiredDefaults = @(
+            '(?m)^output=default$',
+            '(?m)^monitor=none$',
+            '(?m)^show_console_on_start=false$'
+          )
+
+          foreach ($pattern in $requiredDefaults) {
+            if ($config -notmatch $pattern) {
+              throw "Portable config is missing required safe default: $pattern"
+            }
+          }
+
+          $sounds = @(
+            Get-ChildItem (Join-Path $root "sounds") -File -Recurse
+          )
+
           if ($sounds.Count -eq 0) {
-              throw "Portable package contains no example sounds."
+            throw "Portable package contains no example sounds."
           }
 
-          $file = Get-Item $zip
+          $invalidSounds = @(
+            $sounds |
+              Where-Object { $_.Extension.ToLowerInvariant() -notin @(".wav", ".mp3", ".flac") }
+          )
+
+          if ($invalidSounds.Count -ne 0) {
+            $names = ($invalidSounds.FullName -join ", ")
+            throw "Portable package contains unsupported sound files: $names"
+          }
+
           $hash = Get-FileHash $zip -Algorithm SHA256
-          Write-Host "Portable ZIP: $($file.FullName)"
-          Write-Host "Size: $($file.Length) bytes"
+          $checksum = "$zip.sha256"
+          "$($hash.Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($zip))" |
+            Set-Content $checksum -Encoding ascii
+
+          "PORTABLE_ZIP=$zip" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          "PORTABLE_SHA256=$checksum" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+
+          Write-Host "Portable ZIP: $zip"
+          Write-Host "Size: $((Get-Item $zip).Length) bytes"
           Write-Host "SHA-256: $($hash.Hash)"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
         with:
-          path: out/build/ci-release/SoundBoardFasaFiso-portable.zip
-          archive: false
+          path: |
+            ${{ env.PORTABLE_ZIP }}
+            ${{ env.PORTABLE_SHA256 }}
           if-no-files-found: error
           retention-days: 14
 
@@ -132,18 +182,27 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $zip = "out/build/ci-release/SoundBoardFasaFiso-portable.zip"
+          $zip = $env:PORTABLE_ZIP
+          $checksum = $env:PORTABLE_SHA256
           $title = "SoundBoardFasaFiso $tag"
 
           gh release view $tag 2>$null | Out-Null
 
           if ($LASTEXITCODE -eq 0) {
-              gh release upload $tag $zip --clobber
+            gh release upload $tag $zip $checksum --clobber
+          }
+          elseif ($tag -match "-") {
+            gh release create $tag $zip $checksum `
+              --title $title `
+              --generate-notes `
+              --prerelease
           }
           else {
-              gh release create $tag $zip --title $title --generate-notes
+            gh release create $tag $zip $checksum `
+              --title $title `
+              --generate-notes
           }
 
           if ($LASTEXITCODE -ne 0) {
-              throw "GitHub release publishing failed."
+            throw "GitHub release publishing failed."
           }
