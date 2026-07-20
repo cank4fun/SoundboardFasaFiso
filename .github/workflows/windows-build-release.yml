@@ -12,17 +12,6 @@ on:
       - master
       - main
   workflow_dispatch:
-    inputs:
-      create_defender_sample:
-        description: Create a password-protected Microsoft Defender submission sample
-        required: false
-        type: boolean
-        default: false
-      defender_sample_tag:
-        description: Release tag to package for Microsoft analysis
-        required: false
-        type: string
-        default: v2.0.0-rc.1
 
 permissions:
   contents: write
@@ -185,84 +174,6 @@ jobs:
             ${{ env.PORTABLE_SHA256 }}
           if-no-files-found: error
           retention-days: 14
-
-      - name: Create Microsoft Defender submission sample
-        if: github.event_name == 'workflow_dispatch' && inputs.create_defender_sample == true
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $tag = "${{ inputs.defender_sample_tag }}"
-
-          if ($tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
-            throw "Invalid release tag: $tag"
-          }
-
-          $sampleRoot = Join-Path $env:RUNNER_TEMP "defender-submission"
-          $extractRoot = Join-Path $sampleRoot "extracted"
-          Remove-Item $sampleRoot -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item $sampleRoot -ItemType Directory | Out-Null
-
-          $zipName = "SoundBoardFasaFiso-$tag-windows-x64-portable.zip"
-          $checksumName = "$zipName.sha256"
-
-          gh release download $tag --pattern $zipName --dir $sampleRoot
-          if ($LASTEXITCODE -ne 0) {
-            throw "Could not download release asset: $zipName"
-          }
-
-          gh release download $tag --pattern $checksumName --dir $sampleRoot
-          if ($LASTEXITCODE -ne 0) {
-            throw "Could not download release checksum: $checksumName"
-          }
-
-          $releaseZip = Join-Path $sampleRoot $zipName
-          $releaseChecksum = Join-Path $sampleRoot $checksumName
-          $expectedHash = ((Get-Content $releaseChecksum -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
-          $actualHash = (Get-FileHash $releaseZip -Algorithm SHA256).Hash.ToLowerInvariant()
-
-          if ($actualHash -ne $expectedHash) {
-            throw "Downloaded release ZIP checksum mismatch."
-          }
-
-          Expand-Archive -Path $releaseZip -DestinationPath $extractRoot
-          $exe = Join-Path $extractRoot "SoundBoardFasaFiso\SoundBoardFasaFiso.exe"
-
-          if (-not (Test-Path $exe -PathType Leaf)) {
-            throw "Release package does not contain SoundBoardFasaFiso.exe."
-          }
-
-          $sevenZip = (Get-Command 7z.exe -ErrorAction Stop).Source
-          $submissionArchive = Join-Path $env:RUNNER_TEMP "SoundBoardFasaFiso-$tag-defender-submission.zip"
-          Remove-Item $submissionArchive -Force -ErrorAction SilentlyContinue
-
-          & $sevenZip a -tzip -pinfected -mem=AES256 $submissionArchive $exe
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $submissionArchive)) {
-            throw "Creating the password-protected submission archive failed."
-          }
-
-          $exeHash = (Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          $hashFile = "$submissionArchive.sha256.txt"
-          @(
-            "Source release tag: $tag"
-            "Source release ZIP SHA-256: $actualHash"
-            "Submitted EXE SHA-256: $exeHash"
-            "Archive password: infected"
-          ) | Set-Content $hashFile -Encoding ascii
-
-          "DEFENDER_SAMPLE=$submissionArchive" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-          "DEFENDER_SAMPLE_HASH=$hashFile" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: Upload Microsoft Defender submission sample
-        if: github.event_name == 'workflow_dispatch' && inputs.create_defender_sample == true
-        uses: actions/upload-artifact@v7
-        with:
-          name: defender-submission-${{ inputs.defender_sample_tag }}
-          path: |
-            ${{ env.DEFENDER_SAMPLE }}
-            ${{ env.DEFENDER_SAMPLE_HASH }}
-          if-no-files-found: error
-          retention-days: 3
 
       - name: Publish tagged GitHub release
         if: startsWith(github.ref, 'refs/tags/v')
