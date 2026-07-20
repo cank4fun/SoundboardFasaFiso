@@ -8,7 +8,6 @@
 #include <charconv>
 #include <cctype>
 #include <cstddef>
-#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -21,6 +20,9 @@ namespace
     constexpr wchar_t LatestReleasePath[] =
         L"/repos/cank4fun/SoundboardFasaFiso/releases/latest";
     constexpr std::size_t MaximumResponseBytes = 1024U * 1024U;
+    constexpr std::size_t MaximumReleaseUrlCharacters = 2048U;
+    constexpr std::string_view OfficialReleaseUrlPrefix =
+        "https://github.com/cank4fun/SoundboardFasaFiso/releases/";
 
     class InternetHandle
     {
@@ -107,6 +109,20 @@ namespace
                 return std::isdigit(character) != 0;
             }
         );
+    }
+
+    bool IsOfficialReleaseUrl(const std::string_view value)
+    {
+        return value.size() <= MaximumReleaseUrlCharacters &&
+            value.starts_with(OfficialReleaseUrlPrefix) &&
+            std::all_of(
+                value.begin(),
+                value.end(),
+                [](const unsigned char character)
+                {
+                    return character > 0x20U && character < 0x7FU;
+                }
+            );
     }
 
     std::optional<unsigned int> ParseUnsigned(std::string_view value)
@@ -545,11 +561,26 @@ UpdateCheckResult UpdateChecker::CheckLatestRelease(
         return Failure("GitHub API response did not contain release metadata");
     }
 
+    const auto parsedLatestVersion = ParseVersion(*latestVersion);
+    const auto parsedCurrentVersion = ParseVersion(currentVersion);
+
+    if (!parsedLatestVersion.has_value() ||
+        !parsedCurrentVersion.has_value())
+    {
+        return Failure("GitHub release metadata contained an invalid version");
+    }
+
+    if (!IsOfficialReleaseUrl(*releaseUrl))
+    {
+        return Failure("GitHub release metadata contained an unexpected URL");
+    }
+
     UpdateCheckResult result;
     result.latestVersion = *latestVersion;
     result.releaseUrl = *releaseUrl;
-    result.status = IsNewerVersion(*latestVersion, currentVersion)
-        ? UpdateCheckStatus::UpdateAvailable
-        : UpdateCheckStatus::UpToDate;
+    result.status =
+        CompareVersions(*parsedLatestVersion, *parsedCurrentVersion) > 0
+            ? UpdateCheckStatus::UpdateAvailable
+            : UpdateCheckStatus::UpToDate;
     return result;
 }

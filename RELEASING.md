@@ -21,6 +21,8 @@ Confirm that:
 - no developer config, logs, build files or personal paths are present
 - audio playback, microphone routing, tray behavior, hotkeys and device recovery work
 - the update check opens only the official GitHub Release page
+- the unsigned-build and Smart App Control limitation is present in both readmes
+- the generated checksum matches the exact portable ZIP attached to the release
 
 The package name is versioned:
 

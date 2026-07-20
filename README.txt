@@ -127,6 +127,18 @@ Tray ikonuna sağ tıklayarak kontrol panelini açabilir, config'i yenileyebilir
 sesleri durdurabilir, çıkışları susturabilir, konsolu gösterebilir veya
 programı kapatabilirsin. İkona çift tıklamak kontrol panelini açar.
 
+WINDOWS GÜVENLİK NOTU
+---------------------
+GitHub portable sürümü şu anda kod imzası taşımaz. SmartScreen bilinmeyen
+yayıncı uyarısı gösterebilir. Windows 11 Smart App Control zorlamalı moddaysa
+yeni ve imzasız EXE'yi tek uygulamalık izin seçeneği sunmadan engelleyebilir;
+bu durum yerelde derlenen imzasız Release EXE'ler için de geçerlidir.
+
+ZIP dosyasını yalnızca resmi GitHub Release sayfasından indir ve yanında
+yayınlanan .sha256 dosyasıyla karşılaştır. Eşleşen SHA-256, arşivin Release
+dosyasıyla aynı olduğunu doğrular; kod imzasının yerini tutmaz. Programı
+çalıştırmak için Windows güvenliğini kalıcı olarak zayıflatma.
+
 NOTLAR
 ------
 - Program config.txt ve sounds klasörünü EXE'nin yanından okur.

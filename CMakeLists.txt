@@ -4,6 +4,12 @@ set(SOUNDBOARD_VERSION "2.0.0-rc.1")
 
 project(SoundBoardFasaFiso VERSION 2.0.0 LANGUAGES CXX)
 
+if(SOUNDBOARD_VERSION MATCHES "-")
+    set(SOUNDBOARD_VERSION_FILE_FLAGS "VS_FF_PRERELEASE")
+else()
+    set(SOUNDBOARD_VERSION_FILE_FLAGS "0x0L")
+endif()
+
 if(NOT WIN32)
     message(FATAL_ERROR "SoundBoardFasaFiso currently supports Windows only.")
 endif()
@@ -36,12 +42,24 @@ configure_file(
     @ONLY
 )
 
+add_library(
+    SoundBoardFasaFisoMiniaudio
+    OBJECT
+    src/audio/miniaudio_impl.cpp
+)
+
+target_include_directories(
+    SoundBoardFasaFisoMiniaudio
+    SYSTEM PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+)
+
 add_executable(
     SoundBoardFasaFiso
     WIN32
     src/main.cpp
     src/audio/Audio.cpp
-    src/audio/miniaudio_impl.cpp
+    $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
     src/config/Config.cpp
     src/diagnostics/Logger.cpp
     src/gui/ControlWindow.cpp
@@ -111,9 +129,17 @@ if(MSVC)
             $<$<CONFIG:Release>:/INCREMENTAL:NO>
     )
 
-    set_source_files_properties(
-        src/audio/miniaudio_impl.cpp
-        PROPERTIES COMPILE_OPTIONS "/W0;/sdl-"
+    target_compile_options(
+        SoundBoardFasaFisoMiniaudio
+        PRIVATE
+            /W0
+            /utf-8
+    )
+
+    set_property(
+        TARGET SoundBoardFasaFisoMiniaudio
+        PROPERTY MSVC_RUNTIME_LIBRARY
+            "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
 
     set_property(

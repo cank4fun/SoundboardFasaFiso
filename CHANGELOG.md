@@ -14,6 +14,11 @@
 - Removed the unused hidden console-startup control while keeping config compatibility
 - Reduced absolute path exposure in normal session logs
 - Included the MIT license in portable packages
+- Isolated vendored miniaudio compilation so project warning and SDL settings no longer produce command-line override warnings
+- Corrected the Windows workflow to use the supported `actions/checkout@v6` release
+- Validated update links before offering to open them and rejected malformed release versions
+- Marked prerelease executables with the Windows prerelease version flag
+- Documented unsigned-build, checksum and Smart App Control behavior
 
 ## 2.0.0-beta.3
 

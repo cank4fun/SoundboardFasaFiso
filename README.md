@@ -53,6 +53,18 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 
 The packaged default starts on the Windows default output with monitor routing disabled, so VB-CABLE is optional.
 
+### Windows security notice
+
+GitHub portable builds are currently unsigned. Microsoft Defender SmartScreen may show an unknown-publisher warning, and Windows 11 Smart App Control can block a new unsigned executable without offering a per-application exception. This also applies to locally compiled unsigned Release builds.
+
+Download releases only from this repository and compare the ZIP against the attached `.sha256` file:
+
+```powershell
+Get-FileHash .\SoundBoardFasaFiso-v*-windows-x64-portable.zip -Algorithm SHA256
+```
+
+A matching checksum confirms that the archive is identical to the release asset; it is not a substitute for code signing. Do not weaken system security solely to run the application. Systems that enforce trusted signing require a signed build or an application-control policy that explicitly permits the executable.
+
 ```text
 SoundBoardFasaFiso/
 ├── SoundBoardFasaFiso.exe
