@@ -15,6 +15,7 @@
 
 struct TrayCommandIds
 {
+    int controlPanel = 0;
     int stop = 0;
     int outputMute = 0;
     int monitorMute = 0;
@@ -45,12 +46,13 @@ public:
 private:
     static constexpr UINT TrayCallbackMessage = WM_APP + 1;
 
-    static constexpr UINT MenuReload = 1;
-    static constexpr UINT MenuStopAll = 2;
-    static constexpr UINT MenuOutputMute = 3;
-    static constexpr UINT MenuMonitorMute = 4;
-    static constexpr UINT MenuToggleConsole = 5;
-    static constexpr UINT MenuExit = 6;
+    static constexpr UINT MenuControlPanel = 1;
+    static constexpr UINT MenuReload = 2;
+    static constexpr UINT MenuStopAll = 3;
+    static constexpr UINT MenuOutputMute = 4;
+    static constexpr UINT MenuMonitorMute = 5;
+    static constexpr UINT MenuToggleConsole = 6;
+    static constexpr UINT MenuExit = 7;
 
     static LRESULT CALLBACK WindowProcedure(
         HWND window,

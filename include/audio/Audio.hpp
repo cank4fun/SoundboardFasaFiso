@@ -34,6 +34,17 @@ enum class MuteToggleResult
     Failed
 };
 
+struct AudioLevelSnapshot
+{
+    float output = 0.0f;
+    float monitor = 0.0f;
+    float microphone = 0.0f;
+
+    bool outputAvailable = false;
+    bool monitorAvailable = false;
+    bool microphoneAvailable = false;
+};
+
 class Audio
 {
 public:
@@ -46,11 +57,19 @@ public:
     Audio(Audio&&) = delete;
     Audio& operator=(Audio&&) = delete;
 
+    static std::vector<std::string> EnumeratePlaybackDevices();
+    static std::vector<std::string> EnumerateCaptureDevices();
+
     bool Initialize(
         const std::string& requestedOutputDevice,
         const std::string& requestedMonitorDevice,
         float outputVolume,
         float monitorVolume,
+        bool microphoneEnabled,
+        const std::string& requestedMicrophoneDevice,
+        float microphoneVolume,
+        bool microphoneToOutput,
+        bool microphoneToMonitor,
         unsigned int sampleRate,
         unsigned int bufferMilliseconds
     );
@@ -69,6 +88,7 @@ public:
     MuteToggleResult ToggleMonitorMute();
 
     AudioRecoveryResult MaintainDeviceConnection();
+    AudioLevelSnapshot GetLevelSnapshot() const;
 
     void Shutdown();
 
@@ -81,6 +101,25 @@ private:
         std::string deviceName;
 
         bool initialized = false;
+    };
+
+    struct CaptureState
+    {
+        ma_device device{};
+        ma_device_id deviceId{};
+
+        std::string deviceName;
+
+        bool initialized = false;
+    };
+
+    struct MicrophoneRoute
+    {
+        ma_pcm_rb ringBuffer{};
+        ma_sound sound{};
+
+        bool ringBufferInitialized = false;
+        bool soundInitialized = false;
     };
 
     struct SoundDefinition
@@ -107,6 +146,13 @@ private:
         const ma_device_notification* notification
     );
 
+    static void MicrophoneDataCallback(
+        ma_device* device,
+        void* outputFrames,
+        const void* inputFrames,
+        ma_uint32 frameCount
+    );
+
     bool InitializeRuntime();
 
     bool InitializeEngine(
@@ -120,6 +166,25 @@ private:
         ma_uint32 bufferMilliseconds,
         EngineState& state
     );
+
+    bool InitializeMicrophone(
+        ma_device_info* captureDevices,
+        ma_uint32 captureDeviceCount
+    );
+
+    bool InitializeMicrophoneRoute(
+        EngineState& engineState,
+        ma_uint32 sampleRate,
+        MicrophoneRoute& route
+    );
+
+    static void WriteMicrophoneFrames(
+        MicrophoneRoute& route,
+        const void* inputFrames,
+        ma_uint32 frameCount
+    );
+
+    static void DestroyMicrophoneRoute(MicrophoneRoute& route);
 
     bool LoadSoundIntoRuntime(
         const std::string& soundId,
@@ -159,6 +224,7 @@ private:
     );
 
     bool IsEngineRunning(EngineState& state) const;
+    bool IsMicrophoneRunning() const;
     bool IsRuntimeHealthy();
 
     void DestroyRuntime();
@@ -169,15 +235,24 @@ private:
 
     EngineState outputEngine_;
     EngineState monitorEngine_;
+    CaptureState microphoneCapture_;
+    MicrophoneRoute microphoneOutputRoute_;
+    MicrophoneRoute microphoneMonitorRoute_;
 
     std::unordered_map<std::string, LoadedSound> loadedSounds_;
     std::unordered_map<std::string, SoundDefinition> soundDefinitions_;
 
     std::string requestedOutputDevice_;
     std::string requestedMonitorDevice_;
+    std::string requestedMicrophoneDevice_;
 
     float outputVolume_ = 1.0f;
     float monitorVolume_ = 0.30f;
+    float microphoneVolume_ = 1.0f;
+
+    bool microphoneEnabled_ = false;
+    bool microphoneToOutput_ = true;
+    bool microphoneToMonitor_ = false;
 
     ma_uint32 sampleRate_ = 48000;
     ma_uint32 bufferMilliseconds_ = 5;
@@ -187,6 +262,7 @@ private:
 
     std::atomic_bool recoveryRequested_{false};
     std::atomic_bool ignoreDeviceNotifications_{false};
+    std::atomic<float> microphonePeak_{0.0f};
 
     bool contextInitialized_ = false;
     bool desiredConfigurationSet_ = false;

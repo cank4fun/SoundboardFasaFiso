@@ -1,5 +1,7 @@
 #include "tray/TrayIcon.hpp"
 
+#include "localization/Localization.hpp"
+#include "platform/DebugConsole.hpp"
 #include "ResourceIds.h"
 
 #include <cwchar>
@@ -51,8 +53,10 @@ bool TrayIcon::Initialize(
     if (instance_ == nullptr)
     {
         std::cerr
-            << "Tray icon için uygulama modülü alınamadı. "
-            << "Windows hata kodu: "
+            << Localization::Text(
+                "Tray icon için uygulama modülü alınamadı. Windows hata kodu: ",
+                "The application module for the tray icon could not be obtained. Windows error code: "
+            )
             << GetLastError()
             << '\n';
 
@@ -74,8 +78,10 @@ bool TrayIcon::Initialize(
     if (largeIcon == nullptr || smallIcon == nullptr)
     {
         std::cerr
-            << "FasaFiso uygulama ikonu yüklenemedi. "
-            << "Windows hata kodu: "
+            << Localization::Text(
+                "FasaFiso uygulama ikonu yüklenemedi. Windows hata kodu: ",
+                "The FasaFiso application icon could not be loaded. Windows error code: "
+            )
             << GetLastError()
             << '\n';
 
@@ -100,8 +106,10 @@ bool TrayIcon::Initialize(
         if (errorCode != ERROR_CLASS_ALREADY_EXISTS)
         {
             std::cerr
-                << "Tray icon pencere sınıfı oluşturulamadı. "
-                << "Windows hata kodu: "
+                << Localization::Text(
+                    "Tray icon pencere sınıfı oluşturulamadı. Windows hata kodu: ",
+                    "The tray icon window class could not be created. Windows error code: "
+                )
                 << errorCode
                 << '\n';
 
@@ -131,8 +139,10 @@ bool TrayIcon::Initialize(
     if (window_ == nullptr)
     {
         std::cerr
-            << "Tray icon gizli penceresi oluşturulamadı. "
-            << "Windows hata kodu: "
+            << Localization::Text(
+                "Tray icon gizli penceresi oluşturulamadı. Windows hata kodu: ",
+                "The hidden tray icon window could not be created. Windows error code: "
+            )
             << GetLastError()
             << '\n';
 
@@ -151,8 +161,10 @@ bool TrayIcon::Initialize(
     if (iconData_.hIcon == nullptr)
     {
         std::cerr
-            << "Tray icon simgesi yüklenemedi. "
-            << "Windows hata kodu: "
+            << Localization::Text(
+                "Tray icon simgesi yüklenemedi. Windows hata kodu: ",
+                "The tray icon image could not be loaded. Windows error code: "
+            )
             << GetLastError()
             << '\n';
 
@@ -169,8 +181,10 @@ bool TrayIcon::Initialize(
     if (!AddNotificationIcon())
     {
         std::cerr
-            << "Tray icon görev çubuğuna eklenemedi. "
-            << "Windows hata kodu: "
+            << Localization::Text(
+                "Tray icon görev çubuğuna eklenemedi. Windows hata kodu: ",
+                "The tray icon could not be added to the taskbar. Windows error code: "
+            )
             << GetLastError()
             << '\n';
 
@@ -245,32 +259,12 @@ void TrayIcon::Shutdown()
 
 bool TrayIcon::ToggleConsoleVisibility()
 {
-    const HWND consoleWindow = GetConsoleWindow();
-
-    if (consoleWindow == nullptr)
-    {
-        return false;
-    }
-
-    if (IsWindowVisible(consoleWindow) != FALSE)
-    {
-        ShowWindow(consoleWindow, SW_HIDE);
-    }
-    else
-    {
-        ShowWindow(consoleWindow, SW_SHOW);
-        SetForegroundWindow(consoleWindow);
-    }
-
-    return true;
+    return DebugConsole::ToggleVisibility();
 }
 
 bool TrayIcon::IsConsoleVisible() const
 {
-    const HWND consoleWindow = GetConsoleWindow();
-
-    return consoleWindow != nullptr &&
-        IsWindowVisible(consoleWindow) != FALSE;
+    return DebugConsole::IsVisible();
 }
 
 LRESULT CALLBACK TrayIcon::WindowProcedure(
@@ -341,7 +335,7 @@ LRESULT TrayIcon::HandleWindowMessage(
 
         if (lParam == WM_LBUTTONDBLCLK)
         {
-            PostApplicationCommand(commandIds_.toggleConsole);
+            PostApplicationCommand(commandIds_.controlPanel);
             return 0;
         }
     }
@@ -384,9 +378,16 @@ void TrayIcon::ShowContextMenu()
 
     AppendMenuW(
         menu,
+        MF_STRING | MF_DEFAULT,
+        MenuControlPanel,
+        Localization::Text(L"Kontrol panelini aç", L"Open control panel")
+    );
+
+    AppendMenuW(
+        menu,
         MF_STRING,
         MenuReload,
-        L"Config'i yeniden yükle"
+        Localization::Text(L"Config'i yeniden yükle", L"Reload config")
     );
 
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -395,21 +396,21 @@ void TrayIcon::ShowContextMenu()
         menu,
         MF_STRING,
         MenuStopAll,
-        L"Tüm sesleri durdur"
+        Localization::Text(L"Tüm sesleri durdur", L"Stop all sounds")
     );
 
     AppendMenuW(
         menu,
         MF_STRING,
         MenuOutputMute,
-        L"Ana çıkışı mute/unmute"
+        Localization::Text(L"Ana çıkışı mute/unmute", L"Mute/unmute main output")
     );
 
     AppendMenuW(
         menu,
         MF_STRING,
         MenuMonitorMute,
-        L"Monitör çıkışını mute/unmute"
+        Localization::Text(L"Monitör çıkışını mute/unmute", L"Mute/unmute monitor output")
     );
 
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -419,8 +420,8 @@ void TrayIcon::ShowContextMenu()
         MF_STRING,
         MenuToggleConsole,
         IsConsoleVisible()
-            ? L"Konsolu gizle"
-            : L"Konsolu göster"
+            ? Localization::Text(L"Hata ayıklama konsolunu gizle", L"Hide debug console")
+            : Localization::Text(L"Hata ayıklama konsolunu aç", L"Open debug console")
     );
 
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -429,7 +430,7 @@ void TrayIcon::ShowContextMenu()
         menu,
         MF_STRING,
         MenuExit,
-        L"Programı kapat"
+        Localization::Text(L"Programı kapat", L"Exit")
     );
 
     POINT cursorPosition{};
@@ -457,6 +458,10 @@ void TrayIcon::ShowContextMenu()
 
     switch (selectedCommand)
     {
+        case MenuControlPanel:
+            PostApplicationCommand(commandIds_.controlPanel);
+            break;
+
         case MenuReload:
             PostApplicationCommand(commandIds_.reload);
             break;

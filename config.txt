@@ -1,17 +1,39 @@
+# DİL / LANGUAGE
+# tr = Türkçe, en = English
+language=en
+theme=dark
+
 # SES ÇIKIŞLARI
-# output ana çıkıştır. VB-CABLE kullanıyorsan genellikle "CABLE Input" yazılır.
-output=CABLE Input
+# output ana çıkıştır. "default" Windows varsayılanını kullanır.
+# VB-CABLE kullanıyorsan genellikle "CABLE Input" yazılır.
+output=default
 output_volume=1.00
 
-# monitor kendi duyacağın çıkıştır. "default" Windows varsayılanını kullanır.
-# Monitör istemiyorsan monitor=none yazabilirsin.
-monitor=default
+# monitor kendi duyacağın ikinci çıkıştır. İlk açılışta kapalıdır.
+# "default" Windows varsayılanını kullanır; "none" monitörü kapatır.
+monitor=none
 monitor_volume=0.30
+
+# MİKROFON MİKSERİ
+# Mikrofonu ana çıkışa ve/veya monitöre gerçek zamanlı ekler.
+# Discord/Steam'e mikrofon olarak vermek için ana çıkışta bir sanal cihaz seçilebilir.
+microphone_enabled=false
+microphone=default
+microphone_volume=1.00
+microphone_to_output=true
+microphone_to_monitor=false
 
 # AUDIO GECİKME AYARLARI
 # 0 yazılırsa cihazın/Windows'un varsayılanı kullanılır.
 audio_sample_rate=48000
 audio_buffer_ms=5
+
+# UYGULAMA
+# Windows ile otomatik başlatma kullanıcı hesabına özel kayıt defteri ayarı kullanır.
+start_with_windows=false
+# Eski config uyumluluğu için tutulur. GUI sürümü konsolsuz açılır.
+show_console_on_start=false
+check_updates_on_start=true
 
 # KONTROLLER
 stop=F11

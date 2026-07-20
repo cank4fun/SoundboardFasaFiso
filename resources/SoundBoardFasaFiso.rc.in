@@ -8,9 +8,9 @@ VS_VERSION_INFO VERSIONINFO
     PRODUCTVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
     FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
 #ifdef _DEBUG
-    FILEFLAGS VS_FF_DEBUG
+    FILEFLAGS VS_FF_DEBUG | @SOUNDBOARD_VERSION_FILE_FLAGS@
 #else
-    FILEFLAGS 0x0L
+    FILEFLAGS @SOUNDBOARD_VERSION_FILE_FLAGS@
 #endif
     FILEOS VOS_NT_WINDOWS32
     FILETYPE VFT_APP
@@ -22,12 +22,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "SoundBoardFasaFiso contributors\0"
             VALUE "FileDescription", "Portable Windows soundboard\0"
-            VALUE "FileVersion", "@PROJECT_VERSION@.0\0"
+            VALUE "FileVersion", "@SOUNDBOARD_VERSION@\0"
             VALUE "InternalName", "SoundBoardFasaFiso\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 SoundBoardFasaFiso contributors\0"
             VALUE "OriginalFilename", "SoundBoardFasaFiso.exe\0"
             VALUE "ProductName", "SoundBoardFasaFiso\0"
-            VALUE "ProductVersion", "@PROJECT_VERSION@.0\0"
+            VALUE "ProductVersion", "@SOUNDBOARD_VERSION@\0"
         END
     END
 

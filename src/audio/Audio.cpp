@@ -1,9 +1,11 @@
 #include "audio/Audio.hpp"
-#include "sound/SoundFileFormat.hpp"
+#include "localization/Localization.hpp"
 #include "platform/Utf8Path.hpp"
+#include "sound/SoundFileFormat.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -71,7 +73,7 @@ namespace
         case ma_backend_null:
             return "Null";
         default:
-            return "Diger";
+            return Localization::Text("Diğer", "Other");
         }
     }
 
@@ -88,7 +90,7 @@ namespace
         std::ostringstream description;
 
         description
-            << " | Ornekleme: "
+            << Localization::Text(" | Örnekleme: ", " | Sample rate: ")
             << device->sampleRate
             << " Hz";
 
@@ -130,7 +132,7 @@ namespace
             nativeSampleRate != device->sampleRate)
         {
             description
-                << " | Cihaz dogal hizi: "
+                << Localization::Text(" | Cihaz doğal hızı: ", " | Device native rate: ")
                 << nativeSampleRate
                 << " Hz";
         }
@@ -183,7 +185,7 @@ namespace
         if (matches.empty())
         {
             std::cerr
-                << "Cikis cihazi bulunamadi: "
+                << Localization::Text("Çıkış cihazı bulunamadı: ", "Output device not found: ")
                 << requestedDevice
                 << '\n';
 
@@ -193,9 +195,15 @@ namespace
         if (matches.size() > 1)
         {
             std::cerr
-                << "Cihaz adi birden fazla cihazla eslesti: "
+                << Localization::Text(
+                    "Cihaz adı birden fazla cihazla eşleşti: ",
+                    "The device name matched more than one device: "
+                )
                 << requestedDevice
-                << "\nEslesen cihazlar:\n";
+                << Localization::Text(
+                    "\nEşleşen cihazlar:\n",
+                    "\nMatching devices:\n"
+                );
 
             for (const ma_uint32 index : matches)
             {
@@ -203,6 +211,72 @@ namespace
                     << "- "
                     << playbackDevices[index].name
                     << '\n';
+            }
+
+            return std::nullopt;
+        }
+
+        return matches.front();
+    }
+
+    std::optional<ma_uint32> FindCaptureDevice(
+        const std::string& requestedDevice,
+        ma_device_info* captureDevices,
+        const ma_uint32 captureDeviceCount
+    )
+    {
+        const std::string requestedLower = ToLower(requestedDevice);
+
+        std::vector<ma_uint32> exactMatches;
+        std::vector<ma_uint32> partialMatches;
+
+        for (ma_uint32 index = 0; index < captureDeviceCount; ++index)
+        {
+            const std::string deviceName = captureDevices[index].name;
+            const std::string deviceNameLower = ToLower(deviceName);
+
+            if (deviceNameLower == requestedLower)
+            {
+                exactMatches.push_back(index);
+            }
+            else if (deviceNameLower.find(requestedLower) != std::string::npos)
+            {
+                partialMatches.push_back(index);
+            }
+        }
+
+        const auto& matches =
+            !exactMatches.empty() ? exactMatches : partialMatches;
+
+        if (matches.empty())
+        {
+            std::cerr
+                << Localization::Text(
+                    "Mikrofon cihazı bulunamadı: ",
+                    "Microphone device not found: "
+                )
+                << requestedDevice
+                << '\n';
+
+            return std::nullopt;
+        }
+
+        if (matches.size() > 1)
+        {
+            std::cerr
+                << Localization::Text(
+                    "Mikrofon adı birden fazla cihazla eşleşti: ",
+                    "The microphone name matched more than one device: "
+                )
+                << requestedDevice
+                << Localization::Text(
+                    "\nEşleşen cihazlar:\n",
+                    "\nMatching devices:\n"
+                );
+
+            for (const ma_uint32 index : matches)
+            {
+                std::cerr << "- " << captureDevices[index].name << '\n';
             }
 
             return std::nullopt;
@@ -227,6 +301,149 @@ namespace
 
         return result == MA_SUCCESS;
     }
+}
+
+
+std::vector<std::string> Audio::EnumeratePlaybackDevices()
+{
+    ma_context context{};
+
+    const ma_backend preferredBackends[]{
+        ma_backend_wasapi
+    };
+
+    ma_result result = ma_context_init(
+        preferredBackends,
+        1,
+        nullptr,
+        &context
+    );
+
+    if (result != MA_SUCCESS)
+    {
+        std::memset(&context, 0, sizeof(context));
+        result = ma_context_init(
+            nullptr,
+            0,
+            nullptr,
+            &context
+        );
+    }
+
+    if (result != MA_SUCCESS)
+    {
+        return {};
+    }
+
+    ma_device_info* playbackDevices = nullptr;
+    ma_uint32 playbackDeviceCount = 0;
+
+    result = ma_context_get_devices(
+        &context,
+        &playbackDevices,
+        &playbackDeviceCount,
+        nullptr,
+        nullptr
+    );
+
+    std::vector<std::string> deviceNames;
+
+    if (result == MA_SUCCESS)
+    {
+        deviceNames.reserve(
+            static_cast<std::size_t>(playbackDeviceCount)
+        );
+
+        for (
+            ma_uint32 index = 0;
+            index < playbackDeviceCount;
+            ++index
+        )
+        {
+            const std::string deviceName =
+                playbackDevices[index].name;
+
+            if (!deviceName.empty())
+            {
+                deviceNames.push_back(deviceName);
+            }
+        }
+    }
+
+    ma_context_uninit(&context);
+
+    std::sort(deviceNames.begin(), deviceNames.end());
+    deviceNames.erase(
+        std::unique(deviceNames.begin(), deviceNames.end()),
+        deviceNames.end()
+    );
+
+    return deviceNames;
+}
+
+std::vector<std::string> Audio::EnumerateCaptureDevices()
+{
+    ma_context context{};
+
+    const ma_backend preferredBackends[]{
+        ma_backend_wasapi
+    };
+
+    ma_result result = ma_context_init(
+        preferredBackends,
+        1,
+        nullptr,
+        &context
+    );
+
+    if (result != MA_SUCCESS)
+    {
+        std::memset(&context, 0, sizeof(context));
+        result = ma_context_init(nullptr, 0, nullptr, &context);
+    }
+
+    if (result != MA_SUCCESS)
+    {
+        return {};
+    }
+
+    ma_device_info* captureDevices = nullptr;
+    ma_uint32 captureDeviceCount = 0;
+
+    result = ma_context_get_devices(
+        &context,
+        nullptr,
+        nullptr,
+        &captureDevices,
+        &captureDeviceCount
+    );
+
+    std::vector<std::string> deviceNames;
+
+    if (result == MA_SUCCESS)
+    {
+        deviceNames.reserve(static_cast<std::size_t>(captureDeviceCount));
+
+        for (ma_uint32 index = 0; index < captureDeviceCount; ++index)
+        {
+            const std::string deviceName = captureDevices[index].name;
+
+            if (!deviceName.empty())
+            {
+                deviceNames.push_back(deviceName);
+            }
+        }
+    }
+
+    ma_context_uninit(&context);
+
+    std::sort(deviceNames.begin(), deviceNames.end());
+    deviceNames.erase(
+        std::unique(deviceNames.begin(), deviceNames.end()),
+        deviceNames.end()
+    );
+
+    return deviceNames;
 }
 
 Audio::~Audio()
@@ -262,6 +479,63 @@ void Audio::DeviceNotificationCallback(
         instance->recoveryRequested_.store(
             true,
             std::memory_order_release
+        );
+    }
+}
+
+void Audio::MicrophoneDataCallback(
+    ma_device* device,
+    void* outputFrames,
+    const void* inputFrames,
+    const ma_uint32 frameCount
+)
+{
+    static_cast<void>(outputFrames);
+
+    if (device == nullptr || inputFrames == nullptr || frameCount == 0)
+    {
+        return;
+    }
+
+    auto* const instance = static_cast<Audio*>(device->pUserData);
+
+    if (instance == nullptr)
+    {
+        return;
+    }
+
+    const auto* const samples =
+        static_cast<const float*>(inputFrames);
+    const std::size_t sampleCount =
+        static_cast<std::size_t>(frameCount) * 2;
+
+    float peak = 0.0f;
+
+    for (std::size_t index = 0; index < sampleCount; ++index)
+    {
+        peak = std::max(peak, std::abs(samples[index]));
+    }
+
+    instance->microphonePeak_.store(
+        std::clamp(peak, 0.0f, 1.0f),
+        std::memory_order_relaxed
+    );
+
+    if (instance->microphoneToOutput_)
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneOutputRoute_,
+            inputFrames,
+            frameCount
+        );
+    }
+
+    if (instance->microphoneToMonitor_)
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneMonitorRoute_,
+            inputFrames,
+            frameCount
         );
     }
 }
@@ -350,12 +624,14 @@ bool Audio::InitializeEngine(
         activeBufferMilliseconds != 0)
     {
         std::cerr
-            << "Uyari: "
+            << Localization::Text("Uyarı: ", "Warning: ")
             << engineLabel
-            << " icin "
+            << Localization::Text(" için ", " could not open a ")
             << activeBufferMilliseconds
-            << " ms dusuk gecikme buffer'i acilamadi. "
-            << "Windows varsayilan buffer'i ile tekrar deneniyor.\n";
+            << Localization::Text(
+                " ms düşük gecikme buffer'ı açılamadı. Windows varsayılan buffer'ı ile tekrar deneniyor.\n",
+                " ms low-latency buffer. Retrying with the Windows default buffer.\n"
+            );
 
         activeBufferMilliseconds = 0;
 
@@ -370,12 +646,14 @@ bool Audio::InitializeEngine(
         activeSampleRate != 0)
     {
         std::cerr
-            << "Uyari: "
+            << Localization::Text("Uyarı: ", "Warning: ")
             << engineLabel
-            << " icin "
+            << Localization::Text(" için ", " could not open at ")
             << activeSampleRate
-            << " Hz acilamadi. Cihazin dogal ornekleme "
-            << "hizi ile tekrar deneniyor.\n";
+            << Localization::Text(
+                " Hz açılamadı. Cihazın doğal örnekleme hızı ile tekrar deneniyor.\n",
+                " Hz. Retrying with the device's native sample rate.\n"
+            );
 
         activeSampleRate = 0;
         activeBufferMilliseconds = 0;
@@ -391,7 +669,7 @@ bool Audio::InitializeEngine(
     {
         std::cerr
             << engineLabel
-            << " audio engine baslatilamadi. Hata: "
+            << Localization::Text(" audio engine başlatılamadı. Hata: ", " audio engine could not be initialized. Error: ")
             << engineResult
             << '\n';
 
@@ -413,7 +691,7 @@ bool Audio::InitializeEngine(
     {
         std::cerr
             << engineLabel
-            << " ses seviyesi ayarlanamadi. Hata: "
+            << Localization::Text(" ses seviyesi ayarlanamadı. Hata: ", " volume could not be set. Error: ")
             << volumeResult
             << '\n';
 
@@ -430,7 +708,7 @@ bool Audio::InitializeEngine(
         << engineLabel
         << ": "
         << state.deviceName
-        << " | Ses: "
+        << Localization::Text(" | Ses: ", " | Volume: ")
         << static_cast<int>(volume * 100.0f)
         << '%';
 
@@ -442,6 +720,334 @@ bool Audio::InitializeEngine(
     std::cout
         << DeviceTimingDescription(state.engine)
         << '\n';
+
+    return true;
+}
+
+bool Audio::InitializeMicrophoneRoute(
+    EngineState& engineState,
+    const ma_uint32 sampleRate,
+    MicrophoneRoute& route
+)
+{
+    if (!engineState.initialized || sampleRate == 0)
+    {
+        return false;
+    }
+
+    const ma_uint32 ringBufferFrames = std::max<ma_uint32>(
+        sampleRate / 4,
+        2048
+    );
+
+    ma_result result = ma_pcm_rb_init(
+        ma_format_f32,
+        2,
+        ringBufferFrames,
+        nullptr,
+        nullptr,
+        &route.ringBuffer
+    );
+
+    if (result != MA_SUCCESS)
+    {
+        return false;
+    }
+
+    route.ringBufferInitialized = true;
+    ma_pcm_rb_set_sample_rate(&route.ringBuffer, sampleRate);
+
+    result = ma_sound_init_from_data_source(
+        &engineState.engine,
+        &route.ringBuffer,
+        MA_SOUND_FLAG_NO_SPATIALIZATION,
+        nullptr,
+        &route.sound
+    );
+
+    if (result != MA_SUCCESS)
+    {
+        DestroyMicrophoneRoute(route);
+        return false;
+    }
+
+    route.soundInitialized = true;
+
+    ma_sound_set_volume(
+        &route.sound,
+        microphoneVolume_
+    );
+
+    result = ma_sound_start(&route.sound);
+
+    if (result != MA_SUCCESS)
+    {
+        DestroyMicrophoneRoute(route);
+        return false;
+    }
+
+    return true;
+}
+
+void Audio::WriteMicrophoneFrames(
+    MicrophoneRoute& route,
+    const void* inputFrames,
+    const ma_uint32 frameCount
+)
+{
+    if (!route.ringBufferInitialized || inputFrames == nullptr)
+    {
+        return;
+    }
+
+    const auto* source = static_cast<const float*>(inputFrames);
+    ma_uint32 remainingFrames = frameCount;
+    ma_uint32 sourceOffset = 0;
+
+    while (remainingFrames > 0)
+    {
+        ma_uint32 writableFrames = remainingFrames;
+        void* destination = nullptr;
+
+        const ma_result acquireResult = ma_pcm_rb_acquire_write(
+            &route.ringBuffer,
+            &writableFrames,
+            &destination
+        );
+
+        if (acquireResult != MA_SUCCESS || writableFrames == 0 ||
+            destination == nullptr)
+        {
+            break;
+        }
+
+        std::memcpy(
+            destination,
+            source + static_cast<std::size_t>(sourceOffset) * 2,
+            static_cast<std::size_t>(writableFrames) * 2 * sizeof(float)
+        );
+
+        if (ma_pcm_rb_commit_write(
+                &route.ringBuffer,
+                writableFrames
+            ) != MA_SUCCESS)
+        {
+            break;
+        }
+
+        sourceOffset += writableFrames;
+        remainingFrames -= writableFrames;
+    }
+}
+
+void Audio::DestroyMicrophoneRoute(MicrophoneRoute& route)
+{
+    if (route.soundInitialized)
+    {
+        ma_sound_uninit(&route.sound);
+    }
+
+    route.soundInitialized = false;
+    std::memset(&route.sound, 0, sizeof(route.sound));
+
+    if (route.ringBufferInitialized)
+    {
+        ma_pcm_rb_uninit(&route.ringBuffer);
+    }
+
+    route.ringBufferInitialized = false;
+    std::memset(&route.ringBuffer, 0, sizeof(route.ringBuffer));
+}
+
+bool Audio::InitializeMicrophone(
+    ma_device_info* captureDevices,
+    const ma_uint32 captureDeviceCount
+)
+{
+    microphoneCapture_.deviceName.clear();
+    microphoneCapture_.initialized = false;
+
+    ma_device_config deviceConfig =
+        ma_device_config_init(ma_device_type_capture);
+
+    deviceConfig.capture.format = ma_format_f32;
+    deviceConfig.capture.channels = 2;
+    deviceConfig.sampleRate = sampleRate_;
+    deviceConfig.periodSizeInMilliseconds = bufferMilliseconds_;
+    deviceConfig.dataCallback = &Audio::MicrophoneDataCallback;
+    deviceConfig.notificationCallback = &Audio::DeviceNotificationCallback;
+    deviceConfig.pUserData = this;
+
+    if (IsDefaultDeviceRequest(requestedMicrophoneDevice_))
+    {
+        microphoneCapture_.deviceName = Localization::Text(
+            "Windows varsayılan mikrofonu",
+            "Windows default microphone"
+        );
+    }
+    else
+    {
+        const auto selectedIndex = FindCaptureDevice(
+            requestedMicrophoneDevice_,
+            captureDevices,
+            captureDeviceCount
+        );
+
+        if (!selectedIndex.has_value())
+        {
+            return false;
+        }
+
+        microphoneCapture_.deviceId = captureDevices[*selectedIndex].id;
+        microphoneCapture_.deviceName = captureDevices[*selectedIndex].name;
+        deviceConfig.capture.pDeviceID = &microphoneCapture_.deviceId;
+    }
+
+    const auto tryInitialize = [this, &deviceConfig](
+        const ma_uint32 attemptSampleRate,
+        const ma_uint32 attemptBufferMilliseconds
+    )
+    {
+        std::memset(
+            &microphoneCapture_.device,
+            0,
+            sizeof(microphoneCapture_.device)
+        );
+
+        deviceConfig.sampleRate = attemptSampleRate;
+        deviceConfig.periodSizeInMilliseconds = attemptBufferMilliseconds;
+
+        return ma_device_init(
+            &context_,
+            &deviceConfig,
+            &microphoneCapture_.device
+        );
+    };
+
+    ma_uint32 activeSampleRate = sampleRate_;
+    ma_uint32 activeBufferMilliseconds = bufferMilliseconds_;
+
+    ma_result result = tryInitialize(
+        activeSampleRate,
+        activeBufferMilliseconds
+    );
+
+    if (result != MA_SUCCESS && activeBufferMilliseconds != 0)
+    {
+        std::cerr
+            << Localization::Text(
+                "Uyarı: Mikrofon düşük gecikme buffer'ı ile açılamadı. Windows varsayılan buffer'ı deneniyor.\n",
+                "Warning: The microphone could not open with the low-latency buffer. Retrying with the Windows default buffer.\n"
+            );
+
+        activeBufferMilliseconds = 0;
+        result = tryInitialize(activeSampleRate, activeBufferMilliseconds);
+    }
+
+    if (result != MA_SUCCESS && activeSampleRate != 0)
+    {
+        std::cerr
+            << Localization::Text(
+                "Uyarı: Mikrofon istenen örnekleme hızında açılamadı. Cihazın doğal hızı deneniyor.\n",
+                "Warning: The microphone could not open at the requested sample rate. Retrying at the device's native rate.\n"
+            );
+
+        activeSampleRate = 0;
+        activeBufferMilliseconds = 0;
+        result = tryInitialize(activeSampleRate, activeBufferMilliseconds);
+    }
+
+    if (result != MA_SUCCESS)
+    {
+        std::cerr
+            << Localization::Text(
+                "Mikrofon başlatılamadı. Hata: ",
+                "The microphone could not be initialized. Error: "
+            )
+            << result
+            << '\n';
+
+        microphoneCapture_.deviceName.clear();
+        return false;
+    }
+
+    microphoneCapture_.initialized = true;
+
+    const ma_uint32 captureSampleRate =
+        microphoneCapture_.device.sampleRate;
+
+    if (microphoneToOutput_ &&
+        !InitializeMicrophoneRoute(
+            outputEngine_,
+            captureSampleRate,
+            microphoneOutputRoute_
+        ))
+    {
+        return false;
+    }
+
+    if (microphoneToMonitor_)
+    {
+        if (!monitorEngine_.initialized)
+        {
+            std::cerr << Localization::Text(
+                "Mikrofon monitöre yönlendirildi ancak monitör çıkışı kapalı.\n",
+                "The microphone is routed to the monitor, but the monitor output is disabled.\n"
+            );
+            return false;
+        }
+
+        if (!InitializeMicrophoneRoute(
+                monitorEngine_,
+                captureSampleRate,
+                microphoneMonitorRoute_
+            ))
+        {
+            return false;
+        }
+    }
+
+    result = ma_device_start(&microphoneCapture_.device);
+
+    if (result != MA_SUCCESS)
+    {
+        std::cerr
+            << Localization::Text(
+                "Mikrofon yakalama başlatılamadı. Hata: ",
+                "Microphone capture could not be started. Error: "
+            )
+            << result
+            << '\n';
+        return false;
+    }
+
+    std::cout
+        << Localization::Text("Mikrofon: ", "Microphone: ")
+        << microphoneCapture_.deviceName
+        << Localization::Text(" | Ses: ", " | Volume: ")
+        << static_cast<int>(microphoneVolume_ * 100.0f)
+        << "% | "
+        << Localization::Text("Yönlendirme: ", "Routing: ");
+
+    if (microphoneToOutput_)
+    {
+        std::cout << Localization::Text("ana çıkış", "main output");
+    }
+
+    if (microphoneToOutput_ && microphoneToMonitor_)
+    {
+        std::cout << " + ";
+    }
+
+    if (microphoneToMonitor_)
+    {
+        std::cout << Localization::Text("monitör", "monitor");
+    }
+
+    std::cout
+        << Localization::Text(" | Örnekleme: ", " | Sample rate: ")
+        << captureSampleRate
+        << " Hz\n";
 
     return true;
 }
@@ -468,8 +1074,10 @@ bool Audio::InitializeRuntime()
     if (contextResult != MA_SUCCESS)
     {
         std::cerr
-            << "Uyari: WASAPI baslatilamadi. Miniaudio'nun "
-            << "Windows yedek backend sirasi deneniyor. Hata: "
+            << Localization::Text(
+                "Uyarı: WASAPI başlatılamadı. Miniaudio'nun Windows yedek backend sırası deneniyor. Hata: ",
+                "Warning: WASAPI could not be initialized. Trying miniaudio's Windows fallback backend order. Error: "
+            )
             << contextResult
             << '\n';
 
@@ -487,7 +1095,7 @@ bool Audio::InitializeRuntime()
     if (contextResult != MA_SUCCESS)
     {
         std::cerr
-            << "Audio context baslatilamadi. Hata: "
+            << Localization::Text("Audio context başlatılamadı. Hata: ", "Audio context could not be initialized. Error: ")
             << contextResult
             << '\n';
 
@@ -497,26 +1105,28 @@ bool Audio::InitializeRuntime()
     contextInitialized_ = true;
 
     std::cout
-        << "Audio backend: "
+        << Localization::Text("Audio backend: ", "Audio backend: ")
         << BackendName(context_.backend)
         << '\n';
 
     ma_device_info* playbackDevices = nullptr;
     ma_uint32 playbackDeviceCount = 0;
+    ma_device_info* captureDevices = nullptr;
+    ma_uint32 captureDeviceCount = 0;
 
     const ma_result deviceResult =
         ma_context_get_devices(
             &context_,
             &playbackDevices,
             &playbackDeviceCount,
-            nullptr,
-            nullptr
+            &captureDevices,
+            &captureDeviceCount
         );
 
     if (deviceResult != MA_SUCCESS)
     {
         std::cerr
-            << "Ses cihazlari alinamadi. Hata: "
+            << Localization::Text("Ses cihazları alınamadı. Hata: ", "Audio devices could not be enumerated. Error: ")
             << deviceResult
             << '\n';
 
@@ -526,7 +1136,7 @@ bool Audio::InitializeRuntime()
 
     if (!InitializeEngine(
         requestedOutputDevice_,
-        "Ana cikis",
+        Localization::Text("Ana çıkış", "Main output"),
         playbackDevices,
         playbackDeviceCount,
         outputVolume_,
@@ -544,7 +1154,7 @@ bool Audio::InitializeRuntime()
     {
         if (!InitializeEngine(
             requestedMonitorDevice_,
-            "Monitor cikisi",
+            Localization::Text("Monitör çıkışı", "Monitor output"),
             playbackDevices,
             playbackDeviceCount,
             monitorVolume_,
@@ -562,13 +1172,34 @@ bool Audio::InitializeRuntime()
             monitorEngine_.deviceName)
         {
             std::cerr
-                << "Uyari: Ana cikis ve monitor ayni cihaz. "
-                << "Ses iki kez oynatilabilir.\n";
+                << Localization::Text(
+                    "Uyarı: Ana çıkış ve monitör aynı cihaz. Ses iki kez oynatılabilir.\n",
+                    "Warning: The main output and monitor output use the same device. Audio may play twice.\n"
+                );
         }
     }
     else
     {
-        std::cout << "Monitor cikisi: Kapali\n";
+        std::cout << Localization::Text("Monitör çıkışı: Kapalı\n", "Monitor output: Disabled\n");
+    }
+
+    if (microphoneEnabled_)
+    {
+        if (!InitializeMicrophone(
+                captureDevices,
+                captureDeviceCount
+            ))
+        {
+            DestroyRuntime();
+            return false;
+        }
+    }
+    else
+    {
+        std::cout << Localization::Text(
+            "Mikrofon miksi: Kapalı\n",
+            "Microphone mix: Disabled\n"
+        );
     }
 
     return true;
@@ -579,6 +1210,11 @@ bool Audio::Initialize(
     const std::string& requestedMonitorDevice,
     const float outputVolume,
     const float monitorVolume,
+    const bool microphoneEnabled,
+    const std::string& requestedMicrophoneDevice,
+    const float microphoneVolume,
+    const bool microphoneToOutput,
+    const bool microphoneToMonitor,
     const unsigned int sampleRate,
     const unsigned int bufferMilliseconds
 )
@@ -594,8 +1230,10 @@ bool Audio::Initialize(
     if (activeInstance != nullptr && activeInstance != this)
     {
         std::cerr
-            << "Ayni anda birden fazla Audio nesnesi "
-            << "baslatilamaz.\n";
+            << Localization::Text(
+                "Aynı anda birden fazla Audio nesnesi başlatılamaz.\n",
+                "More than one Audio instance cannot be initialized at the same time.\n"
+            );
 
         return false;
     }
@@ -609,14 +1247,28 @@ bool Audio::Initialize(
         (bufferMilliseconds >= 2 &&
             bufferMilliseconds <= 100);
 
-    if (!sampleRateIsValid || !bufferIsValid)
+    const bool microphoneSettingsAreValid =
+        !microphoneEnabled ||
+        (!requestedMicrophoneDevice.empty() &&
+            microphoneVolume >= 0.0f &&
+            microphoneVolume <= 1.0f &&
+            (microphoneToOutput || microphoneToMonitor));
+
+    if (!sampleRateIsValid || !bufferIsValid ||
+        !microphoneSettingsAreValid)
     {
         std::cerr
-            << "Gecersiz audio gecikme ayari. "
-            << "sampleRate="
+            << Localization::Text(
+                "Geçersiz audio veya mikrofon ayarı. sampleRate=",
+                "Invalid audio or microphone setting. sampleRate="
+            )
             << sampleRate
             << ", bufferMilliseconds="
             << bufferMilliseconds
+            << ", microphoneEnabled="
+            << (microphoneEnabled ? "true" : "false")
+            << ", microphoneVolume="
+            << microphoneVolume
             << '\n';
 
         return false;
@@ -624,8 +1276,13 @@ bool Audio::Initialize(
 
     requestedOutputDevice_ = requestedOutputDevice;
     requestedMonitorDevice_ = requestedMonitorDevice;
+    requestedMicrophoneDevice_ = requestedMicrophoneDevice;
     outputVolume_ = outputVolume;
     monitorVolume_ = monitorVolume;
+    microphoneEnabled_ = microphoneEnabled;
+    microphoneVolume_ = microphoneVolume;
+    microphoneToOutput_ = microphoneToOutput;
+    microphoneToMonitor_ = microphoneToMonitor;
     sampleRate_ = static_cast<ma_uint32>(sampleRate);
     bufferMilliseconds_ =
         static_cast<ma_uint32>(bufferMilliseconds);
@@ -695,9 +1352,9 @@ bool Audio::InitializeVoiceFromFile(
     if (result != MA_SUCCESS)
     {
         std::cerr
-            << "Ses ana cikisa yuklenemedi: "
+            << Localization::Text("Ses ana çıkışa yüklenemedi: ", "Sound could not be loaded into the main output: ")
             << PathToUtf8(definition.path)
-            << ". Hata: "
+            << Localization::Text(". Hata: ", ". Error: ")
             << result
             << '\n';
 
@@ -723,9 +1380,9 @@ bool Audio::InitializeVoiceFromFile(
         if (result != MA_SUCCESS)
         {
             std::cerr
-                << "Ses monitor cikisina yuklenemedi: "
+                << Localization::Text("Ses monitör çıkışına yüklenemedi: ", "Sound could not be loaded into the monitor output: ")
                 << PathToUtf8(definition.path)
-                << ". Hata: "
+                << Localization::Text(". Hata: ", ". Error: ")
                 << result
                 << '\n';
 
@@ -795,9 +1452,9 @@ bool Audio::InitializeVoiceCopy(
     if (result != MA_SUCCESS)
     {
         std::cerr
-            << "Overlap voice ana cikisa olusturulamadi: "
+            << Localization::Text("Overlap voice ana çıkış için oluşturulamadı: ", "Overlap voice could not be created for the main output: ")
             << PathToUtf8(definition.path)
-            << ". Hata: "
+            << Localization::Text(". Hata: ", ". Error: ")
             << result
             << '\n';
 
@@ -822,9 +1479,9 @@ bool Audio::InitializeVoiceCopy(
         if (result != MA_SUCCESS)
         {
             std::cerr
-                << "Overlap voice monitor cikisina olusturulamadi: "
+                << Localization::Text("Overlap voice monitör çıkışı için oluşturulamadı: ", "Overlap voice could not be created for the monitor output: ")
                 << PathToUtf8(definition.path)
-                << ". Hata: "
+                << Localization::Text(". Hata: ", ". Error: ")
                 << result
                 << '\n';
 
@@ -866,20 +1523,20 @@ bool Audio::LoadSoundIntoRuntime(
 {
     if (!outputEngine_.initialized)
     {
-        std::cerr << "Ana audio engine hazir degil.\n";
+        std::cerr << Localization::Text("Ana audio engine hazır değil.\n", "The main audio engine is not ready.\n");
         return false;
     }
 
     if (soundId.empty())
     {
-        std::cerr << "Ses kimligi bos olamaz.\n";
+        std::cerr << Localization::Text("Ses kimliği boş olamaz.\n", "The sound ID cannot be empty.\n");
         return false;
     }
 
     if (loadedSounds_.contains(soundId))
     {
         std::cerr
-            << "Ses zaten yuklenmis: "
+            << Localization::Text("Ses zaten yüklenmiş: ", "Sound is already loaded: ")
             << soundId
             << '\n';
 
@@ -890,7 +1547,7 @@ bool Audio::LoadSoundIntoRuntime(
         !std::filesystem::is_regular_file(definition.path))
     {
         std::cerr
-            << "Ses dosyasi bulunamadi: "
+            << Localization::Text("Ses dosyası bulunamadı: ", "Sound file not found: ")
             << PathToUtf8(definition.path)
             << '\n';
 
@@ -899,6 +1556,15 @@ bool Audio::LoadSoundIntoRuntime(
 
     LoadedSound loadedSound;
     loadedSound.mode = definition.mode;
+
+    if (definition.mode == PlaybackMode::Overlap)
+    {
+        loadedSound.voices.reserve(OverlapVoiceCount);
+    }
+    else
+    {
+        loadedSound.voices.reserve(1);
+    }
 
     Voice primaryVoice;
 
@@ -916,10 +1582,6 @@ bool Audio::LoadSoundIntoRuntime(
 
     if (definition.mode == PlaybackMode::Overlap)
     {
-        loadedSound.voices.reserve(
-            OverlapVoiceCount
-        );
-
         while (loadedSound.voices.size() <
             OverlapVoiceCount)
         {
@@ -962,7 +1624,7 @@ bool Audio::PrepareVoiceForPlayback(
         ))
     {
         std::cerr
-            << "Ana cikistaki ses hazirlanamadi: "
+            << Localization::Text("Ana çıkıştaki ses hazırlanamadı: ", "The sound on the main output could not be prepared: ")
             << soundId
             << '\n';
 
@@ -975,7 +1637,7 @@ bool Audio::PrepareVoiceForPlayback(
         ))
     {
         std::cerr
-            << "Monitor sesi hazirlanamadi: "
+            << Localization::Text("Monitör sesi hazırlanamadı: ", "The monitor sound could not be prepared: ")
             << soundId
             << '\n';
 
@@ -1003,9 +1665,9 @@ bool Audio::StartVoice(
     if (result != MA_SUCCESS)
     {
         std::cerr
-            << "Ana cikistaki ses baslatilamadi: "
+            << Localization::Text("Ana çıkıştaki ses başlatılamadı: ", "The sound on the main output could not be started: ")
             << soundId
-            << ". Hata: "
+            << Localization::Text(". Hata: ", ". Error: ")
             << result
             << '\n';
 
@@ -1022,9 +1684,9 @@ bool Audio::StartVoice(
         if (result != MA_SUCCESS)
         {
             std::cerr
-                << "Monitor sesi baslatilamadi: "
+                << Localization::Text("Monitör sesi başlatılamadı: ", "The monitor sound could not be started: ")
                 << soundId
-                << ". Hata: "
+                << Localization::Text(". Hata: ", ". Error: ")
                 << result
                 << '\n';
 
@@ -1108,7 +1770,7 @@ bool Audio::LoadSound(
     if (soundDefinitions_.contains(soundId))
     {
         std::cerr
-            << "Ses zaten kayitli: "
+            << Localization::Text("Ses zaten kayıtlı: ", "Sound is already registered: ")
             << soundId
             << '\n';
 
@@ -1121,11 +1783,13 @@ bool Audio::LoadSound(
             SoundFileFormat::NormalizedExtension(soundPath);
 
         std::cerr
-            << "Desteklenmeyen ses dosyasi uzantisi: "
-            << (extension.empty() ? "<uzanti yok>" : extension)
-            << "\nDosya: "
+            << Localization::Text("Desteklenmeyen ses dosyası uzantısı: ", "Unsupported sound file extension: ")
+            << (extension.empty()
+                ? Localization::Text("<uzantı yok>", "<no extension>")
+                : extension)
+            << Localization::Text("\nDosya: ", "\nFile: ")
             << PathToUtf8(soundPath)
-            << "\nDesteklenen uzantilar: "
+            << Localization::Text("\nDesteklenen uzantılar: ", "\nSupported extensions: ")
             << SoundFileFormat::SupportedExtensions()
             << '\n';
 
@@ -1135,7 +1799,7 @@ bool Audio::LoadSound(
     if (volume < 0.0f || volume > 1.0f)
     {
         std::cerr
-            << "Ses seviyesi 0.00 ile 1.00 arasinda olmali: "
+            << Localization::Text("Ses seviyesi 0.00 ile 1.00 arasında olmalı: ", "Volume must be between 0.00 and 1.00: ")
             << soundId
             << '\n';
 
@@ -1169,8 +1833,10 @@ PlaybackResult Audio::PlayLoaded(const std::string& soundId)
     if (iterator == loadedSounds_.end())
     {
         std::cerr
-            << "Ses sistemi su anda hazir degil veya "
-            << "yuklenmis ses bulunamadi: "
+            << Localization::Text(
+                "Ses sistemi şu anda hazır değil veya yüklenmiş ses bulunamadı: ",
+                "The audio system is not ready or the loaded sound could not be found: "
+            )
             << soundId
             << '\n';
 
@@ -1338,7 +2004,7 @@ MuteToggleResult Audio::ToggleEngineMute(
     {
         std::cerr
             << engineLabel
-            << " mute durumu degistirilemedi. Hata: "
+            << Localization::Text(" mute durumu değiştirilemedi. Hata: ", " mute state could not be changed. Error: ")
             << result
             << '\n';
 
@@ -1363,7 +2029,7 @@ MuteToggleResult Audio::ToggleOutputMute()
         outputEngine_,
         outputVolume_,
         outputMuted_,
-        "Ana cikis"
+        Localization::Text("Ana çıkış", "Main output")
     );
 }
 
@@ -1373,7 +2039,7 @@ MuteToggleResult Audio::ToggleMonitorMute()
         monitorEngine_,
         monitorVolume_,
         monitorMuted_,
-        "Monitor cikisi"
+        Localization::Text("Monitör çıkışı", "Monitor output")
     );
 }
 
@@ -1399,6 +2065,20 @@ bool Audio::IsEngineRunning(EngineState& state) const
         deviceState == ma_device_state_starting;
 }
 
+bool Audio::IsMicrophoneRunning() const
+{
+    if (!microphoneEnabled_ || !microphoneCapture_.initialized)
+    {
+        return !microphoneEnabled_;
+    }
+
+    const ma_device_state deviceState =
+        ma_device_get_state(&microphoneCapture_.device);
+
+    return deviceState == ma_device_state_started ||
+        deviceState == ma_device_state_starting;
+}
+
 bool Audio::IsRuntimeHealthy()
 {
     if (!contextInitialized_ ||
@@ -1409,6 +2089,11 @@ bool Audio::IsRuntimeHealthy()
 
     if (!IsDisabledDeviceRequest(requestedMonitorDevice_) &&
         !IsEngineRunning(monitorEngine_))
+    {
+        return false;
+    }
+
+    if (!IsMicrophoneRunning())
     {
         return false;
     }
@@ -1477,8 +2162,115 @@ AudioRecoveryResult Audio::MaintainDeviceConnection()
     return AudioRecoveryResult::Recovered;
 }
 
+AudioLevelSnapshot Audio::GetLevelSnapshot() const
+{
+    AudioLevelSnapshot snapshot;
+
+    snapshot.outputAvailable = outputEngine_.initialized;
+    snapshot.monitorAvailable = monitorEngine_.initialized;
+    snapshot.microphoneAvailable =
+        microphoneEnabled_ && microphoneCapture_.initialized;
+
+    float activeOutputSoundLevel = 0.0f;
+    float activeMonitorSoundLevel = 0.0f;
+
+    for (const auto& [soundId, loadedSound] : loadedSounds_)
+    {
+        const auto definitionIterator =
+            soundDefinitions_.find(soundId);
+
+        const float configuredLevel = definitionIterator !=
+            soundDefinitions_.end()
+                ? definitionIterator->second.volume
+                : 1.0f;
+
+        for (const Voice& voice : loadedSound.voices)
+        {
+            if (voice.outputSound &&
+                ma_sound_is_playing(voice.outputSound.get()) == MA_TRUE)
+            {
+                activeOutputSoundLevel = std::max(
+                    activeOutputSoundLevel,
+                    configuredLevel
+                );
+            }
+
+            if (voice.monitorSound &&
+                ma_sound_is_playing(voice.monitorSound.get()) == MA_TRUE)
+            {
+                activeMonitorSoundLevel = std::max(
+                    activeMonitorSoundLevel,
+                    configuredLevel
+                );
+            }
+        }
+    }
+
+    const float microphonePeak = snapshot.microphoneAvailable
+        ? std::clamp(
+            microphonePeak_.load(std::memory_order_relaxed),
+            0.0f,
+            1.0f
+        )
+        : 0.0f;
+
+    snapshot.microphone = microphonePeak;
+
+    if (microphoneToOutput_ && snapshot.microphoneAvailable)
+    {
+        activeOutputSoundLevel = std::max(
+            activeOutputSoundLevel,
+            microphonePeak * microphoneVolume_
+        );
+    }
+
+    if (microphoneToMonitor_ && snapshot.microphoneAvailable)
+    {
+        activeMonitorSoundLevel = std::max(
+            activeMonitorSoundLevel,
+            microphonePeak * microphoneVolume_
+        );
+    }
+
+    snapshot.output = snapshot.outputAvailable && !outputMuted_
+        ? std::clamp(
+            activeOutputSoundLevel * outputVolume_,
+            0.0f,
+            1.0f
+        )
+        : 0.0f;
+
+    snapshot.monitor = snapshot.monitorAvailable && !monitorMuted_
+        ? std::clamp(
+            activeMonitorSoundLevel * monitorVolume_,
+            0.0f,
+            1.0f
+        )
+        : 0.0f;
+
+    return snapshot;
+}
+
 void Audio::DestroyRuntime()
 {
+    microphonePeak_.store(0.0f, std::memory_order_relaxed);
+
+    if (microphoneCapture_.initialized)
+    {
+        ma_device_uninit(&microphoneCapture_.device);
+    }
+
+    microphoneCapture_.initialized = false;
+    microphoneCapture_.deviceName.clear();
+    std::memset(
+        &microphoneCapture_.device,
+        0,
+        sizeof(microphoneCapture_.device)
+    );
+
+    DestroyMicrophoneRoute(microphoneOutputRoute_);
+    DestroyMicrophoneRoute(microphoneMonitorRoute_);
+
     for (auto& [soundId, loadedSound] : loadedSounds_)
     {
         static_cast<void>(soundId);
@@ -1535,6 +2327,12 @@ void Audio::Shutdown()
 
     requestedOutputDevice_.clear();
     requestedMonitorDevice_.clear();
+    requestedMicrophoneDevice_.clear();
+
+    microphoneEnabled_ = false;
+    microphoneVolume_ = 1.0f;
+    microphoneToOutput_ = true;
+    microphoneToMonitor_ = false;
 
     sampleRate_ = 48000;
     bufferMilliseconds_ = 5;
