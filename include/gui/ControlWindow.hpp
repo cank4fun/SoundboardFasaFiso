@@ -71,8 +71,15 @@ public:
     void CheckForUpdates(bool showCurrentResult = true);
 
 private:
+    enum class ControlPage
+    {
+        Main,
+        Settings,
+        Hotkeys
+    };
+
     static constexpr int MinimumClientWidth = 960;
-    static constexpr int MinimumClientHeight = 850;
+    static constexpr int MinimumClientHeight = 700;
 
     static constexpr int IdApplySettings = 1000;
     static constexpr int IdReload = 1001;
@@ -98,6 +105,9 @@ private:
     static constexpr int IdOpenLogs = 1021;
     static constexpr int IdThemeToggle = 1022;
     static constexpr int IdCheckUpdates = 1023;
+    static constexpr int IdMainTab = 1024;
+    static constexpr int IdSettingsTab = 1025;
+    static constexpr int IdHotkeysTab = 1026;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -119,6 +129,8 @@ private:
 
     bool CreateControls();
     void LayoutControls(int clientWidth, int clientHeight);
+    void SetActivePage(ControlPage page);
+    void UpdatePageVisibility();
     void RefreshLocalizedText();
     void ApplyTheme();
     void ApplyFonts();
@@ -135,6 +147,7 @@ private:
     bool IsSliderControl(HWND control) const;
     bool IsLevelMeterControl(HWND control) const;
     bool IsPrimaryButton(HWND control) const;
+    bool IsNavigationTab(HWND control) const;
     bool IsDangerButton(HWND control) const;
     HBRUSH StaticBrushFor(HWND control) const;
     void PopulateBindings();
@@ -196,8 +209,19 @@ private:
     HWND headerLabel_ = nullptr;
     HWND subtitleLabel_ = nullptr;
     HWND themeToggleButton_ = nullptr;
+    HWND mainTabButton_ = nullptr;
+    HWND settingsTabButton_ = nullptr;
+    HWND hotkeysTabButton_ = nullptr;
     HWND statusCaption_ = nullptr;
     HWND statusValue_ = nullptr;
+
+    HWND mainQuickGroup_ = nullptr;
+    HWND mainOutputMeterCaption_ = nullptr;
+    HWND mainOutputLevelMeter_ = nullptr;
+    HWND mainMonitorMeterCaption_ = nullptr;
+    HWND mainMonitorLevelMeter_ = nullptr;
+    HWND mainMicrophoneMeterCaption_ = nullptr;
+    HWND mainMicrophoneLevelMeter_ = nullptr;
 
     HWND settingsGroup_ = nullptr;
     HWND outputCaption_ = nullptr;
@@ -274,7 +298,9 @@ private:
     HWND checkUpdatesButton_ = nullptr;
     HWND consoleButton_ = nullptr;
     HWND exitButton_ = nullptr;
+    HWND settingsToolsGroup_ = nullptr;
 
+    ControlPage activePage_ = ControlPage::Main;
     AppTheme activeTheme_ = AppTheme::Dark;
 
     HFONT headerFont_ = nullptr;
