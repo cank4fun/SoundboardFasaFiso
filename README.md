@@ -264,3 +264,9 @@ See [CHANGELOG.md](CHANGELOG.md) for release notes.
 ## License
 
 Released under the [MIT License](LICENSE).
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+Project roles, privacy rules and the release-signing process are documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
