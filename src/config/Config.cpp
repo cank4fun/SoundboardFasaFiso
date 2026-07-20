@@ -223,7 +223,12 @@ namespace
 
         if (settingName == "SHOW_CONSOLE_ON_START")
         {
-            return "show_console_on_start=true";
+            return "show_console_on_start=false";
+        }
+
+        if (settingName == "CHECK_UPDATES_ON_START")
+        {
+            return "check_updates_on_start=true";
         }
 
         if (settingName == "STOP")
@@ -925,6 +930,7 @@ namespace
             settingName == "AUDIO_BUFFER_MS" ||
             settingName == "START_WITH_WINDOWS" ||
             settingName == "SHOW_CONSOLE_ON_START" ||
+            settingName == "CHECK_UPDATES_ON_START" ||
             settingName == "STOP" ||
             settingName == "OUTPUT_MUTE" ||
             settingName == "MONITOR_MUTE" ||
@@ -955,7 +961,8 @@ bool Config::Load(const std::filesystem::path& filePath)
     audioBufferMilliseconds_ = 5;
 
     startWithWindows_ = false;
-    showConsoleOnStart_ = true;
+    showConsoleOnStart_ = false;
+    checkUpdatesOnStart_ = true;
 
     stopKeyName_ = "F11";
     stopModifiers_ = 0;
@@ -1478,6 +1485,28 @@ bool Config::Load(const std::filesystem::path& filePath)
             continue;
         }
 
+        if (settingName == "CHECK_UPDATES_ON_START")
+        {
+            const auto enabled = ParseBoolean(parsedLine.rightSide);
+
+            if (!enabled.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "check_updates_on_start değeri true veya false olmalı. Girilen değer: ",
+                        "check_updates_on_start must be true or false. Entered value: "
+                    )} + parsedLine.rightSide,
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            checkUpdatesOnStart_ = *enabled;
+            continue;
+        }
+
         std::string hotkeyError;
         const auto hotkey =
             ParseHotkey(parsedLine.rightSide, hotkeyError);
@@ -1861,7 +1890,9 @@ bool Config::Save(const std::filesystem::path& filePath) const
         << "start_with_windows="
         << (startWithWindows_ ? "true" : "false") << '\n'
         << "show_console_on_start="
-        << (showConsoleOnStart_ ? "true" : "false") << "\n\n"
+        << (showConsoleOnStart_ ? "true" : "false") << '\n'
+        << "check_updates_on_start="
+        << (checkUpdatesOnStart_ ? "true" : "false") << "\n\n"
         << "# KONTROLLER / CONTROLS\n"
         << "stop=" << stopKeyName_ << '\n'
         << "output_mute=" << outputMuteKeyName_ << '\n'
@@ -2073,6 +2104,11 @@ void Config::SetShowConsoleOnStart(const bool enabled)
     showConsoleOnStart_ = enabled;
 }
 
+void Config::SetCheckUpdatesOnStart(const bool enabled)
+{
+    checkUpdatesOnStart_ = enabled;
+}
+
 bool Config::SetControlHotkeys(
     std::string stopKeyName,
     std::string outputMuteKeyName,
@@ -2279,6 +2315,11 @@ bool Config::GetStartWithWindows() const
 bool Config::GetShowConsoleOnStart() const
 {
     return showConsoleOnStart_;
+}
+
+bool Config::GetCheckUpdatesOnStart() const
+{
+    return checkUpdatesOnStart_;
 }
 
 const std::string& Config::GetStopKeyName() const

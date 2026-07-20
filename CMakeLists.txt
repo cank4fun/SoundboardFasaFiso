@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(SOUNDBOARD_VERSION "2.0.0-alpha.8")
+set(SOUNDBOARD_VERSION "2.0.0-alpha.10")
 
 project(SoundBoardFasaFiso VERSION 2.0.0 LANGUAGES CXX)
 
@@ -38,6 +38,7 @@ configure_file(
 
 add_executable(
     SoundBoardFasaFiso
+    WIN32
     src/main.cpp
     src/audio/Audio.cpp
     src/audio/miniaudio_impl.cpp
@@ -46,9 +47,11 @@ add_executable(
     src/gui/ControlWindow.cpp
     src/hotkeys/HotkeyManager.cpp
     src/localization/Localization.cpp
+    src/platform/DebugConsole.cpp
     src/platform/SingleInstance.cpp
     src/platform/StartupManager.cpp
     src/tray/TrayIcon.cpp
+    src/update/UpdateChecker.cpp
     "${SOUNDBOARD_GENERATED_DIR}/SoundBoardFasaFiso.rc"
 )
 
@@ -120,6 +123,7 @@ target_link_libraries(
         advapi32
         dwmapi
         uxtheme
+        winhttp
 )
 
 add_custom_target(

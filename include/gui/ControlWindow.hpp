@@ -9,11 +9,16 @@
 #endif
 
 #include "config/Config.hpp"
+#include "update/UpdateChecker.hpp"
 
 #include <Windows.h>
 
+#include <atomic>
 #include <filesystem>
+#include <mutex>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 class Audio;
@@ -63,6 +68,7 @@ public:
         const std::vector<std::string>& captureDevices
     );
     void SetStatus(const std::wstring& status);
+    void CheckForUpdates(bool showCurrentResult = true);
 
 private:
     static constexpr int MinimumClientWidth = 960;
@@ -91,8 +97,10 @@ private:
     static constexpr int IdMicrophoneVolumeSlider = 1020;
     static constexpr int IdOpenLogs = 1021;
     static constexpr int IdThemeToggle = 1022;
+    static constexpr int IdCheckUpdates = 1023;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
+    static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
     static constexpr UINT LevelMeterIntervalMilliseconds = 40;
 
     static LRESULT CALLBACK WindowProcedure(
@@ -137,6 +145,7 @@ private:
     void UpdateVolumeLabels();
     void UpdateBindingVolumeLabel();
     void UpdateLevelMeters();
+    void HandleUpdateCheckCompleted();
     bool SavePendingSettings();
 
     void LoadSelectedBindingIntoEditor();
@@ -220,6 +229,7 @@ private:
     HWND languageCombo_ = nullptr;
     HWND startWithWindowsCheck_ = nullptr;
     HWND showConsoleOnStartCheck_ = nullptr;
+    HWND checkUpdatesOnStartCheck_ = nullptr;
     HWND refreshDevicesButton_ = nullptr;
     HWND applySettingsButton_ = nullptr;
 
@@ -261,6 +271,7 @@ private:
     HWND openConfigButton_ = nullptr;
     HWND openSoundsButton_ = nullptr;
     HWND openLogsButton_ = nullptr;
+    HWND checkUpdatesButton_ = nullptr;
     HWND consoleButton_ = nullptr;
     HWND exitButton_ = nullptr;
 
@@ -292,6 +303,12 @@ private:
     bool outputMeterAvailable_ = false;
     bool monitorMeterAvailable_ = false;
     bool microphoneMeterAvailable_ = false;
+
+    std::jthread updateCheckThread_;
+    std::mutex updateCheckMutex_;
+    std::optional<UpdateCheckResult> pendingUpdateResult_;
+    bool pendingUpdateShowCurrentResult_ = false;
+    std::atomic_bool updateCheckRunning_{false};
 
     int selectedBindingIndex_ = -1;
     bool capturingBindingHotkey_ = false;

@@ -15,7 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 development status:** Alpha 8 adds compact live microphone and output activity meters to the modern native UI. It is still a development build and is not a stable replacement for v1.0.0 yet.
+**v2 development status:** Alpha 9 adds a non-blocking GitHub Release update checker with manual and optional startup checks. It is still a development build and is not a stable replacement for v1.0.0 yet.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
@@ -27,6 +27,7 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 - Separate main and monitor outputs with independent volume and mute controls
 - Physical microphone capture with device selection, gain and output/monitor routing
 - Persistent session logs with one-click log-folder access
+- Manual and optional startup update checks through the public GitHub Releases API
 - Optional Windows startup registration and console-free launch
 - WAV, MP3 and FLAC playback
 - Audio preloaded into RAM
@@ -87,6 +88,7 @@ audio_buffer_ms=5
 # APPLICATION
 start_with_windows=false
 show_console_on_start=true
+check_updates_on_start=true
 
 # CONTROLS
 stop=F11
@@ -141,7 +143,7 @@ Windows rejects a hotkey already owned by another application. SoundBoardFasaFis
 
 ## Control panel
 
-Alpha 8 uses a modernized native Win32 settings editor without Qt, .NET or another GUI runtime. The panel provides custom light/dark rendering, compact live microphone and output activity meters, enumerates playback and capture devices, and lets the user configure main output, monitor output, microphone input, all three gain targets, microphone routes, language, sample rate, buffer target, Windows startup, console startup, control hotkeys and sound bindings.
+Alpha 9 uses a modernized native Win32 settings editor without Qt, .NET or another GUI runtime. The panel provides custom light/dark rendering, compact live microphone and output activity meters, enumerates playback and capture devices, and lets the user configure main output, monitor output, microphone input, all three gain targets, microphone routes, language, sample rate, buffer target, Windows startup, console startup, control hotkeys and sound bindings.
 
 `Save and apply` writes a pending configuration, validates it, rebuilds the complete playback/capture runtime and only replaces the active config after every device and hotkey succeeds. A failure restores the previous working runtime. Closing the control-panel window only hides it, so the soundboard continues running in the tray.
 
@@ -150,6 +152,8 @@ Alpha 8 uses a modernized native Win32 settings editor without Qt, .NET or anoth
 `start_with_windows=true` registers the current executable under the current user's Windows startup key, so no administrator permission is required. Moving the portable folder and launching the application again refreshes the registered path.
 
 `show_console_on_start=false` starts with the control panel and tray while keeping the diagnostic console hidden. The console remains available from the control panel or tray menu.
+
+`check_updates_on_start=true` performs a background check against the latest published stable GitHub Release. The control panel also provides a manual check. The updater never downloads, replaces, or executes files automatically; it only offers to open the official Release page.
 
 Every successful launch writes `logs/latest.log`; the previous session is kept as `logs/previous.log`. The control panel can open the logs folder directly.
 

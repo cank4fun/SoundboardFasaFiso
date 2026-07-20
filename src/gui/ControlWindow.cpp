@@ -18,10 +18,12 @@
 #include <charconv>
 #include <cstddef>
 #include <cwctype>
+#include <iostream>
 #include <iterator>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace
@@ -281,6 +283,19 @@ bool ControlWindow::Initialize(
 
 void ControlWindow::Shutdown()
 {
+    if (updateCheckThread_.joinable())
+    {
+        updateCheckThread_.join();
+    }
+
+    {
+        const std::scoped_lock lock{updateCheckMutex_};
+        pendingUpdateResult_.reset();
+        pendingUpdateShowCurrentResult_ = false;
+    }
+
+    updateCheckRunning_.store(false);
+
     if (window_ != nullptr)
     {
         KillTimer(window_, LevelMeterTimerId);
@@ -345,6 +360,7 @@ void ControlWindow::Shutdown()
     languageCombo_ = nullptr;
     startWithWindowsCheck_ = nullptr;
     showConsoleOnStartCheck_ = nullptr;
+    checkUpdatesOnStartCheck_ = nullptr;
     refreshDevicesButton_ = nullptr;
     applySettingsButton_ = nullptr;
     controlHotkeysGroup_ = nullptr;
@@ -383,6 +399,7 @@ void ControlWindow::Shutdown()
     openConfigButton_ = nullptr;
     openSoundsButton_ = nullptr;
     openLogsButton_ = nullptr;
+    checkUpdatesButton_ = nullptr;
     consoleButton_ = nullptr;
     exitButton_ = nullptr;
 
@@ -407,10 +424,24 @@ void ControlWindow::Show()
 
 void ControlWindow::Hide()
 {
-    if (window_ != nullptr)
+    if (window_ == nullptr || IsWindowVisible(window_) == FALSE)
     {
-        ShowWindow(window_, SW_HIDE);
+        return;
     }
+
+    SetWindowPos(
+        window_,
+        nullptr,
+        0,
+        0,
+        0,
+        0,
+        SWP_HIDEWINDOW |
+            SWP_NOMOVE |
+            SWP_NOSIZE |
+            SWP_NOZORDER |
+            SWP_NOACTIVATE
+    );
 }
 
 bool ControlWindow::ToggleVisibility()
@@ -502,6 +533,211 @@ void ControlWindow::SetStatus(const std::wstring& status)
             RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN |
                 RDW_UPDATENOW
         );
+    }
+}
+
+void ControlWindow::CheckForUpdates(const bool showCurrentResult)
+{
+    if (window_ == nullptr)
+    {
+        return;
+    }
+
+    if (updateCheckRunning_.exchange(true))
+    {
+        if (showCurrentResult)
+        {
+            SetStatus(Localization::Text(
+                L"Güncelleme denetimi zaten çalışıyor...",
+                L"An update check is already running..."
+            ));
+        }
+
+        return;
+    }
+
+    if (updateCheckThread_.joinable())
+    {
+        updateCheckThread_.join();
+    }
+
+    SetStatus(Localization::Text(
+        L"Güncellemeler denetleniyor...",
+        L"Checking for updates..."
+    ));
+
+    const HWND targetWindow = window_;
+    const std::string currentVersion{AppVersion::String};
+
+    updateCheckThread_ = std::jthread(
+        [this, targetWindow, currentVersion, showCurrentResult]
+        {
+            UpdateCheckResult result =
+                UpdateChecker::CheckLatestRelease(currentVersion);
+
+            {
+                const std::scoped_lock lock{updateCheckMutex_};
+                pendingUpdateResult_ = std::move(result);
+                pendingUpdateShowCurrentResult_ = showCurrentResult;
+            }
+
+            if (PostMessageW(
+                    targetWindow,
+                    UpdateCheckCompletedMessage,
+                    0,
+                    0
+                ) == FALSE)
+            {
+                const std::scoped_lock lock{updateCheckMutex_};
+                pendingUpdateResult_.reset();
+                updateCheckRunning_.store(false);
+            }
+        }
+    );
+}
+
+void ControlWindow::HandleUpdateCheckCompleted()
+{
+    std::optional<UpdateCheckResult> result;
+    bool showCurrentResult = false;
+
+    {
+        const std::scoped_lock lock{updateCheckMutex_};
+        result = std::move(pendingUpdateResult_);
+        pendingUpdateResult_.reset();
+        showCurrentResult = pendingUpdateShowCurrentResult_;
+        pendingUpdateShowCurrentResult_ = false;
+    }
+
+    updateCheckRunning_.store(false);
+
+    if (updateCheckThread_.joinable())
+    {
+        updateCheckThread_.join();
+    }
+
+    if (!result.has_value())
+    {
+        return;
+    }
+
+    if (result->status == UpdateCheckStatus::UpdateAvailable)
+    {
+        const std::wstring latestVersion = Utf8ToWide(
+            result->latestVersion
+        );
+        const std::wstring message = std::wstring{
+            Localization::Text(
+                L"Yeni bir sürüm bulundu: ",
+                L"A new version is available: "
+            )
+        } + latestVersion + Localization::Text(
+            L"\n\nGitHub Release sayfasını açmak ister misin?",
+            L"\n\nWould you like to open the GitHub Release page?"
+        );
+
+        SetStatus(std::wstring{Localization::Text(
+            L"Yeni sürüm hazır: ",
+            L"New version available: "
+        )} + latestVersion);
+
+        std::cout
+            << Localization::Text(
+                "Yeni sürüm bulundu: ",
+                "New version available: "
+            )
+            << result->latestVersion
+            << '\n';
+
+        if (MessageBoxW(
+                window_,
+                message.c_str(),
+                L"SoundBoardFasaFiso",
+                MB_YESNO | MB_ICONINFORMATION
+            ) == IDYES)
+        {
+            const std::wstring releaseUrl = Utf8ToWide(
+                result->releaseUrl
+            );
+            ShellExecuteW(
+                window_,
+                L"open",
+                releaseUrl.c_str(),
+                nullptr,
+                nullptr,
+                SW_SHOWNORMAL
+            );
+        }
+
+        return;
+    }
+
+    if (result->status == UpdateCheckStatus::UpToDate)
+    {
+        std::cout << Localization::Text(
+            "Güncelleme denetimi tamamlandı. Uygulama güncel.\n",
+            "Update check completed. The application is up to date.\n"
+        );
+
+        if (showCurrentResult)
+        {
+            SetStatus(Localization::Text(
+                L"Daha yeni bir kararlı sürüm bulunamadı.",
+                L"No newer stable release was found."
+            ));
+
+            MessageBoxW(
+                window_,
+                Localization::Text(
+                    L"Daha yeni bir kararlı sürüm bulunamadı.",
+                    L"No newer stable release was found."
+                ),
+                L"SoundBoardFasaFiso",
+                MB_OK | MB_ICONINFORMATION
+            );
+        }
+        else
+        {
+            SetStatus(Localization::Text(
+                L"Soundboard hazır.",
+                L"Soundboard ready."
+            ));
+        }
+
+        return;
+    }
+
+    std::cerr
+        << Localization::Text(
+            "Güncelleme denetimi başarısız: ",
+            "Update check failed: "
+        )
+        << result->errorMessage
+        << '\n';
+
+    if (showCurrentResult)
+    {
+        SetStatus(Localization::Text(
+            L"Güncelleme denetimi başarısız.",
+            L"Update check failed."
+        ));
+
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Güncellemeler denetlenemedi. İnternet bağlantını kontrol edip tekrar dene.",
+                L"Updates could not be checked. Check your internet connection and try again."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+    }
+    else
+    {
+        SetStatus(Localization::Text(
+            L"Soundboard hazır.",
+            L"Soundboard ready."
+        ));
     }
 }
 
@@ -621,6 +857,10 @@ LRESULT ControlWindow::HandleWindowMessage(
                 }
             }
             break;
+
+        case UpdateCheckCompletedMessage:
+            HandleUpdateCheckCompleted();
+            return 0;
 
         case WM_TIMER:
             if (wParam == LevelMeterTimerId)
@@ -752,6 +992,10 @@ LRESULT ControlWindow::HandleWindowMessage(
                     OpenPath(logsFolder_);
                     return 0;
 
+                case IdCheckUpdates:
+                    CheckForUpdates(true);
+                    return 0;
+
                 case IdToggleConsole:
                     PostApplicationCommand(commandIds_.toggleConsole);
                     return 0;
@@ -840,6 +1084,15 @@ LRESULT ControlWindow::HandleWindowMessage(
                 rectangle.bottom - rectangle.top;
             return 0;
         }
+
+        case WM_SYSCOMMAND:
+            if ((wParam & static_cast<WPARAM>(0xFFF0U)) ==
+                static_cast<WPARAM>(SC_CLOSE))
+            {
+                Hide();
+                return 0;
+            }
+            break;
 
         case WM_CLOSE:
             Hide();
@@ -1022,6 +1275,13 @@ bool ControlWindow::CreateControls()
         BS_AUTOCHECKBOX | WS_TABSTOP,
         0
     );
+    ShowWindow(showConsoleOnStartCheck_, SW_HIDE);
+    checkUpdatesOnStartCheck_ = createControl(
+        L"BUTTON",
+        L"",
+        BS_AUTOCHECKBOX | WS_TABSTOP,
+        0
+    );
     refreshDevicesButton_ = createControl(
         L"BUTTON",
         L"",
@@ -1142,6 +1402,9 @@ bool ControlWindow::CreateControls()
     openLogsButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdOpenLogs
     );
+    checkUpdatesButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdCheckUpdates
+    );
     consoleButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdToggleConsole
     );
@@ -1168,7 +1431,8 @@ bool ControlWindow::CreateControls()
         sampleRateCaption_, sampleRateCombo_,
         bufferCaption_, bufferCombo_, languageCaption_, languageCombo_,
         startWithWindowsCheck_, showConsoleOnStartCheck_,
-        refreshDevicesButton_, applySettingsButton_, controlHotkeysGroup_,
+        checkUpdatesOnStartCheck_, refreshDevicesButton_,
+        applySettingsButton_, controlHotkeysGroup_,
         stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
         outputMuteHotkeyEdit_, monitorMuteHotkeyCaption_,
         monitorMuteHotkeyEdit_, reloadHotkeyCaption_, reloadHotkeyEdit_,
@@ -1180,7 +1444,7 @@ bool ControlWindow::CreateControls()
         addBindingButton_, updateBindingButton_, removeBindingButton_,
         clearBindingButton_, reloadButton_, stopButton_, outputMuteButton_,
         monitorMuteButton_, openConfigButton_, openSoundsButton_,
-        openLogsButton_, consoleButton_, exitButton_
+        openLogsButton_, checkUpdatesButton_, consoleButton_, exitButton_
     };
 
     return std::all_of(
@@ -1423,6 +1687,14 @@ void ControlWindow::LayoutControls(
 
     MoveWindow(languageCaption_, innerX, rowY + 4, labelWidth, 20, TRUE);
     MoveWindow(languageCombo_, innerX + labelWidth, rowY, 170, 140, TRUE);
+    MoveWindow(
+        checkUpdatesOnStartCheck_,
+        innerX + labelWidth + 190,
+        rowY + 3,
+        280,
+        22,
+        TRUE
+    );
 
     rowY += RowHeight + 6;
 
@@ -1437,11 +1709,11 @@ void ControlWindow::LayoutControls(
     );
     MoveWindow(
         showConsoleOnStartCheck_,
-        innerX + applicationCheckWidth + 8,
-        rowY + 4,
-        applicationCheckWidth,
-        22,
-        TRUE
+        0,
+        0,
+        0,
+        0,
+        FALSE
     );
 
     const int actionButtonWidth = 164;
@@ -1684,7 +1956,7 @@ void ControlWindow::LayoutControls(
     };
     const HWND secondRow[] = {
         openConfigButton_, openSoundsButton_, openLogsButton_,
-        consoleButton_, exitButton_
+        checkUpdatesButton_, consoleButton_, exitButton_
     };
 
     for (std::size_t index = 0; index < 4; ++index)
@@ -1705,9 +1977,9 @@ void ControlWindow::LayoutControls(
     y += ButtonHeight + ButtonGap;
 
     const int secondRowButtonWidth =
-        (contentWidth - ButtonGap * 4) / 5;
+        (contentWidth - ButtonGap * 5) / 6;
 
-    for (std::size_t index = 0; index < 5; ++index)
+    for (std::size_t index = 0; index < 6; ++index)
     {
         const int x = contentX +
             static_cast<int>(index) *
@@ -1806,10 +2078,10 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 5> checkBoxes{
+    const std::array<HWND, 6> checkBoxes{
         microphoneEnabledCheck_, microphoneToOutputCheck_,
         microphoneToMonitorCheck_, startWithWindowsCheck_,
-        showConsoleOnStartCheck_
+        showConsoleOnStartCheck_, checkUpdatesOnStartCheck_
     };
 
     for (const HWND control : checkBoxes)
@@ -1875,7 +2147,7 @@ void ControlWindow::ApplyFonts()
         );
     }
 
-    const std::array<HWND, 63> bodyControls{
+    const std::array<HWND, 64> bodyControls{
         statusCaption_, statusValue_, outputCaption_, outputCombo_,
         outputVolumeCaption_, outputVolumeSlider_, outputVolumeValue_,
         monitorCaption_, monitorCombo_, monitorVolumeCaption_,
@@ -1885,7 +2157,8 @@ void ControlWindow::ApplyFonts()
         microphoneToOutputCheck_, microphoneToMonitorCheck_,
         sampleRateCaption_, sampleRateCombo_, bufferCaption_, bufferCombo_,
         languageCaption_, languageCombo_, startWithWindowsCheck_,
-        showConsoleOnStartCheck_, stopHotkeyCaption_, stopHotkeyEdit_,
+        showConsoleOnStartCheck_, checkUpdatesOnStartCheck_,
+        stopHotkeyCaption_, stopHotkeyEdit_,
         outputMuteHotkeyCaption_, outputMuteHotkeyEdit_,
         monitorMuteHotkeyCaption_, monitorMuteHotkeyEdit_,
         reloadHotkeyCaption_, reloadHotkeyEdit_, exitHotkeyCaption_,
@@ -1931,8 +2204,9 @@ void ControlWindow::ApplyFonts()
         }
     }
 
-    const std::array<HWND, 4> remainingButtons{
-        openLogsButton_, consoleButton_, exitButton_, clearBindingButton_
+    const std::array<HWND, 5> remainingButtons{
+        openLogsButton_, checkUpdatesButton_, consoleButton_, exitButton_,
+        clearBindingButton_
     };
 
     for (const HWND control : remainingButtons)
@@ -2724,8 +2998,15 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         showConsoleOnStartCheck_,
         Localization::Text(
-            L"Başlangıçta konsolu göster",
-            L"Show console on startup"
+            L"Başlangıçta hata ayıklama konsolunu aç",
+            L"Open debug console on startup"
+        )
+    );
+    SetControlText(
+        checkUpdatesOnStartCheck_,
+        Localization::Text(
+            L"Başlangıçta güncellemeleri denetle",
+            L"Check for updates on startup"
         )
     );
     SetControlText(
@@ -2772,7 +3053,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(openConfigButton_, Localization::Text(L"Config'i aç", L"Open config"));
     SetControlText(openSoundsButton_, Localization::Text(L"Ses klasörünü aç", L"Open sounds folder"));
     SetControlText(openLogsButton_, Localization::Text(L"Log klasörünü aç", L"Open logs folder"));
-    SetControlText(consoleButton_, Localization::Text(L"Konsolu göster/gizle", L"Show/hide console"));
+    SetControlText(checkUpdatesButton_, Localization::Text(L"Güncelleme denetle", L"Check for updates"));
+    SetControlText(consoleButton_, Localization::Text(L"Hata ayıklama konsolunu aç/gizle", L"Open/hide debug console"));
     SetControlText(exitButton_, Localization::Text(L"Programı kapat", L"Exit"));
 }
 
@@ -2935,7 +3217,13 @@ void ControlWindow::PopulateEditorControls()
     SendMessageW(
         showConsoleOnStartCheck_,
         BM_SETCHECK,
-        currentConfig_.GetShowConsoleOnStart() ? BST_CHECKED : BST_UNCHECKED,
+        BST_UNCHECKED,
+        0
+    );
+    SendMessageW(
+        checkUpdatesOnStartCheck_,
+        BM_SETCHECK,
+        currentConfig_.GetCheckUpdatesOnStart() ? BST_CHECKED : BST_UNCHECKED,
         0
     );
 
@@ -3291,8 +3579,9 @@ bool ControlWindow::SavePendingSettings()
         0,
         0
     ) == BST_CHECKED;
-    const bool showConsoleOnStart = SendMessageW(
-        showConsoleOnStartCheck_,
+    constexpr bool showConsoleOnStart = false;
+    const bool checkUpdatesOnStart = SendMessageW(
+        checkUpdatesOnStartCheck_,
         BM_GETCHECK,
         0,
         0
@@ -3336,6 +3625,7 @@ bool ControlWindow::SavePendingSettings()
     candidate.SetMicrophoneToMonitor(microphoneToMonitor);
     candidate.SetStartWithWindows(startWithWindows);
     candidate.SetShowConsoleOnStart(showConsoleOnStart);
+    candidate.SetCheckUpdatesOnStart(checkUpdatesOnStart);
     const bool hotkeysAccepted = candidate.SetControlHotkeys(
         WideToUtf8(stopHotkey),
         WideToUtf8(outputMuteHotkey),
@@ -3390,7 +3680,7 @@ bool ControlWindow::SavePendingSettings()
             window_,
             Localization::Text(
                 L"Geçici config dosyası kaydedilemedi. Konsoldaki hata ayrıntılarına bakın.",
-                L"The temporary config file could not be saved. Check the console for details."
+                L"The temporary config file could not be saved. Check logs\\latest.log for details."
             ),
             L"SoundBoardFasaFiso",
             MB_OK | MB_ICONERROR

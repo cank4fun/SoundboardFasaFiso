@@ -47,6 +47,7 @@ public:
 
     void SetStartWithWindows(bool enabled);
     void SetShowConsoleOnStart(bool enabled);
+    void SetCheckUpdatesOnStart(bool enabled);
 
     bool SetControlHotkeys(
         std::string stopKeyName,
@@ -78,6 +79,7 @@ public:
 
     bool GetStartWithWindows() const;
     bool GetShowConsoleOnStart() const;
+    bool GetCheckUpdatesOnStart() const;
 
     const std::string& GetStopKeyName() const;
     unsigned int GetStopModifiers() const;
@@ -121,7 +123,8 @@ private:
     unsigned int audioBufferMilliseconds_ = 5;
 
     bool startWithWindows_ = false;
-    bool showConsoleOnStart_ = true;
+    bool showConsoleOnStart_ = false;
+    bool checkUpdatesOnStart_ = true;
 
     std::string stopKeyName_ = "F11";
     unsigned int stopModifiers_ = 0;

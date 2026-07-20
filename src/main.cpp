@@ -13,6 +13,7 @@
 #include "gui/ControlWindow.hpp"
 #include "hotkeys/HotkeyManager.hpp"
 #include "localization/Localization.hpp"
+#include "platform/DebugConsole.hpp"
 #include "platform/SingleInstance.hpp"
 #include "platform/StartupManager.hpp"
 #include "platform/Utf8Path.hpp"
@@ -41,26 +42,6 @@ namespace
     constexpr int ReloadHotkeyId = 997;
     constexpr int StopHotkeyId = 998;
     constexpr int ExitHotkeyId = 999;
-
-    void ConfigureUtf8Console()
-    {
-        const bool outputCodePageSet =
-            SetConsoleOutputCP(CP_UTF8) != 0;
-
-        const bool inputCodePageSet =
-            SetConsoleCP(CP_UTF8) != 0;
-
-        if (!outputCodePageSet || !inputCodePageSet)
-        {
-            std::cerr
-                << Localization::Text(
-                    "Uyarı: Windows konsolu UTF-8 olarak ayarlanamadı. Windows hata kodu: ",
-                    "Warning: The Windows console could not be configured for UTF-8. Windows error code: "
-                )
-                << GetLastError()
-                << '\n';
-        }
-    }
 
     std::optional<std::filesystem::path> GetExecutablePath()
     {
@@ -125,16 +106,6 @@ namespace
                     : pathBuffer.size() * 2;
 
             pathBuffer.resize(nextBufferSize);
-        }
-    }
-
-    void SetConsoleVisibility(const bool visible)
-    {
-        const HWND consoleWindow = GetConsoleWindow();
-
-        if (consoleWindow != nullptr)
-        {
-            ShowWindow(consoleWindow, visible ? SW_SHOW : SW_HIDE);
         }
     }
 
@@ -293,12 +264,16 @@ namespace
                 : Localization::Text("Kapalı", "Disabled"))
             << '\n'
             << Localization::Text(
-                "Başlangıçta konsol: ",
-                "Console on startup: "
+                "Hata ayıklama konsolu: yalnızca elle açılır\n",
+                "Debug console: manual only\n"
             )
-            << (config.GetShowConsoleOnStart()
-                ? Localization::Text("Göster", "Show")
-                : Localization::Text("Gizle", "Hide"))
+            << Localization::Text(
+                "Başlangıçta güncelleme denetimi: ",
+                "Update check on startup: "
+            )
+            << (config.GetCheckUpdatesOnStart()
+                ? Localization::Text("Açık", "Enabled")
+                : Localization::Text("Kapalı", "Disabled"))
             << '\n';
     }
 
@@ -580,14 +555,24 @@ namespace
     }
 }
 
-int main()
+int WINAPI wWinMain(
+    HINSTANCE,
+    HINSTANCE,
+    PWSTR,
+    int
+)
 {
-    ConfigureUtf8Console();
 
     const auto executablePath = GetExecutablePath();
 
     if (!executablePath.has_value())
     {
+        MessageBoxW(
+            nullptr,
+            L"The executable path could not be determined.",
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
         return 1;
     }
 
@@ -603,13 +588,30 @@ int main()
     std::filesystem::path pendingConfigPath = configPath;
     pendingConfigPath += L".pending";
 
+    Logger logger;
+
+    if (!logger.Initialize(logsFolder))
+    {
+        MessageBoxW(
+            nullptr,
+            L"Persistent log system could not be initialized.",
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+    }
+
     Config config;
 
     if (!config.Load(configPath))
     {
-        std::cerr << Localization::Text(
-            "Config yüklenemedi.\n",
-            "The config could not be loaded.\n"
+        MessageBoxW(
+            nullptr,
+            Localization::Text(
+                L"Config yüklenemedi. Ayrıntılar logs\\latest.log dosyasında.",
+                L"The config could not be loaded. Details are in logs\\latest.log."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
         );
         return 1;
     }
@@ -646,16 +648,6 @@ int main()
             << '\n';
 
         return 1;
-    }
-
-    Logger logger;
-
-    if (!logger.Initialize(logsFolder))
-    {
-        std::cerr << Localization::Text(
-            "Uyarı: Kalıcı log sistemi başlatılamadı.\n",
-            "Warning: Persistent logging could not be initialized.\n"
-        );
     }
 
     if (!ApplyStartupSetting(config, *executablePath))
@@ -729,6 +721,11 @@ int main()
     {
         controlWindow.Show();
 
+        if (config.GetCheckUpdatesOnStart())
+        {
+            controlWindow.CheckForUpdates(false);
+        }
+
         std::cout
             << Localization::Text(
                 "Kontrol paneli hazır. Pencereyi kapatmak uygulamayı kapatmaz; tray'e gizler.\n",
@@ -739,8 +736,8 @@ int main()
     {
         std::cerr
             << Localization::Text(
-                "Kontrol paneli başlatılamadı. Soundboard konsol ve tray üzerinden çalışmaya devam edecek.\n",
-                "The control panel could not be initialized. The soundboard will continue through the console and tray.\n"
+                "Kontrol paneli başlatılamadı. Soundboard tray üzerinden çalışmaya devam edecek. Ayrıntılar log dosyasında.\n",
+                "The control panel could not be initialized. The soundboard will continue through the tray. Details are in the log file.\n"
             );
     }
 
@@ -771,12 +768,12 @@ int main()
     {
         std::cerr
             << Localization::Text(
-                "Tray icon başlatılamadı. Soundboard terminal üzerinden çalışmaya devam edecek.\n",
-                "The tray icon could not be initialized. The soundboard will continue running through the terminal.\n"
+                "Tray icon başlatılamadı. Kontrol panelini kapatma; ayrıntılar log dosyasında.\n",
+                "The tray icon could not be initialized. Keep the control panel open; details are in the log file.\n"
             );
     }
 
-    SetConsoleVisibility(config.GetShowConsoleOnStart());
+    DebugConsole::Hide();
 
     std::cout
         << Localization::Text(
@@ -871,13 +868,13 @@ int main()
 
         if (hotkeyId == ToggleConsoleCommandId)
         {
-            if (!trayIcon.ToggleConsoleVisibility())
+            if (!DebugConsole::ToggleVisibility())
             {
                 std::cerr
                     << Localization::Text(
-                    "Konsol penceresi gösterilip gizlenemedi.\n",
-                    "The console window could not be shown or hidden.\n"
-                );
+                        "Hata ayıklama konsolu açılamadı.\n",
+                        "The debug console could not be opened.\n"
+                    );
             }
 
             continue;
@@ -944,7 +941,6 @@ int main()
             if (runtimeStarted && startupSettingApplied && configSaved)
             {
                 config = std::move(newConfig);
-                SetConsoleVisibility(config.GetShowConsoleOnStart());
                 audioRecoveryWarningShown = false;
                 nextAudioConnectionCheck =
                     std::chrono::steady_clock::now() +
@@ -1087,7 +1083,6 @@ int main()
             if (runtimeStarted && startupSettingApplied)
             {
                 config = std::move(newConfig);
-                SetConsoleVisibility(config.GetShowConsoleOnStart());
                 audioRecoveryWarningShown = false;
                 nextAudioConnectionCheck =
                     std::chrono::steady_clock::now() +

@@ -1,6 +1,7 @@
 #include "tray/TrayIcon.hpp"
 
 #include "localization/Localization.hpp"
+#include "platform/DebugConsole.hpp"
 #include "ResourceIds.h"
 
 #include <cwchar>
@@ -258,32 +259,12 @@ void TrayIcon::Shutdown()
 
 bool TrayIcon::ToggleConsoleVisibility()
 {
-    const HWND consoleWindow = GetConsoleWindow();
-
-    if (consoleWindow == nullptr)
-    {
-        return false;
-    }
-
-    if (IsWindowVisible(consoleWindow) != FALSE)
-    {
-        ShowWindow(consoleWindow, SW_HIDE);
-    }
-    else
-    {
-        ShowWindow(consoleWindow, SW_SHOW);
-        SetForegroundWindow(consoleWindow);
-    }
-
-    return true;
+    return DebugConsole::ToggleVisibility();
 }
 
 bool TrayIcon::IsConsoleVisible() const
 {
-    const HWND consoleWindow = GetConsoleWindow();
-
-    return consoleWindow != nullptr &&
-        IsWindowVisible(consoleWindow) != FALSE;
+    return DebugConsole::IsVisible();
 }
 
 LRESULT CALLBACK TrayIcon::WindowProcedure(
@@ -439,8 +420,8 @@ void TrayIcon::ShowContextMenu()
         MF_STRING,
         MenuToggleConsole,
         IsConsoleVisible()
-            ? Localization::Text(L"Konsolu gizle", L"Hide console")
-            : Localization::Text(L"Konsolu göster", L"Show console")
+            ? Localization::Text(L"Hata ayıklama konsolunu gizle", L"Hide debug console")
+            : Localization::Text(L"Hata ayıklama konsolunu aç", L"Open debug console")
     );
 
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);

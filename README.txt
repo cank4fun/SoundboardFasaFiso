@@ -82,11 +82,15 @@ UYGULAMA VE LOGLAR
 ------------------
 start_with_windows=false
 show_console_on_start=true
+check_updates_on_start=true
 
 Windows ile başlatma kullanıcı hesabına özel olarak ayarlanır ve yönetici
 izni istemez. Konsol başlangıçta gizlense bile panel veya tray üzerinden
-tekrar açılabilir. Her oturum logs\latest.log dosyasına yazılır; önceki
-oturum logs\previous.log olarak tutulur.
+tekrar açılabilir. check_updates_on_start=true en güncel kararlı GitHub
+Release sürümünü arka planda denetler. Panelden elle de denetim yapılabilir.
+Program dosya indirmez veya kendini otomatik değiştirmez; yalnızca resmi
+Release sayfasını açmayı teklif eder. Her oturum logs\latest.log dosyasına
+yazılır; önceki oturum logs\previous.log olarak tutulur.
 
 VARSAYILAN KONTROLLER
 ---------------------

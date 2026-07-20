@@ -1,5 +1,7 @@
 #include "diagnostics/Logger.hpp"
 
+#include "platform/DebugConsole.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <ctime>
@@ -12,12 +14,12 @@ class Logger::TeeBuffer final : public std::streambuf
 {
 public:
     TeeBuffer(
-        std::streambuf* first,
-        std::streambuf* second,
+        std::streambuf* fileBuffer,
+        const bool errorStream,
         std::mutex& writeMutex
     )
-        : first_(first),
-          second_(second),
+        : fileBuffer_(fileBuffer),
+          errorStream_(errorStream),
           writeMutex_(writeMutex)
     {
     }
@@ -33,21 +35,16 @@ protected:
         const char value = traits_type::to_char_type(character);
         std::lock_guard lock(writeMutex_);
 
-        const bool firstSucceeded =
-            first_ == nullptr ||
+        const bool fileSucceeded =
+            fileBuffer_ == nullptr ||
             !traits_type::eq_int_type(
-                first_->sputc(value),
+                fileBuffer_->sputc(value),
                 traits_type::eof()
             );
 
-        const bool secondSucceeded =
-            second_ == nullptr ||
-            !traits_type::eq_int_type(
-                second_->sputc(value),
-                traits_type::eof()
-            );
+        DebugConsole::Write(&value, 1, errorStream_);
 
-        return firstSucceeded && secondSucceeded
+        return fileSucceeded
             ? character
             : traits_type::eof();
     }
@@ -59,29 +56,31 @@ protected:
     {
         std::lock_guard lock(writeMutex_);
 
-        const std::streamsize firstWritten =
-            first_ == nullptr ? count : first_->sputn(text, count);
-        const std::streamsize secondWritten =
-            second_ == nullptr ? count : second_->sputn(text, count);
+        const std::streamsize fileWritten =
+            fileBuffer_ == nullptr
+                ? count
+                : fileBuffer_->sputn(text, count);
 
-        return std::min(firstWritten, secondWritten);
+        DebugConsole::Write(
+            text,
+            count > 0 ? static_cast<std::size_t>(count) : 0,
+            errorStream_
+        );
+
+        return fileWritten;
     }
 
     int sync() override
     {
         std::lock_guard lock(writeMutex_);
-
-        const int firstResult =
-            first_ == nullptr ? 0 : first_->pubsync();
-        const int secondResult =
-            second_ == nullptr ? 0 : second_->pubsync();
-
-        return firstResult == 0 && secondResult == 0 ? 0 : -1;
+        return fileBuffer_ == nullptr || fileBuffer_->pubsync() == 0
+            ? 0
+            : -1;
     }
 
 private:
-    std::streambuf* first_ = nullptr;
-    std::streambuf* second_ = nullptr;
+    std::streambuf* fileBuffer_ = nullptr;
+    bool errorStream_ = false;
     std::mutex& writeMutex_;
 };
 
@@ -151,18 +150,20 @@ bool Logger::Initialize(const std::filesystem::path& logsFolder)
     originalErrorBuffer_ = std::cerr.rdbuf();
 
     outputBuffer_ = std::make_unique<TeeBuffer>(
-        originalOutputBuffer_,
         file_.rdbuf(),
+        false,
         writeMutex_
     );
     errorBuffer_ = std::make_unique<TeeBuffer>(
-        originalErrorBuffer_,
         file_.rdbuf(),
+        true,
         writeMutex_
     );
 
     std::cout.rdbuf(outputBuffer_.get());
     std::cerr.rdbuf(errorBuffer_.get());
+    std::cout.clear();
+    std::cerr.clear();
 
     return true;
 }

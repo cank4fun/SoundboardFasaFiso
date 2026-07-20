@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0-alpha.9
+
+- Added a dependency-free update checker backed by WinHTTP and the public GitHub Releases API
+- Added optional automatic update checks at startup through `check_updates_on_start`
+- Added a manual **Check for updates** action to the native control panel
+- Added semantic-version comparison for stable and prerelease builds
+- Kept network work off the UI thread so audio playback and the control panel remain responsive
+- Opens the official GitHub Release page only after explicit user confirmation
+- Does not automatically download, replace or execute application files
+
 ## 2.0.0-alpha.8
 
 - Added live microphone peak metering to the native control panel
