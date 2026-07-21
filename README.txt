@@ -19,10 +19,12 @@ Kaydet ve uygula düğmesine basılır.
 HIZLI KULLANIM
 --------------
 1. Ses dosyalarını sounds klasörüne koy.
-2. config.txt içindeki cihazları ve tuşları ayarla.
-3. SoundBoardFasaFiso.exe dosyasını çalıştır; kontrol paneli açılır.
-4. Ses cihazlarını, kontrol hotkey'lerini ve ses atamalarını panelden düzenle.
+2. SoundBoardFasaFiso.exe dosyasını çalıştır; kontrol paneli açılır.
+3. Hotkey'ler sekmesinde her ses için bir atama oluştur. Dosyayı yalnızca sounds klasörüne kopyalamak otomatik hotkey atamaz.
+4. Ses cihazlarını ve kontrol hotkey'lerini panelden düzenle.
 5. Kaydet ve uygula'ya bas; yeni config doğrulanıp güvenli şekilde etkinleştirilir.
+
+Hiç etkin ses ataması olmasa veya eski atamalardaki dosyalar kayıp olsa bile panel açık kalır; config.txt dosyasını elle düzeltmeden yeni atama ekleyebilirsin.
 
 KLASÖR YAPISI
 -------------

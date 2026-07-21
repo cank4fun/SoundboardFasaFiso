@@ -1808,21 +1808,6 @@ bool Config::Load(const std::filesystem::path& filePath)
         return false;
     }
 
-    if (bindings_.empty())
-    {
-        PrintConfigError(
-            0,
-            {},
-            Localization::Text(
-                "Config dosyasında hiç geçerli ses ataması yok.",
-                "The config file contains no valid sound assignments."
-            ),
-            "F1=example.wav|volume=1.00|mode=restart"
-        );
-
-        return false;
-    }
-
     return true;
 }
 
@@ -2180,11 +2165,6 @@ bool Config::SetControlHotkeys(
 
 bool Config::SetBindings(std::vector<SoundBinding> bindings)
 {
-    if (bindings.empty())
-    {
-        return false;
-    }
-
     std::unordered_set<std::uint64_t> usedHotkeys{
         MakeHotkeyIdentity(stopModifiers_, stopVirtualKey_),
         MakeHotkeyIdentity(outputMuteModifiers_, outputMuteVirtualKey_),

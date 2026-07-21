@@ -48,8 +48,10 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 1. Download and extract the latest portable ZIP.
 2. Put audio files in the `sounds` folder.
 3. Run `SoundBoardFasaFiso.exe`; the control panel opens automatically.
-4. Configure devices, control hotkeys, and sound bindings from the panel.
-5. Click **Save and apply**; invalid changes are rejected and the previous runtime is restored.
+4. Open the **Hotkeys** tab and create a binding for each sound. Copying a file into `sounds` does not assign a hotkey automatically.
+5. Configure devices and control hotkeys, then click **Save and apply**. Invalid changes are rejected and the previous runtime is restored.
+
+The control panel remains available even when no sound binding is active or previously configured files are missing, so a fresh portable folder can be repaired without editing `config.txt` manually.
 
 The packaged default starts on the Windows default output with monitor routing disabled, so VB-CABLE is optional.
 
