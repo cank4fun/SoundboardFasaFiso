@@ -299,10 +299,20 @@ bool ControlWindow::Initialize(
     UpdateConfig(config);
     activePage_ = ControlPage::Main;
     UpdatePageVisibility();
-    SetStatus(Localization::Text(
-        L"Soundboard hazır.",
-        L"Soundboard ready."
-    ));
+    if (config.GetBindings().empty())
+    {
+        SetStatus(Localization::Text(
+            L"Etkin ses ataması yok. Hotkey'ler sekmesinden ses ekleyip Kaydet ve uygula'ya bas.",
+            L"No sound binding is active. Add a sound in the Hotkeys tab and click Save and apply."
+        ));
+    }
+    else
+    {
+        SetStatus(Localization::Text(
+            L"Soundboard hazır.",
+            L"Soundboard ready."
+        ));
+    }
 
     RECT clientRectangle{};
     GetClientRect(window_, &clientRectangle);
@@ -4586,20 +4596,6 @@ bool ControlWindow::RemoveSelectedBinding()
             ),
             L"SoundBoardFasaFiso",
             MB_OK | MB_ICONINFORMATION
-        );
-        return false;
-    }
-
-    if (pendingBindings_.size() == 1)
-    {
-        MessageBoxW(
-            window_,
-            Localization::Text(
-                L"Son ses ataması silinemez. Config içinde en az bir atama olmalı.",
-                L"The last sound binding cannot be removed. The config must contain at least one binding."
-            ),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONWARNING
         );
         return false;
     }

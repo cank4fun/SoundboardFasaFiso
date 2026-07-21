@@ -415,17 +415,6 @@ namespace
             return false;
         }
 
-        if (activeBindings.empty())
-        {
-            std::cerr
-                << Localization::Text(
-                    "Kullanılabilir ses veya hotkey bulunamadı.\n",
-                    "No usable sound or hotkey was found.\n"
-                );
-
-            return false;
-        }
-
         if (!hotkeys.Register(
             StopHotkeyId,
             config.GetStopModifiers(),
@@ -540,6 +529,15 @@ namespace
                 " -> Programı kapat\n",
                 " -> Exit the program\n"
             );
+
+        if (activeBindings.empty())
+        {
+            std::cerr
+                << Localization::Text(
+                    "Etkin ses ataması yok. Program ayar yapabilmen için açık kalacak; Hotkey'ler sekmesinden ses ekleyip Kaydet ve uygula'ya bas.\n",
+                    "No sound binding is active. The program will stay open so you can configure it; add sounds in the Hotkeys tab and click Save and apply.\n"
+                );
+        }
 
         return true;
     }
@@ -747,6 +745,14 @@ int WINAPI wWinMain(
     ))
     {
         controlWindow.Show();
+
+        if (activeBindings.empty())
+        {
+            controlWindow.SetStatus(Localization::Text(
+                L"Etkin ses ataması yok. Hotkey'ler sekmesinden ses ekleyip Kaydet ve uygula'ya bas.",
+                L"No sound binding is active. Add a sound in the Hotkeys tab and click Save and apply."
+            ));
+        }
 
         if (config.GetCheckUpdatesOnStart())
         {
