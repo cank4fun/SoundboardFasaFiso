@@ -3554,13 +3554,13 @@ void ControlWindow::RefreshLocalizedText()
     );
     SetControlText(outputCaption_, Localization::Text(L"Ana çıkış:", L"Main output:"));
     SetControlText(monitorCaption_, Localization::Text(L"Monitör çıkışı:", L"Monitor output:"));
-    SetControlText(microphoneCaption_, Localization::Text(L"Mikrofon:", L"Microphone:"));
+    SetControlText(microphoneCaption_, Localization::Text(L"Mikrofon girişi:", L"Microphone input:"));
     SetControlText(outputVolumeCaption_, Localization::Text(L"Ses:", L"Volume:"));
     SetControlText(monitorVolumeCaption_, Localization::Text(L"Ses:", L"Volume:"));
     SetControlText(microphoneVolumeCaption_, Localization::Text(L"Ses:", L"Volume:"));
     SetControlText(
         microphoneEnabledCheck_,
-        Localization::Text(L"Mikrofonu etkinleştir", L"Enable microphone")
+        Localization::Text(L"Mikrofon karıştırmayı etkinleştir", L"Enable microphone mix")
     );
     SetControlText(
         microphoneToOutputCheck_,

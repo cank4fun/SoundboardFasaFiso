@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.0-rc.2
+
+- Allow startup when no usable sound or hotkey binding exists.
+- Keep the GUI available when configured sound files are missing so bindings can be repaired from the Hotkeys tab.
+
 ## 2.0.0-rc.1
 
 - Marked the v2 feature set as release-candidate complete
