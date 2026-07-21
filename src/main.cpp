@@ -337,13 +337,16 @@ namespace
             {
                 std::cerr
                     << Localization::Text(
-                        "Ses dosyası bulunamadı: ",
-                        "Sound file not found: "
+                        "Ses dosyası bulunamadı; atama pasif kalacak: ",
+                        "Sound file not found; binding will remain inactive: "
                     )
                     << PathToUtf8(binding.soundFile)
                     << '\n';
 
-                bindingError = true;
+                // Missing files are recoverable configuration state. Keep the
+                // binding in config and allow unrelated settings to be saved;
+                // the binding becomes active again when its file is restored
+                // or its path is corrected from the Hotkeys tab.
                 continue;
             }
 
@@ -983,16 +986,29 @@ int WINAPI wWinMain(
                     std::chrono::steady_clock::now() +
                     std::chrono::seconds(1);
 
-                std::cout << Localization::Text(
-                    "GUI ayarları kaydedildi ve uygulandı.\nSoundboard hazır.\n",
-                    "GUI settings were saved and applied.\nSoundboard ready.\n"
-                );
+                const bool hasInactiveBindings =
+                    activeBindings.size() < config.GetBindings().size();
+
+                std::cout << (hasInactiveBindings
+                    ? Localization::Text(
+                        "GUI ayarları kaydedildi ve uygulandı. Bazı ses atamaları dosyaları bulunamadığı için pasif.\n",
+                        "GUI settings were saved and applied. Some sound bindings are inactive because their files were not found.\n"
+                    )
+                    : Localization::Text(
+                        "GUI ayarları kaydedildi ve uygulandı.\nSoundboard hazır.\n",
+                        "GUI settings were saved and applied.\nSoundboard ready.\n"
+                    ));
 
                 controlWindow.UpdateConfig(config);
-                controlWindow.SetStatus(Localization::Text(
-                    L"Ayarlar kaydedildi ve uygulandı. Soundboard hazır.",
-                    L"Settings saved and applied. Soundboard ready."
-                ));
+                controlWindow.SetStatus(hasInactiveBindings
+                    ? Localization::Text(
+                        L"Ayarlar kaydedildi; dosyası eksik ses atamaları pasif bırakıldı.",
+                        L"Settings saved; bindings with missing files were left inactive."
+                    )
+                    : Localization::Text(
+                        L"Ayarlar kaydedildi ve uygulandı. Soundboard hazır.",
+                        L"Settings saved and applied. Soundboard ready."
+                    ));
                 continue;
             }
 

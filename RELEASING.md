@@ -37,8 +37,8 @@ After committing the release-candidate version:
 ```powershell
 git status
 git push
-git tag v2.0.0-rc.1
-git push origin v2.0.0-rc.1
+git tag v2.0.0-rc.2
+git push origin v2.0.0-rc.2
 ```
 
 Tags containing a prerelease suffix are published as GitHub prereleases.

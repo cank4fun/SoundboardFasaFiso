@@ -15,7 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 release candidate:** `2.0.0-rc.1` is feature-complete and undergoing final regression and clean-machine testing before the stable `2.0.0` release.
+**v2 release candidate:** `2.0.0-rc.2` is feature-complete and undergoing final regression and clean-machine testing before the stable `2.0.0` release.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
@@ -235,7 +235,7 @@ cmake --build out/build/x64-Release --target PortableRelease
 The distributable archive is created at:
 
 ```text
-out/build/x64-Release/SoundBoardFasaFiso-v2.0.0-rc.1-windows-x64-portable.zip
+out/build/x64-Release/SoundBoardFasaFiso-v2.0.0-rc.2-windows-x64-portable.zip
 ```
 
 ## Repository layout
