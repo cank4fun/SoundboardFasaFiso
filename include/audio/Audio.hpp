@@ -43,6 +43,9 @@ struct AudioLevelSnapshot
     float microphone = 0.0f;
     float microphoneRaw = 0.0f;
     float microphoneProcessed = 0.0f;
+    float microphoneRawRms = 0.0f;
+    float microphoneProcessedRms = 0.0f;
+    float microphoneVoiceActivityProbability = 0.0f;
 
     bool outputAvailable = false;
     bool monitorAvailable = false;

@@ -2344,6 +2344,9 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
         : 0.0f;
 
     float microphoneProcessedPeak = microphoneRawPeak;
+    float microphoneRawRms = 0.0f;
+    float microphoneProcessedRms = 0.0f;
+    float microphoneVoiceActivityProbability = 0.0f;
 
     if (processingActive)
     {
@@ -2357,6 +2360,21 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
         );
         microphoneProcessedPeak = std::clamp(
             processingSnapshot.processedPeak,
+            0.0f,
+            1.0f
+        );
+        microphoneRawRms = std::clamp(
+            processingSnapshot.rawRms,
+            0.0f,
+            1.0f
+        );
+        microphoneProcessedRms = std::clamp(
+            processingSnapshot.processedRms,
+            0.0f,
+            1.0f
+        );
+        microphoneVoiceActivityProbability = std::clamp(
+            processingSnapshot.voiceActivityProbability,
             0.0f,
             1.0f
         );
@@ -2374,6 +2392,10 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
 
     snapshot.microphoneRaw = microphoneRawPeak;
     snapshot.microphoneProcessed = microphoneProcessedPeak;
+    snapshot.microphoneRawRms = microphoneRawRms;
+    snapshot.microphoneProcessedRms = microphoneProcessedRms;
+    snapshot.microphoneVoiceActivityProbability =
+        microphoneVoiceActivityProbability;
     snapshot.microphone = microphoneProcessedPeak;
 
     const float microphonePeak = microphoneProcessedPeak;

@@ -4895,6 +4895,66 @@ void ControlWindow::UpdateLevelMeters()
     microphoneMeterAvailable_ = snapshot.microphoneAvailable;
     microphoneProcessingMeterAvailable_ = snapshot.microphoneAvailable;
 
+    const auto formatDbfs = [](const float linearLevel)
+    {
+        if (!std::isfinite(linearLevel) || linearLevel <= 0.000001f)
+        {
+            return std::wstring(L"-inf");
+        }
+
+        std::wostringstream stream;
+        stream
+            << std::fixed
+            << std::setprecision(1)
+            << 20.0f * std::log10(std::clamp(
+                linearLevel,
+                0.000001f,
+                1.0f
+            ));
+        return stream.str();
+    };
+
+    const auto updateProcessingMeterCaption = [this, &formatDbfs](
+        const HWND caption,
+        const std::wstring& label,
+        const float peak,
+        const float rms,
+        const bool available
+    )
+    {
+        if (!available)
+        {
+            SetControlText(caption, label);
+            return;
+        }
+
+        std::wstring text = label;
+        text += L"  P ";
+        text += formatDbfs(peak);
+        text += L"  R ";
+        text += formatDbfs(rms);
+        text += L" dBFS";
+        SetControlText(caption, text);
+    };
+
+    const bool processingMeterTelemetryAvailable =
+        snapshot.microphoneAvailable &&
+        snapshot.microphoneProcessingActive;
+    updateProcessingMeterCaption(
+        microphoneRawMeterCaption_,
+        Localization::Text(L"Ham", L"Raw"),
+        snapshot.microphoneRaw,
+        snapshot.microphoneRawRms,
+        processingMeterTelemetryAvailable
+    );
+    updateProcessingMeterCaption(
+        microphoneProcessedMeterCaption_,
+        Localization::Text(L"İşlenmiş", L"Processed"),
+        snapshot.microphoneProcessed,
+        snapshot.microphoneProcessedRms,
+        processingMeterTelemetryAvailable
+    );
+
     if (activePage_ == ControlPage::MicrophoneProcessing)
     {
         std::wstring status;
@@ -4944,6 +5004,20 @@ void ControlWindow::UpdateLevelMeters()
         else
         {
             status = Localization::Text(L"Aktif", L"Active");
+        }
+
+        if (snapshot.microphoneNoiseSuppressionActive)
+        {
+            const int voicePercentage = std::clamp(
+                static_cast<int>(std::lround(
+                    snapshot.microphoneVoiceActivityProbability * 100.0f
+                )),
+                0,
+                100
+            );
+            status += Localization::Text(L" • ses: ", L" • voice: ");
+            status += std::to_wstring(voicePercentage);
+            status += L"%";
         }
 
         if (snapshot.microphoneDroppedInputFrames != 0)
