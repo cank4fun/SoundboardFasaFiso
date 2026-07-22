@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.25)
 
 set(SOUNDBOARD_VERSION "2.0.0-rc.2")
 
-project(SoundBoardFasaFiso VERSION 2.0.0 LANGUAGES CXX)
+project(SoundBoardFasaFiso VERSION 2.0.0 LANGUAGES C CXX)
 
 if(SOUNDBOARD_VERSION MATCHES "-")
     set(SOUNDBOARD_VERSION_FILE_FLAGS "VS_FF_PRERELEASE")
@@ -50,6 +50,51 @@ add_library(
     src/audio/miniaudio_impl.cpp
 )
 
+set(SOUNDBOARD_RNNOISE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/third_party/rnnoise")
+set(
+    SOUNDBOARD_RNNOISE_SOURCES
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/denoise.c"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/rnn.c"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/pitch.c"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/kiss_fft.c"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/celt_lpc.c"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/nnet.c"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/nnet_default.c"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/parse_lpcnet_weights.c"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/rnnoise_data_little.c"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/rnnoise_tables.c"
+)
+
+foreach(rnnoise_source IN LISTS SOUNDBOARD_RNNOISE_SOURCES)
+    if(NOT EXISTS "${rnnoise_source}")
+        message(FATAL_ERROR
+            "RNNoise source is missing: ${rnnoise_source}. "
+            "Run tools/Import-RnNoiseV02.ps1 before configuring."
+        )
+    endif()
+endforeach()
+
+add_library(
+    SoundBoardFasaFisoRnNoise
+    STATIC
+    ${SOUNDBOARD_RNNOISE_SOURCES}
+)
+
+target_include_directories(
+    SoundBoardFasaFisoRnNoise
+    PUBLIC
+        "${SOUNDBOARD_RNNOISE_ROOT}/include"
+    PRIVATE
+        "${SOUNDBOARD_RNNOISE_ROOT}/src"
+)
+
+target_compile_definitions(
+    SoundBoardFasaFisoRnNoise
+    PRIVATE
+        RNNOISE_BUILD
+        _USE_MATH_DEFINES
+)
+
 target_include_directories(
     SoundBoardFasaFisoMiniaudio
     SYSTEM PRIVATE
@@ -64,6 +109,7 @@ add_executable(
     src/audio/MicrophoneProcessingSettings.cpp
     src/audio/MicrophoneProcessor.cpp
     src/audio/MicrophoneProcessingRuntime.cpp
+    src/audio/RnNoiseSuppressor.cpp
     $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
     src/config/Config.cpp
     src/diagnostics/Logger.cpp
@@ -141,8 +187,21 @@ if(MSVC)
             /utf-8
     )
 
+    target_compile_options(
+        SoundBoardFasaFisoRnNoise
+        PRIVATE
+            /W0
+            /bigobj
+    )
+
     set_property(
         TARGET SoundBoardFasaFisoMiniaudio
+        PROPERTY MSVC_RUNTIME_LIBRARY
+            "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    )
+
+    set_property(
+        TARGET SoundBoardFasaFisoRnNoise
         PROPERTY MSVC_RUNTIME_LIBRARY
             "MultiThreaded$<$<CONFIG:Debug>:Debug>"
     )
@@ -167,6 +226,7 @@ endif()
 target_link_libraries(
     SoundBoardFasaFiso
     PRIVATE
+        SoundBoardFasaFisoRnNoise
         user32
         shell32
         comctl32
@@ -388,6 +448,55 @@ if(BUILD_TESTING)
     add_test(
         NAME MicrophoneProcessingRuntime
         COMMAND SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoRnNoiseSuppressorTests
+        EXCLUDE_FROM_ALL
+        tests/RnNoiseSuppressorTests.cpp
+        src/audio/RnNoiseSuppressor.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoRnNoiseSuppressorTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFisoRnNoiseSuppressorTests
+        PRIVATE
+            SoundBoardFasaFisoRnNoise
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoRnNoiseSuppressorTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoRnNoiseSuppressorTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoRnNoiseSuppressorTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME RnNoiseSuppressor
+        COMMAND SoundBoardFasaFisoRnNoiseSuppressorTests
     )
 endif()
 

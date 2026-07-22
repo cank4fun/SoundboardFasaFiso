@@ -9,3 +9,12 @@ The vendored miniaudio header offers a choice between the Unlicense
 (public domain dedication) and the MIT No Attribution license. The complete
 license text is preserved at third_party/miniaudio/miniaudio.h in the source
 repository.
+
+RNNoise
+-------
+SoundBoardFasaFiso includes RNNoise v0.2 by Xiph.Org contributors for
+microphone noise suppression.
+
+RNNoise is distributed under the BSD 3-Clause License. The complete license
+text is preserved at third_party/rnnoise/COPYING in the source repository.
+The vendored spike uses the upstream little model from model version 0b50c45.
