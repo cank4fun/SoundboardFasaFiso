@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string_view>
 
 enum class MicrophoneProcessingPreset
@@ -75,6 +76,13 @@ std::string_view MicrophoneProcessingPresetName(
 std::string_view MicrophoneNoiseSuppressionLevelName(
     MicrophoneNoiseSuppressionLevel level
 );
+
+std::optional<MicrophoneProcessingPreset> ParseMicrophoneProcessingPreset(
+    std::string_view value
+);
+
+std::optional<MicrophoneNoiseSuppressionLevel>
+ParseMicrophoneNoiseSuppressionLevel(std::string_view value);
 
 bool IsValidMicrophoneProcessingSettings(
     const MicrophoneProcessingSettings& settings

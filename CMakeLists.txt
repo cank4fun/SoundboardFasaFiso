@@ -26,6 +26,8 @@ option(
     OFF
 )
 
+include(CTest)
+
 set(SOUNDBOARD_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 file(MAKE_DIRECTORY "${SOUNDBOARD_GENERATED_DIR}/app")
@@ -193,6 +195,51 @@ add_custom_target(
 )
 
 add_dependencies(SoundBoardFasaFiso SyncRuntimeFiles)
+
+if(BUILD_TESTING)
+    add_executable(
+        SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+        EXCLUDE_FROM_ALL
+        tests/MicrophoneProcessingSettingsTests.cpp
+        src/audio/MicrophoneProcessingSettings.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME MicrophoneProcessingSettings
+        COMMAND SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+    )
+endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(PORTABLE_RELEASE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/portable")

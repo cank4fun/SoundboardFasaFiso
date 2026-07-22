@@ -71,6 +71,19 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release
           -DSOUNDBOARD_WARNINGS_AS_ERRORS=ON
 
+      - name: Build microphone processing settings tests
+        shell: pwsh
+        run: >-
+          cmake --build out/build/ci-release
+          --target SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+          --parallel
+
+      - name: Run tests
+        shell: pwsh
+        run: >-
+          ctest --test-dir out/build/ci-release
+          --output-on-failure
+
       - name: Build portable package
         shell: pwsh
         run: >-

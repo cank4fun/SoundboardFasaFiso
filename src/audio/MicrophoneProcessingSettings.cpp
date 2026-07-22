@@ -1,6 +1,7 @@
 #include "audio/MicrophoneProcessingSettings.hpp"
 
 #include <cmath>
+#include <cstddef>
 
 namespace
 {
@@ -13,6 +14,34 @@ namespace
         return std::isfinite(value) &&
             value >= minimum &&
             value <= maximum;
+    }
+
+    bool EqualsAsciiIgnoreCase(
+        const std::string_view left,
+        const std::string_view right
+    )
+    {
+        if (left.size() != right.size())
+        {
+            return false;
+        }
+
+        for (std::size_t index = 0; index < left.size(); ++index)
+        {
+            const auto toLowerAscii = [](const char character)
+            {
+                return character >= 'A' && character <= 'Z'
+                    ? static_cast<char>(character - 'A' + 'a')
+                    : character;
+            };
+
+            if (toLowerAscii(left[index]) != toLowerAscii(right[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     bool IsKnownPreset(const MicrophoneProcessingPreset preset)
@@ -64,7 +93,7 @@ std::string_view MicrophoneProcessingPresetName(
             return "custom";
     }
 
-    return "natural";
+    return "unknown";
 }
 
 std::string_view MicrophoneNoiseSuppressionLevelName(
@@ -81,7 +110,60 @@ std::string_view MicrophoneNoiseSuppressionLevelName(
             return "strong";
     }
 
-    return "balanced";
+    return "unknown";
+}
+
+std::optional<MicrophoneProcessingPreset> ParseMicrophoneProcessingPreset(
+    const std::string_view value
+)
+{
+    if (EqualsAsciiIgnoreCase(value, "natural"))
+    {
+        return MicrophoneProcessingPreset::Natural;
+    }
+
+    if (EqualsAsciiIgnoreCase(value, "clean"))
+    {
+        return MicrophoneProcessingPreset::Clean;
+    }
+
+    if (EqualsAsciiIgnoreCase(value, "strong"))
+    {
+        return MicrophoneProcessingPreset::Strong;
+    }
+
+    if (EqualsAsciiIgnoreCase(value, "aggressive"))
+    {
+        return MicrophoneProcessingPreset::Aggressive;
+    }
+
+    if (EqualsAsciiIgnoreCase(value, "custom"))
+    {
+        return MicrophoneProcessingPreset::Custom;
+    }
+
+    return std::nullopt;
+}
+
+std::optional<MicrophoneNoiseSuppressionLevel>
+ParseMicrophoneNoiseSuppressionLevel(const std::string_view value)
+{
+    if (EqualsAsciiIgnoreCase(value, "light"))
+    {
+        return MicrophoneNoiseSuppressionLevel::Light;
+    }
+
+    if (EqualsAsciiIgnoreCase(value, "balanced"))
+    {
+        return MicrophoneNoiseSuppressionLevel::Balanced;
+    }
+
+    if (EqualsAsciiIgnoreCase(value, "strong"))
+    {
+        return MicrophoneNoiseSuppressionLevel::Strong;
+    }
+
+    return std::nullopt;
 }
 
 bool IsValidMicrophoneProcessingSettings(
