@@ -16,10 +16,13 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstddef>
+#include <iomanip>
 #include <cwctype>
 #include <iostream>
 #include <iterator>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -388,6 +391,7 @@ void ControlWindow::Shutdown()
     themeToggleButton_ = nullptr;
     mainTabButton_ = nullptr;
     settingsTabButton_ = nullptr;
+    microphoneProcessingTabButton_ = nullptr;
     hotkeysTabButton_ = nullptr;
     statusCaption_ = nullptr;
     statusValue_ = nullptr;
@@ -430,6 +434,32 @@ void ControlWindow::Shutdown()
     checkUpdatesOnStartCheck_ = nullptr;
     refreshDevicesButton_ = nullptr;
     applySettingsButton_ = nullptr;
+    microphoneProcessingGroup_ = nullptr;
+    microphoneProcessingEnabledCheck_ = nullptr;
+    microphoneProcessingStatusCaption_ = nullptr;
+    microphoneProcessingStatusValue_ = nullptr;
+    microphoneRawMeterCaption_ = nullptr;
+    microphoneRawLevelMeter_ = nullptr;
+    microphoneProcessedMeterCaption_ = nullptr;
+    microphoneProcessedLevelMeter_ = nullptr;
+    microphoneHighPassEnabledCheck_ = nullptr;
+    microphoneHighPassHzCaption_ = nullptr;
+    microphoneHighPassHzEdit_ = nullptr;
+    microphoneCompressorEnabledCheck_ = nullptr;
+    microphoneCompressorThresholdCaption_ = nullptr;
+    microphoneCompressorThresholdEdit_ = nullptr;
+    microphoneCompressorRatioCaption_ = nullptr;
+    microphoneCompressorRatioEdit_ = nullptr;
+    microphoneCompressorAttackCaption_ = nullptr;
+    microphoneCompressorAttackEdit_ = nullptr;
+    microphoneCompressorReleaseCaption_ = nullptr;
+    microphoneCompressorReleaseEdit_ = nullptr;
+    microphoneCompressorMakeupCaption_ = nullptr;
+    microphoneCompressorMakeupEdit_ = nullptr;
+    microphoneLimiterEnabledCheck_ = nullptr;
+    microphoneLimiterCeilingCaption_ = nullptr;
+    microphoneLimiterCeilingEdit_ = nullptr;
+    microphoneUnavailableFeaturesCaption_ = nullptr;
     controlHotkeysGroup_ = nullptr;
     stopHotkeyCaption_ = nullptr;
     stopHotkeyEdit_ = nullptr;
@@ -475,9 +505,12 @@ void ControlWindow::Shutdown()
     outputMeterLevel_ = 0.0f;
     monitorMeterLevel_ = 0.0f;
     microphoneMeterLevel_ = 0.0f;
+    microphoneRawMeterLevel_ = 0.0f;
+    microphoneProcessedMeterLevel_ = 0.0f;
     outputMeterAvailable_ = false;
     monitorMeterAvailable_ = false;
     microphoneMeterAvailable_ = false;
+    microphoneProcessingMeterAvailable_ = false;
 }
 
 void ControlWindow::Show()
@@ -979,6 +1012,10 @@ LRESULT ControlWindow::HandleWindowMessage(
                     SetActivePage(ControlPage::Settings);
                     return 0;
 
+                case IdMicrophoneProcessingTab:
+                    SetActivePage(ControlPage::MicrophoneProcessing);
+                    return 0;
+
                 case IdHotkeysTab:
                     SetActivePage(ControlPage::Hotkeys);
                     return 0;
@@ -1328,6 +1365,10 @@ bool ControlWindow::CreateControls()
     settingsTabButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdSettingsTab
     );
+    microphoneProcessingTabButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
+        IdMicrophoneProcessingTab
+    );
     hotkeysTabButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdHotkeysTab
     );
@@ -1465,6 +1506,92 @@ bool ControlWindow::CreateControls()
         IdApplySettings
     );
 
+    microphoneProcessingGroup_ = createControl(
+        L"STATIC", L"", SS_OWNERDRAW, 0
+    );
+    microphoneProcessingEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
+    microphoneProcessingStatusCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneProcessingStatusValue_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneRawMeterCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneRawLevelMeter_ = createControl(
+        L"STATIC", L"", SS_OWNERDRAW, 0
+    );
+    microphoneProcessedMeterCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneProcessedLevelMeter_ = createControl(
+        L"STATIC", L"", SS_OWNERDRAW, 0
+    );
+    microphoneHighPassEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
+    microphoneHighPassHzCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneHighPassHzEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0,
+        WS_EX_CLIENTEDGE
+    );
+    microphoneCompressorEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
+    microphoneCompressorThresholdCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneCompressorThresholdEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0,
+        WS_EX_CLIENTEDGE
+    );
+    microphoneCompressorRatioCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneCompressorRatioEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0,
+        WS_EX_CLIENTEDGE
+    );
+    microphoneCompressorAttackCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneCompressorAttackEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0,
+        WS_EX_CLIENTEDGE
+    );
+    microphoneCompressorReleaseCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneCompressorReleaseEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0,
+        WS_EX_CLIENTEDGE
+    );
+    microphoneCompressorMakeupCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneCompressorMakeupEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0,
+        WS_EX_CLIENTEDGE
+    );
+    microphoneLimiterEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
+    microphoneLimiterCeilingCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneLimiterCeilingEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0,
+        WS_EX_CLIENTEDGE
+    );
+    microphoneUnavailableFeaturesCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+
     SendMessageW(outputVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
     SendMessageW(monitorVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
     SendMessageW(microphoneVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
@@ -1591,7 +1718,8 @@ bool ControlWindow::CreateControls()
 
     const HWND controls[] = {
         headerLabel_, subtitleLabel_, themeToggleButton_,
-        mainTabButton_, settingsTabButton_, hotkeysTabButton_,
+        mainTabButton_, settingsTabButton_,
+        microphoneProcessingTabButton_, hotkeysTabButton_,
         statusCaption_, statusValue_, mainQuickGroup_,
         mainOutputMeterCaption_, mainOutputLevelMeter_,
         mainMonitorMeterCaption_, mainMonitorLevelMeter_,
@@ -1609,7 +1737,25 @@ bool ControlWindow::CreateControls()
         bufferCaption_, bufferCombo_, languageCaption_, languageCombo_,
         startWithWindowsCheck_, checkUpdatesOnStartCheck_,
         refreshDevicesButton_,
-        applySettingsButton_, controlHotkeysGroup_,
+        applySettingsButton_, microphoneProcessingGroup_,
+        microphoneProcessingEnabledCheck_,
+        microphoneProcessingStatusCaption_,
+        microphoneProcessingStatusValue_, microphoneRawMeterCaption_,
+        microphoneRawLevelMeter_, microphoneProcessedMeterCaption_,
+        microphoneProcessedLevelMeter_,
+        microphoneHighPassEnabledCheck_, microphoneHighPassHzCaption_,
+        microphoneHighPassHzEdit_, microphoneCompressorEnabledCheck_,
+        microphoneCompressorThresholdCaption_,
+        microphoneCompressorThresholdEdit_,
+        microphoneCompressorRatioCaption_, microphoneCompressorRatioEdit_,
+        microphoneCompressorAttackCaption_,
+        microphoneCompressorAttackEdit_,
+        microphoneCompressorReleaseCaption_,
+        microphoneCompressorReleaseEdit_,
+        microphoneCompressorMakeupCaption_,
+        microphoneCompressorMakeupEdit_, microphoneLimiterEnabledCheck_,
+        microphoneLimiterCeilingCaption_, microphoneLimiterCeilingEdit_,
+        microphoneUnavailableFeaturesCaption_, controlHotkeysGroup_,
         stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
         outputMuteHotkeyEdit_, monitorMuteHotkeyCaption_,
         monitorMuteHotkeyEdit_, reloadHotkeyCaption_, reloadHotkeyEdit_,
@@ -1647,6 +1793,8 @@ bool ControlWindow::CreateAccelerators()
         {FCONTROL | FVIRTKEY, static_cast<WORD>('1'), IdMainTab},
         {FCONTROL | FVIRTKEY, static_cast<WORD>('2'), IdSettingsTab},
         {FCONTROL | FVIRTKEY, static_cast<WORD>('3'), IdHotkeysTab},
+        {FCONTROL | FVIRTKEY, static_cast<WORD>('4'),
+            IdMicrophoneProcessingTab},
         {FCONTROL | FVIRTKEY, static_cast<WORD>('S'), IdApplySettings},
         {FVIRTKEY, VK_ESCAPE, IdCancelHotkeyCapture}
     };
@@ -1734,7 +1882,8 @@ void ControlWindow::LayoutControls(
     constexpr int tabWidth = 142;
     constexpr int tabGap = 6;
     const HWND tabs[]{
-        mainTabButton_, settingsTabButton_, hotkeysTabButton_
+        mainTabButton_, settingsTabButton_, hotkeysTabButton_,
+        microphoneProcessingTabButton_
     };
 
     for (std::size_t index = 0; index < std::size(tabs); ++index)
@@ -2261,6 +2410,146 @@ void ControlWindow::LayoutControls(
             );
         }
     }
+    else if (activePage_ == ControlPage::MicrophoneProcessing)
+    {
+        moveWindow(
+            microphoneProcessingGroup_,
+            contentX,
+            pageY,
+            contentWidth,
+            pageHeight,
+            TRUE
+        );
+
+        const int innerX = contentX + 18;
+        const int innerWidth = contentWidth - 36;
+        const int columnGap = 24;
+        const int columnWidth = (innerWidth - columnGap) / 2;
+        const int rightX = innerX + columnWidth + columnGap;
+        const int labelWidth = 210;
+        const int editWidth = std::max(90, columnWidth - labelWidth);
+        int rowY = pageY + 34;
+
+        moveWindow(
+            microphoneProcessingEnabledCheck_,
+            innerX, rowY, columnWidth, 22, TRUE
+        );
+        moveWindow(
+            microphoneProcessingStatusCaption_,
+            rightX, rowY + 2, 94, 20, TRUE
+        );
+        moveWindow(
+            microphoneProcessingStatusValue_,
+            rightX + 94, rowY + 2, columnWidth - 94, 20, TRUE
+        );
+        rowY += 34;
+
+        const int meterGap = 24;
+        const int meterWidth = (innerWidth - meterGap) / 2;
+        moveWindow(
+            microphoneRawMeterCaption_,
+            innerX, rowY, meterWidth, 20, TRUE
+        );
+        moveWindow(
+            microphoneRawLevelMeter_,
+            innerX, rowY + 23, meterWidth, 8, TRUE
+        );
+        moveWindow(
+            microphoneProcessedMeterCaption_,
+            innerX + meterWidth + meterGap,
+            rowY, meterWidth, 20, TRUE
+        );
+        moveWindow(
+            microphoneProcessedLevelMeter_,
+            innerX + meterWidth + meterGap,
+            rowY + 23, meterWidth, 8, TRUE
+        );
+        rowY += 55;
+
+        const auto layoutField = [=](
+            const HWND caption,
+            const HWND edit,
+            const int x,
+            const int fieldY
+        )
+        {
+            moveWindow(caption, x, fieldY + 4, labelWidth, 20, TRUE);
+            moveWindow(
+                edit, x + labelWidth, fieldY, editWidth, 25, TRUE
+            );
+        };
+
+        moveWindow(
+            microphoneHighPassEnabledCheck_,
+            innerX, rowY, columnWidth, 22, TRUE
+        );
+        moveWindow(
+            microphoneCompressorEnabledCheck_,
+            rightX, rowY, columnWidth, 22, TRUE
+        );
+        rowY += 32;
+
+        layoutField(
+            microphoneHighPassHzCaption_,
+            microphoneHighPassHzEdit_,
+            innerX, rowY
+        );
+        layoutField(
+            microphoneCompressorThresholdCaption_,
+            microphoneCompressorThresholdEdit_,
+            rightX, rowY
+        );
+        rowY += 34;
+
+        layoutField(
+            microphoneCompressorRatioCaption_,
+            microphoneCompressorRatioEdit_,
+            innerX, rowY
+        );
+        layoutField(
+            microphoneCompressorAttackCaption_,
+            microphoneCompressorAttackEdit_,
+            rightX, rowY
+        );
+        rowY += 34;
+
+        layoutField(
+            microphoneCompressorReleaseCaption_,
+            microphoneCompressorReleaseEdit_,
+            innerX, rowY
+        );
+        layoutField(
+            microphoneCompressorMakeupCaption_,
+            microphoneCompressorMakeupEdit_,
+            rightX, rowY
+        );
+        rowY += 42;
+
+        moveWindow(
+            microphoneLimiterEnabledCheck_,
+            innerX, rowY, columnWidth, 22, TRUE
+        );
+        layoutField(
+            microphoneLimiterCeilingCaption_,
+            microphoneLimiterCeilingEdit_,
+            rightX, rowY - 2
+        );
+        rowY += 40;
+
+        moveWindow(
+            microphoneUnavailableFeaturesCaption_,
+            innerX, rowY, innerWidth - 190, 42, TRUE
+        );
+
+        moveWindow(
+            applySettingsButton_,
+            contentX + contentWidth - 18 - 180,
+            pageY + pageHeight - ButtonHeight - 14,
+            180,
+            ButtonHeight,
+            TRUE
+        );
+    }
     else
     {
         moveWindow(
@@ -2437,6 +2726,10 @@ void ControlWindow::SetActivePage(const ControlPage page)
     {
         activeTab = settingsTabButton_;
     }
+    else if (activePage_ == ControlPage::MicrophoneProcessing)
+    {
+        activeTab = microphoneProcessingTabButton_;
+    }
     else if (activePage_ == ControlPage::Hotkeys)
     {
         activeTab = hotkeysTabButton_;
@@ -2487,6 +2780,27 @@ void ControlWindow::UpdatePageVisibility()
         openLogsButton_, checkUpdatesButton_, consoleButton_, exitButton_
     };
 
+    const HWND microphoneProcessingControls[]{
+        microphoneProcessingGroup_, microphoneProcessingEnabledCheck_,
+        microphoneProcessingStatusCaption_,
+        microphoneProcessingStatusValue_, microphoneRawMeterCaption_,
+        microphoneRawLevelMeter_, microphoneProcessedMeterCaption_,
+        microphoneProcessedLevelMeter_, microphoneHighPassEnabledCheck_,
+        microphoneHighPassHzCaption_, microphoneHighPassHzEdit_,
+        microphoneCompressorEnabledCheck_,
+        microphoneCompressorThresholdCaption_,
+        microphoneCompressorThresholdEdit_,
+        microphoneCompressorRatioCaption_, microphoneCompressorRatioEdit_,
+        microphoneCompressorAttackCaption_,
+        microphoneCompressorAttackEdit_,
+        microphoneCompressorReleaseCaption_,
+        microphoneCompressorReleaseEdit_,
+        microphoneCompressorMakeupCaption_,
+        microphoneCompressorMakeupEdit_, microphoneLimiterEnabledCheck_,
+        microphoneLimiterCeilingCaption_, microphoneLimiterCeilingEdit_,
+        microphoneUnavailableFeaturesCaption_
+    };
+
     const HWND hotkeyControls[]{
         controlHotkeysGroup_, stopHotkeyCaption_, stopHotkeyEdit_,
         outputMuteHotkeyCaption_, outputMuteHotkeyEdit_,
@@ -2503,6 +2817,13 @@ void ControlWindow::UpdatePageVisibility()
     {
         setVisible(control, activePage_ == ControlPage::Settings);
     }
+    for (const HWND control : microphoneProcessingControls)
+    {
+        setVisible(
+            control,
+            activePage_ == ControlPage::MicrophoneProcessing
+        );
+    }
     for (const HWND control : hotkeyControls)
     {
         setVisible(control, activePage_ == ControlPage::Hotkeys);
@@ -2516,6 +2837,10 @@ void ControlWindow::UpdatePageVisibility()
     );
     RedrawWindow(
         settingsTabButton_, nullptr, nullptr,
+        RDW_INVALIDATE | RDW_UPDATENOW
+    );
+    RedrawWindow(
+        microphoneProcessingTabButton_, nullptr, nullptr,
         RDW_INVALIDATE | RDW_UPDATENOW
     );
     RedrawWindow(
@@ -2571,10 +2896,14 @@ void ControlWindow::ApplyTheme()
         SetWindowTheme(bindingModeCombo_, comboTheme, nullptr);
     }
 
-    const std::array<HWND, 8> edits{
+    const std::array<HWND, 15> edits{
         stopHotkeyEdit_, outputMuteHotkeyEdit_, monitorMuteHotkeyEdit_,
         reloadHotkeyEdit_, exitHotkeyEdit_, bindingHotkeyEdit_,
-        bindingFileEdit_, bindingsList_
+        bindingFileEdit_, bindingsList_, microphoneHighPassHzEdit_,
+        microphoneCompressorThresholdEdit_,
+        microphoneCompressorRatioEdit_, microphoneCompressorAttackEdit_,
+        microphoneCompressorReleaseEdit_,
+        microphoneCompressorMakeupEdit_, microphoneLimiterCeilingEdit_
     };
 
     for (const HWND control : edits)
@@ -2599,10 +2928,12 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 5> checkBoxes{
+    const std::array<HWND, 9> checkBoxes{
         microphoneEnabledCheck_, microphoneToOutputCheck_,
         microphoneToMonitorCheck_, startWithWindowsCheck_,
-        checkUpdatesOnStartCheck_
+        checkUpdatesOnStartCheck_, microphoneProcessingEnabledCheck_,
+        microphoneHighPassEnabledCheck_,
+        microphoneCompressorEnabledCheck_, microphoneLimiterEnabledCheck_
     };
 
     for (const HWND control : checkBoxes)
@@ -2680,7 +3011,23 @@ void ControlWindow::ApplyFonts()
         microphoneToOutputCheck_, microphoneToMonitorCheck_,
         sampleRateCaption_, sampleRateCombo_, bufferCaption_, bufferCombo_,
         languageCaption_, languageCombo_, startWithWindowsCheck_,
-        checkUpdatesOnStartCheck_,
+        checkUpdatesOnStartCheck_, microphoneProcessingEnabledCheck_,
+        microphoneProcessingStatusCaption_,
+        microphoneProcessingStatusValue_, microphoneRawMeterCaption_,
+        microphoneProcessedMeterCaption_,
+        microphoneHighPassEnabledCheck_, microphoneHighPassHzCaption_,
+        microphoneHighPassHzEdit_, microphoneCompressorEnabledCheck_,
+        microphoneCompressorThresholdCaption_,
+        microphoneCompressorThresholdEdit_,
+        microphoneCompressorRatioCaption_, microphoneCompressorRatioEdit_,
+        microphoneCompressorAttackCaption_,
+        microphoneCompressorAttackEdit_,
+        microphoneCompressorReleaseCaption_,
+        microphoneCompressorReleaseEdit_,
+        microphoneCompressorMakeupCaption_,
+        microphoneCompressorMakeupEdit_, microphoneLimiterEnabledCheck_,
+        microphoneLimiterCeilingCaption_, microphoneLimiterCeilingEdit_,
+        microphoneUnavailableFeaturesCaption_,
         stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
         outputMuteHotkeyEdit_, monitorMuteHotkeyCaption_,
         monitorMuteHotkeyEdit_, reloadHotkeyCaption_, reloadHotkeyEdit_,
@@ -2705,7 +3052,8 @@ void ControlWindow::ApplyFonts()
 
     const HWND buttons[]{
         themeToggleButton_, mainTabButton_, settingsTabButton_,
-        hotkeysTabButton_, refreshDevicesButton_, applySettingsButton_,
+        microphoneProcessingTabButton_, hotkeysTabButton_,
+        refreshDevicesButton_, applySettingsButton_,
         captureHotkeyButton_, browseSoundButton_, addBindingButton_,
         updateBindingButton_, removeBindingButton_, clearBindingButton_,
         reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_,
@@ -2741,7 +3089,8 @@ void ControlWindow::ApplyFonts()
 
     const HWND cards[]{
         mainQuickGroup_, settingsGroup_, settingsToolsGroup_,
-        controlHotkeysGroup_, bindingsGroup_, bindingEditorGroup_
+        microphoneProcessingGroup_, controlHotkeysGroup_, bindingsGroup_,
+        bindingEditorGroup_
     };
 
     for (const HWND control : cards)
@@ -2911,6 +3260,16 @@ void ControlWindow::DrawLevelMeter(
         level = microphoneMeterLevel_;
         available = microphoneMeterAvailable_;
     }
+    else if (item.hwndItem == microphoneRawLevelMeter_)
+    {
+        level = microphoneRawMeterLevel_;
+        available = microphoneProcessingMeterAvailable_;
+    }
+    else if (item.hwndItem == microphoneProcessedLevelMeter_)
+    {
+        level = microphoneProcessedMeterLevel_;
+        available = microphoneProcessingMeterAvailable_;
+    }
 
     RECT trackRectangle = item.rcItem;
     trackRectangle.right -= 1;
@@ -3020,6 +3379,8 @@ void ControlWindow::DrawModernButton(const DRAWITEMSTRUCT& item)
                 activePage_ == ControlPage::Main) ||
             (item.hwndItem == settingsTabButton_ &&
                 activePage_ == ControlPage::Settings) ||
+            (item.hwndItem == microphoneProcessingTabButton_ &&
+                activePage_ == ControlPage::MicrophoneProcessing) ||
             (item.hwndItem == hotkeysTabButton_ &&
                 activePage_ == ControlPage::Hotkeys);
 
@@ -3214,7 +3575,9 @@ bool ControlWindow::IsLevelMeterControl(const HWND control) const
         control == microphoneLevelMeter_ ||
         control == mainOutputLevelMeter_ ||
         control == mainMonitorLevelMeter_ ||
-        control == mainMicrophoneLevelMeter_;
+        control == mainMicrophoneLevelMeter_ ||
+        control == microphoneRawLevelMeter_ ||
+        control == microphoneProcessedLevelMeter_;
 }
 
 void ControlWindow::DrawModernSlider(
@@ -3461,6 +3824,7 @@ bool ControlWindow::IsCardControl(const HWND control) const
     return control == mainQuickGroup_ ||
         control == settingsGroup_ ||
         control == settingsToolsGroup_ ||
+        control == microphoneProcessingGroup_ ||
         control == controlHotkeysGroup_ ||
         control == bindingsGroup_ ||
         control == bindingEditorGroup_;
@@ -3477,6 +3841,7 @@ bool ControlWindow::IsNavigationTab(const HWND control) const
 {
     return control == mainTabButton_ ||
         control == settingsTabButton_ ||
+        control == microphoneProcessingTabButton_ ||
         control == hotkeysTabButton_;
 }
 
@@ -3520,8 +3885,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         subtitleLabel_,
         Localization::Text(
-            L"Tek pencere • Ctrl+1/2/3: sekmeler • Ctrl+S: kaydet",
-            L"Single window • Ctrl+1/2/3: tabs • Ctrl+S: save"
+            L"Tek pencere • Ctrl+1/2/3/4: sekmeler • Ctrl+S: kaydet",
+            L"Single window • Ctrl+1/2/3/4: tabs • Ctrl+S: save"
         )
     );
     SetControlText(
@@ -3537,6 +3902,10 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         settingsTabButton_,
         Localization::Text(L"Ayarlar", L"Settings")
+    );
+    SetControlText(
+        microphoneProcessingTabButton_,
+        Localization::Text(L"Mikrofon filtreleri", L"Mic filters")
     );
     SetControlText(
         hotkeysTabButton_,
@@ -3622,6 +3991,104 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         applySettingsButton_,
         Localization::Text(L"Kaydet ve uygula", L"Save and apply")
+    );
+
+    SetControlText(
+        microphoneProcessingGroup_,
+        Localization::Text(L"Mikrofon işleme", L"Microphone processing")
+    );
+    SetControlText(
+        microphoneProcessingEnabledCheck_,
+        Localization::Text(
+            L"Mikrofon işlemeyi etkinleştir",
+            L"Enable microphone processing"
+        )
+    );
+    SetControlText(
+        microphoneProcessingStatusCaption_,
+        Localization::Text(L"Canlı durum:", L"Live status:")
+    );
+    SetControlText(
+        microphoneRawMeterCaption_,
+        Localization::Text(L"Ham mikrofon seviyesi", L"Raw microphone level")
+    );
+    SetControlText(
+        microphoneProcessedMeterCaption_,
+        Localization::Text(
+            L"İşlenmiş mikrofon seviyesi",
+            L"Processed microphone level"
+        )
+    );
+    SetControlText(
+        microphoneHighPassEnabledCheck_,
+        Localization::Text(
+            L"High-pass filtresini etkinleştir",
+            L"Enable high-pass filter"
+        )
+    );
+    SetControlText(
+        microphoneHighPassHzCaption_,
+        Localization::Text(
+            L"High-pass frekansı (20-300 Hz):",
+            L"High-pass frequency (20-300 Hz):"
+        )
+    );
+    SetControlText(
+        microphoneCompressorEnabledCheck_,
+        Localization::Text(
+            L"Compressor'ı etkinleştir",
+            L"Enable compressor"
+        )
+    );
+    SetControlText(
+        microphoneCompressorThresholdCaption_,
+        Localization::Text(
+            L"Eşik (-60 ile 0 dB):",
+            L"Threshold (-60 to 0 dB):"
+        )
+    );
+    SetControlText(
+        microphoneCompressorRatioCaption_,
+        Localization::Text(L"Oran (1-20):", L"Ratio (1-20):")
+    );
+    SetControlText(
+        microphoneCompressorAttackCaption_,
+        Localization::Text(
+            L"Attack (0.1-200 ms):",
+            L"Attack (0.1-200 ms):"
+        )
+    );
+    SetControlText(
+        microphoneCompressorReleaseCaption_,
+        Localization::Text(
+            L"Release (5-2000 ms):",
+            L"Release (5-2000 ms):"
+        )
+    );
+    SetControlText(
+        microphoneCompressorMakeupCaption_,
+        Localization::Text(
+            L"Makeup gain (-12 ile 24 dB):",
+            L"Makeup gain (-12 to 24 dB):"
+        )
+    );
+    SetControlText(
+        microphoneLimiterEnabledCheck_,
+        Localization::Text(L"Limiter'ı etkinleştir", L"Enable limiter")
+    );
+    SetControlText(
+        microphoneLimiterCeilingCaption_,
+        Localization::Text(
+            L"Limiter tavanı (-12 ile 0 dB):",
+            L"Limiter ceiling (-12 to 0 dB):"
+        )
+    );
+    SetControlText(
+        microphoneUnavailableFeaturesCaption_,
+        Localization::Text(
+            L"Noise suppression, AGC ve preset seçimi sonraki aşamada eklenecek. Bu ekranda şu an high-pass, compressor ve limiter ayarlanır.",
+            L"Noise suppression, AGC, and preset selection will be added in a later phase. This page currently configures high-pass, compressor, and limiter."
+        )
     );
 
     SetControlText(
@@ -3827,6 +4294,7 @@ void ControlWindow::PopulateEditorControls()
         0
     );
 
+    PopulateMicrophoneProcessingControls();
     UpdateVolumeLabels();
 }
 
@@ -3903,6 +4371,71 @@ void ControlWindow::PopulateNumericCombos()
 
     AddComboItem(languageCombo_, L"Türkçe");
     AddComboItem(languageCombo_, L"English");
+}
+
+void ControlWindow::PopulateMicrophoneProcessingControls()
+{
+    if (microphoneProcessingEnabledCheck_ == nullptr)
+    {
+        return;
+    }
+
+    const MicrophoneProcessingSettings& settings =
+        currentConfig_.GetMicrophoneProcessingSettings();
+
+    const auto setCheck = [](const HWND control, const bool checked)
+    {
+        SendMessageW(
+            control,
+            BM_SETCHECK,
+            checked ? BST_CHECKED : BST_UNCHECKED,
+            0
+        );
+    };
+
+    const auto formatValue = [](const float value)
+    {
+        std::wostringstream stream;
+        stream << std::fixed << std::setprecision(3) << value;
+        return stream.str();
+    };
+
+    setCheck(microphoneProcessingEnabledCheck_, settings.enabled);
+    setCheck(microphoneHighPassEnabledCheck_, settings.highPassEnabled);
+    setCheck(
+        microphoneCompressorEnabledCheck_,
+        settings.compressorEnabled
+    );
+    setCheck(microphoneLimiterEnabledCheck_, settings.limiterEnabled);
+
+    SetControlText(
+        microphoneHighPassHzEdit_,
+        formatValue(settings.highPassHz)
+    );
+    SetControlText(
+        microphoneCompressorThresholdEdit_,
+        formatValue(settings.compressorThresholdDb)
+    );
+    SetControlText(
+        microphoneCompressorRatioEdit_,
+        formatValue(settings.compressorRatio)
+    );
+    SetControlText(
+        microphoneCompressorAttackEdit_,
+        formatValue(settings.compressorAttackMs)
+    );
+    SetControlText(
+        microphoneCompressorReleaseEdit_,
+        formatValue(settings.compressorReleaseMs)
+    );
+    SetControlText(
+        microphoneCompressorMakeupEdit_,
+        formatValue(settings.compressorMakeupDb)
+    );
+    SetControlText(
+        microphoneLimiterCeilingEdit_,
+        formatValue(settings.limiterCeilingDb)
+    );
 }
 
 void ControlWindow::PopulateControlHotkeys()
@@ -4037,10 +4570,70 @@ void ControlWindow::UpdateLevelMeters()
         microphoneMeterLevel_,
         snapshot.microphone
     );
+    microphoneRawMeterLevel_ = smoothLevel(
+        microphoneRawMeterLevel_,
+        snapshot.microphoneRaw
+    );
+    microphoneProcessedMeterLevel_ = smoothLevel(
+        microphoneProcessedMeterLevel_,
+        snapshot.microphoneProcessed
+    );
 
     outputMeterAvailable_ = snapshot.outputAvailable;
     monitorMeterAvailable_ = snapshot.monitorAvailable;
     microphoneMeterAvailable_ = snapshot.microphoneAvailable;
+    microphoneProcessingMeterAvailable_ = snapshot.microphoneAvailable;
+
+    if (activePage_ == ControlPage::MicrophoneProcessing)
+    {
+        std::wstring status;
+
+        if (!snapshot.microphoneAvailable)
+        {
+            status = Localization::Text(
+                L"Mikrofon kullanılamıyor",
+                L"Microphone unavailable"
+            );
+        }
+        else if (!snapshot.microphoneProcessingActive)
+        {
+            status = Localization::Text(
+                L"Bypass / kapalı",
+                L"Bypassed / disabled"
+            );
+        }
+        else if (snapshot.microphoneInvalidSampleDetected)
+        {
+            status = Localization::Text(
+                L"Aktif • geçersiz sample algılandı",
+                L"Active • invalid sample detected"
+            );
+        }
+        else if (snapshot.microphoneInputClipped)
+        {
+            status = Localization::Text(
+                L"Aktif • giriş clipping",
+                L"Active • input clipping"
+            );
+        }
+        else
+        {
+            status = Localization::Text(L"Aktif", L"Active");
+        }
+
+        if (snapshot.microphoneDroppedInputFrames != 0)
+        {
+            status += Localization::Text(
+                L" • düşen frame: ",
+                L" • dropped frames: "
+            );
+            status += std::to_wstring(
+                snapshot.microphoneDroppedInputFrames
+            );
+        }
+
+        SetControlText(microphoneProcessingStatusValue_, status);
+    }
 
     const std::array<HWND, 3> meters =
         activePage_ == ControlPage::Main
@@ -4063,6 +4656,12 @@ void ControlWindow::UpdateLevelMeters()
         {
             InvalidateRect(meter, nullptr, FALSE);
         }
+    }
+
+    if (activePage_ == ControlPage::MicrophoneProcessing)
+    {
+        InvalidateRect(microphoneRawLevelMeter_, nullptr, FALSE);
+        InvalidateRect(microphoneProcessedLevelMeter_, nullptr, FALSE);
     }
 }
 
@@ -4100,6 +4699,135 @@ bool ControlWindow::SavePendingSettings()
             Localization::Text(
                 L"Cihaz, mikrofon, örnekleme hızı veya buffer alanlarından biri geçersiz.",
                 L"One of the device, microphone, sample-rate, or buffer fields is invalid."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
+    MicrophoneProcessingSettings processingSettings =
+        currentConfig_.GetMicrophoneProcessingSettings();
+
+    float highPassHz = 0.0f;
+    float compressorThresholdDb = 0.0f;
+    float compressorRatio = 0.0f;
+    float compressorAttackMs = 0.0f;
+    float compressorReleaseMs = 0.0f;
+    float compressorMakeupDb = 0.0f;
+    float limiterCeilingDb = 0.0f;
+
+    const bool processingFieldsValid =
+        ParseFloatControl(microphoneHighPassHzEdit_, highPassHz) &&
+        ParseFloatControl(
+            microphoneCompressorThresholdEdit_,
+            compressorThresholdDb
+        ) &&
+        ParseFloatControl(
+            microphoneCompressorRatioEdit_,
+            compressorRatio
+        ) &&
+        ParseFloatControl(
+            microphoneCompressorAttackEdit_,
+            compressorAttackMs
+        ) &&
+        ParseFloatControl(
+            microphoneCompressorReleaseEdit_,
+            compressorReleaseMs
+        ) &&
+        ParseFloatControl(
+            microphoneCompressorMakeupEdit_,
+            compressorMakeupDb
+        ) &&
+        ParseFloatControl(
+            microphoneLimiterCeilingEdit_,
+            limiterCeilingDb
+        );
+
+    if (!processingFieldsValid)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Mikrofon filtresi alanlarından biri geçerli ve sonlu bir sayı değil.",
+                L"One of the microphone-filter fields is not a valid finite number."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
+    const MicrophoneProcessingSettings previousProcessingSettings =
+        processingSettings;
+
+    processingSettings.enabled = SendMessageW(
+        microphoneProcessingEnabledCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+    processingSettings.highPassEnabled = SendMessageW(
+        microphoneHighPassEnabledCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+    processingSettings.highPassHz = highPassHz;
+    processingSettings.compressorEnabled = SendMessageW(
+        microphoneCompressorEnabledCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+    processingSettings.compressorThresholdDb =
+        compressorThresholdDb;
+    processingSettings.compressorRatio = compressorRatio;
+    processingSettings.compressorAttackMs = compressorAttackMs;
+    processingSettings.compressorReleaseMs = compressorReleaseMs;
+    processingSettings.compressorMakeupDb = compressorMakeupDb;
+    processingSettings.limiterEnabled = SendMessageW(
+        microphoneLimiterEnabledCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+    processingSettings.limiterCeilingDb = limiterCeilingDb;
+
+    const bool nativeFilterSettingsChanged =
+        processingSettings.highPassEnabled !=
+            previousProcessingSettings.highPassEnabled ||
+        processingSettings.highPassHz !=
+            previousProcessingSettings.highPassHz ||
+        processingSettings.compressorEnabled !=
+            previousProcessingSettings.compressorEnabled ||
+        processingSettings.compressorThresholdDb !=
+            previousProcessingSettings.compressorThresholdDb ||
+        processingSettings.compressorRatio !=
+            previousProcessingSettings.compressorRatio ||
+        processingSettings.compressorAttackMs !=
+            previousProcessingSettings.compressorAttackMs ||
+        processingSettings.compressorReleaseMs !=
+            previousProcessingSettings.compressorReleaseMs ||
+        processingSettings.compressorMakeupDb !=
+            previousProcessingSettings.compressorMakeupDb ||
+        processingSettings.limiterEnabled !=
+            previousProcessingSettings.limiterEnabled ||
+        processingSettings.limiterCeilingDb !=
+            previousProcessingSettings.limiterCeilingDb;
+
+    if (nativeFilterSettingsChanged)
+    {
+        processingSettings.preset = MicrophoneProcessingPreset::Custom;
+    }
+
+    if (!IsValidMicrophoneProcessingSettings(processingSettings))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Mikrofon filtresi değerlerinden biri desteklenen aralığın dışında.",
+                L"One of the microphone-filter values is outside the supported range."
             ),
             L"SoundBoardFasaFiso",
             MB_OK | MB_ICONWARNING
@@ -4231,6 +4959,23 @@ bool ControlWindow::SavePendingSettings()
     candidate.SetMicrophoneDevice(microphoneDevice);
     candidate.SetMicrophoneToOutput(microphoneToOutput);
     candidate.SetMicrophoneToMonitor(microphoneToMonitor);
+
+    if (!candidate.SetMicrophoneProcessingSettings(
+            processingSettings
+        ))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Mikrofon işleme ayarları kabul edilmedi.",
+                L"The microphone-processing settings were not accepted."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
     candidate.SetStartWithWindows(startWithWindows);
     candidate.SetShowConsoleOnStart(false);
     candidate.SetCheckUpdatesOnStart(checkUpdatesOnStart);
@@ -5254,6 +5999,42 @@ bool ControlWindow::ParseUnsignedControl(
         std::from_chars(begin, end, parsedValue);
 
     if (error != std::errc{} || pointer != end)
+    {
+        return false;
+    }
+
+    value = parsedValue;
+    return true;
+}
+
+bool ControlWindow::ParseFloatControl(
+    const HWND control,
+    float& value
+)
+{
+    std::wstring text = GetControlText(control);
+
+    const std::size_t first = text.find_first_not_of(L" \t\r\n");
+
+    if (first == std::wstring::npos)
+    {
+        return false;
+    }
+
+    const std::size_t last = text.find_last_not_of(L" \t\r\n");
+    text = text.substr(first, last - first + 1);
+
+    std::string utf8 = WideToUtf8(text);
+    std::replace(utf8.begin(), utf8.end(), ',', '.');
+
+    const char* begin = utf8.data();
+    const char* end = utf8.data() + utf8.size();
+    float parsedValue = 0.0f;
+    const auto [pointer, error] =
+        std::from_chars(begin, end, parsedValue);
+
+    if (error != std::errc{} || pointer != end ||
+        !std::isfinite(parsedValue))
     {
         return false;
     }

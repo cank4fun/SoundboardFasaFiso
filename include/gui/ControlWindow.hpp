@@ -77,6 +77,7 @@ private:
     {
         Main,
         Settings,
+        MicrophoneProcessing,
         Hotkeys
     };
 
@@ -113,6 +114,7 @@ private:
     static constexpr int IdSettingsTab = 1025;
     static constexpr int IdHotkeysTab = 1026;
     static constexpr int IdCancelHotkeyCapture = 1027;
+    static constexpr int IdMicrophoneProcessingTab = 1028;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -164,6 +166,7 @@ private:
     void PopulateEditorControls();
     void PopulateDeviceCombos();
     void PopulateNumericCombos();
+    void PopulateMicrophoneProcessingControls();
     void PopulateControlHotkeys();
     void UpdateVolumeLabels();
     void UpdateBindingVolumeLabel();
@@ -197,6 +200,7 @@ private:
         HWND control,
         unsigned int& value
     );
+    static bool ParseFloatControl(HWND control, float& value);
     static std::wstring VirtualKeyName(unsigned int virtualKey);
     static std::wstring NormalizeHotkeyText(std::wstring text);
 
@@ -223,6 +227,7 @@ private:
     HWND themeToggleButton_ = nullptr;
     HWND mainTabButton_ = nullptr;
     HWND settingsTabButton_ = nullptr;
+    HWND microphoneProcessingTabButton_ = nullptr;
     HWND hotkeysTabButton_ = nullptr;
     HWND statusCaption_ = nullptr;
     HWND statusValue_ = nullptr;
@@ -267,6 +272,33 @@ private:
     HWND checkUpdatesOnStartCheck_ = nullptr;
     HWND refreshDevicesButton_ = nullptr;
     HWND applySettingsButton_ = nullptr;
+
+    HWND microphoneProcessingGroup_ = nullptr;
+    HWND microphoneProcessingEnabledCheck_ = nullptr;
+    HWND microphoneProcessingStatusCaption_ = nullptr;
+    HWND microphoneProcessingStatusValue_ = nullptr;
+    HWND microphoneRawMeterCaption_ = nullptr;
+    HWND microphoneRawLevelMeter_ = nullptr;
+    HWND microphoneProcessedMeterCaption_ = nullptr;
+    HWND microphoneProcessedLevelMeter_ = nullptr;
+    HWND microphoneHighPassEnabledCheck_ = nullptr;
+    HWND microphoneHighPassHzCaption_ = nullptr;
+    HWND microphoneHighPassHzEdit_ = nullptr;
+    HWND microphoneCompressorEnabledCheck_ = nullptr;
+    HWND microphoneCompressorThresholdCaption_ = nullptr;
+    HWND microphoneCompressorThresholdEdit_ = nullptr;
+    HWND microphoneCompressorRatioCaption_ = nullptr;
+    HWND microphoneCompressorRatioEdit_ = nullptr;
+    HWND microphoneCompressorAttackCaption_ = nullptr;
+    HWND microphoneCompressorAttackEdit_ = nullptr;
+    HWND microphoneCompressorReleaseCaption_ = nullptr;
+    HWND microphoneCompressorReleaseEdit_ = nullptr;
+    HWND microphoneCompressorMakeupCaption_ = nullptr;
+    HWND microphoneCompressorMakeupEdit_ = nullptr;
+    HWND microphoneLimiterEnabledCheck_ = nullptr;
+    HWND microphoneLimiterCeilingCaption_ = nullptr;
+    HWND microphoneLimiterCeilingEdit_ = nullptr;
+    HWND microphoneUnavailableFeaturesCaption_ = nullptr;
 
     HWND controlHotkeysGroup_ = nullptr;
     HWND stopHotkeyCaption_ = nullptr;
@@ -337,9 +369,12 @@ private:
     float outputMeterLevel_ = 0.0f;
     float monitorMeterLevel_ = 0.0f;
     float microphoneMeterLevel_ = 0.0f;
+    float microphoneRawMeterLevel_ = 0.0f;
+    float microphoneProcessedMeterLevel_ = 0.0f;
     bool outputMeterAvailable_ = false;
     bool monitorMeterAvailable_ = false;
     bool microphoneMeterAvailable_ = false;
+    bool microphoneProcessingMeterAvailable_ = false;
 
     std::jthread updateCheckThread_;
     std::mutex updateCheckMutex_;
