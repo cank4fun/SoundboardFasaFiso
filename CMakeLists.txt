@@ -59,6 +59,7 @@ add_executable(
     WIN32
     src/main.cpp
     src/audio/Audio.cpp
+    src/audio/MicrophoneProcessingSettings.cpp
     $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
     src/config/Config.cpp
     src/diagnostics/Logger.cpp
