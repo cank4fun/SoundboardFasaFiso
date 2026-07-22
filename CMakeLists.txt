@@ -243,6 +243,58 @@ if(BUILD_TESTING)
     )
 
     add_executable(
+        SoundBoardFasaFisoConfigMicrophoneProcessingTests
+        EXCLUDE_FROM_ALL
+        tests/ConfigMicrophoneProcessingTests.cpp
+        src/config/Config.cpp
+        src/audio/MicrophoneProcessingSettings.cpp
+        src/localization/Localization.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoConfigMicrophoneProcessingTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoConfigMicrophoneProcessingTests
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoConfigMicrophoneProcessingTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoConfigMicrophoneProcessingTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoConfigMicrophoneProcessingTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME ConfigMicrophoneProcessing
+        COMMAND SoundBoardFasaFisoConfigMicrophoneProcessingTests
+    )
+
+    add_executable(
         SoundBoardFasaFisoMicrophoneProcessorTests
         EXCLUDE_FROM_ALL
         tests/MicrophoneProcessorTests.cpp

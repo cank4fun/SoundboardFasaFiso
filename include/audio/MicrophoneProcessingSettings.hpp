@@ -51,11 +51,11 @@ struct MicrophoneProcessingSettings
     bool highPassEnabled = true;
     float highPassHz = 80.0f;
 
-    bool noiseSuppressionEnabled = true;
+    bool noiseSuppressionEnabled = false;
     MicrophoneNoiseSuppressionLevel noiseSuppressionLevel =
         MicrophoneNoiseSuppressionLevel::Balanced;
 
-    bool agcEnabled = true;
+    bool agcEnabled = false;
     float agcTargetDbfs = -18.0f;
 
     bool compressorEnabled = true;

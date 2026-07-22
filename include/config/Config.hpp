@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audio/MicrophoneProcessingSettings.hpp"
 #include "localization/Localization.hpp"
 #include "sound/PlaybackMode.hpp"
 
@@ -41,6 +42,9 @@ public:
     bool SetMicrophoneVolume(float volume);
     void SetMicrophoneToOutput(bool enabled);
     void SetMicrophoneToMonitor(bool enabled);
+    bool SetMicrophoneProcessingSettings(
+        MicrophoneProcessingSettings settings
+    );
 
     bool SetAudioSampleRate(unsigned int sampleRate);
     bool SetAudioBufferMilliseconds(unsigned int bufferMilliseconds);
@@ -73,6 +77,8 @@ public:
     float GetMicrophoneVolume() const;
     bool GetMicrophoneToOutput() const;
     bool GetMicrophoneToMonitor() const;
+    const MicrophoneProcessingSettings&
+        GetMicrophoneProcessingSettings() const;
 
     unsigned int GetAudioSampleRate() const;
     unsigned int GetAudioBufferMilliseconds() const;
@@ -117,6 +123,7 @@ private:
     float microphoneVolume_ = 1.0f;
     bool microphoneToOutput_ = true;
     bool microphoneToMonitor_ = false;
+    MicrophoneProcessingSettings microphoneProcessingSettings_{};
 
     unsigned int audioSampleRate_ = 48000;
     unsigned int audioBufferMilliseconds_ = 5;

@@ -32,6 +32,14 @@ namespace
             "the default preset is natural"
         );
         Expect(
+            !settings.noiseSuppressionEnabled,
+            "unimplemented noise suppression defaults to disabled"
+        );
+        Expect(
+            !settings.agcEnabled,
+            "unimplemented AGC defaults to disabled"
+        );
+        Expect(
             IsValidMicrophoneProcessingSettings(settings),
             "default settings are valid"
         );

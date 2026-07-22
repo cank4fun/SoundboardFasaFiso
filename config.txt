@@ -23,6 +23,26 @@ microphone_volume=1.00
 microphone_to_output=true
 microphone_to_monitor=false
 
+# MİKROFON İŞLEME
+# Ana anahtar varsayılan olarak kapalıdır; eski config davranışı korunur.
+# Noise suppression ve AGC altyapısı tamamlanana kadar kapalı tutulur.
+microphone_processing_enabled=false
+microphone_processing_preset=natural
+microphone_high_pass_enabled=true
+microphone_high_pass_hz=80.0
+microphone_noise_suppression_enabled=false
+microphone_noise_suppression_level=balanced
+microphone_agc_enabled=false
+microphone_agc_target_dbfs=-18.0
+microphone_compressor_enabled=true
+microphone_compressor_threshold_db=-24.0
+microphone_compressor_ratio=3.0
+microphone_compressor_attack_ms=10.0
+microphone_compressor_release_ms=120.0
+microphone_compressor_makeup_db=0.0
+microphone_limiter_enabled=true
+microphone_limiter_ceiling_db=-1.0
+
 # AUDIO GECİKME AYARLARI
 # 0 yazılırsa cihazın/Windows'un varsayılanı kullanılır.
 audio_sample_rate=48000

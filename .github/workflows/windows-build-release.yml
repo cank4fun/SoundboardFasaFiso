@@ -77,6 +77,7 @@ jobs:
           cmake --build out/build/ci-release
           --target
           SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+          SoundBoardFasaFisoConfigMicrophoneProcessingTests
           SoundBoardFasaFisoMicrophoneProcessorTests
           SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
           --parallel
@@ -143,6 +144,7 @@ jobs:
           $requiredDefaults = @(
             '(?m)^output=default$',
             '(?m)^monitor=none$',
+            '(?m)^microphone_processing_enabled=false$',
             '(?m)^show_console_on_start=false$'
           )
 

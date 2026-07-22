@@ -9,6 +9,7 @@
 #include <charconv>
 #include <cctype>
 #include <cstdint>
+#include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -65,6 +66,168 @@ namespace
         const SettingSource* source = nullptr;
         std::string_view example;
     };
+
+    struct ProcessingBooleanSetting
+    {
+        std::string_view name;
+        bool MicrophoneProcessingSettings::* member = nullptr;
+        std::string_view example;
+    };
+
+    struct ProcessingFloatSetting
+    {
+        std::string_view name;
+        float MicrophoneProcessingSettings::* member = nullptr;
+        float minimum = 0.0f;
+        float maximum = 0.0f;
+        std::string_view rangeTurkish;
+        std::string_view rangeEnglish;
+        std::string_view example;
+    };
+
+    constexpr std::array ProcessingBooleanSettings{
+        ProcessingBooleanSetting{
+            "MICROPHONE_PROCESSING_ENABLED",
+            &MicrophoneProcessingSettings::enabled,
+            "microphone_processing_enabled=false"
+        },
+        ProcessingBooleanSetting{
+            "MICROPHONE_HIGH_PASS_ENABLED",
+            &MicrophoneProcessingSettings::highPassEnabled,
+            "microphone_high_pass_enabled=true"
+        },
+        ProcessingBooleanSetting{
+            "MICROPHONE_NOISE_SUPPRESSION_ENABLED",
+            &MicrophoneProcessingSettings::noiseSuppressionEnabled,
+            "microphone_noise_suppression_enabled=false"
+        },
+        ProcessingBooleanSetting{
+            "MICROPHONE_AGC_ENABLED",
+            &MicrophoneProcessingSettings::agcEnabled,
+            "microphone_agc_enabled=false"
+        },
+        ProcessingBooleanSetting{
+            "MICROPHONE_COMPRESSOR_ENABLED",
+            &MicrophoneProcessingSettings::compressorEnabled,
+            "microphone_compressor_enabled=true"
+        },
+        ProcessingBooleanSetting{
+            "MICROPHONE_LIMITER_ENABLED",
+            &MicrophoneProcessingSettings::limiterEnabled,
+            "microphone_limiter_enabled=true"
+        }
+    };
+
+    constexpr std::array ProcessingFloatSettings{
+        ProcessingFloatSetting{
+            "MICROPHONE_HIGH_PASS_HZ",
+            &MicrophoneProcessingSettings::highPassHz,
+            MicrophoneProcessingLimits::MinimumHighPassHz,
+            MicrophoneProcessingLimits::MaximumHighPassHz,
+            "20 ile 300",
+            "between 20 and 300",
+            "microphone_high_pass_hz=80.0"
+        },
+        ProcessingFloatSetting{
+            "MICROPHONE_AGC_TARGET_DBFS",
+            &MicrophoneProcessingSettings::agcTargetDbfs,
+            MicrophoneProcessingLimits::MinimumAgcTargetDbfs,
+            MicrophoneProcessingLimits::MaximumAgcTargetDbfs,
+            "-40 ile -3",
+            "between -40 and -3",
+            "microphone_agc_target_dbfs=-18.0"
+        },
+        ProcessingFloatSetting{
+            "MICROPHONE_COMPRESSOR_THRESHOLD_DB",
+            &MicrophoneProcessingSettings::compressorThresholdDb,
+            MicrophoneProcessingLimits::MinimumCompressorThresholdDb,
+            MicrophoneProcessingLimits::MaximumCompressorThresholdDb,
+            "-60 ile 0",
+            "between -60 and 0",
+            "microphone_compressor_threshold_db=-24.0"
+        },
+        ProcessingFloatSetting{
+            "MICROPHONE_COMPRESSOR_RATIO",
+            &MicrophoneProcessingSettings::compressorRatio,
+            MicrophoneProcessingLimits::MinimumCompressorRatio,
+            MicrophoneProcessingLimits::MaximumCompressorRatio,
+            "1 ile 20",
+            "between 1 and 20",
+            "microphone_compressor_ratio=3.0"
+        },
+        ProcessingFloatSetting{
+            "MICROPHONE_COMPRESSOR_ATTACK_MS",
+            &MicrophoneProcessingSettings::compressorAttackMs,
+            MicrophoneProcessingLimits::MinimumCompressorAttackMs,
+            MicrophoneProcessingLimits::MaximumCompressorAttackMs,
+            "0.1 ile 200",
+            "between 0.1 and 200",
+            "microphone_compressor_attack_ms=10.0"
+        },
+        ProcessingFloatSetting{
+            "MICROPHONE_COMPRESSOR_RELEASE_MS",
+            &MicrophoneProcessingSettings::compressorReleaseMs,
+            MicrophoneProcessingLimits::MinimumCompressorReleaseMs,
+            MicrophoneProcessingLimits::MaximumCompressorReleaseMs,
+            "5 ile 2000",
+            "between 5 and 2000",
+            "microphone_compressor_release_ms=120.0"
+        },
+        ProcessingFloatSetting{
+            "MICROPHONE_COMPRESSOR_MAKEUP_DB",
+            &MicrophoneProcessingSettings::compressorMakeupDb,
+            MicrophoneProcessingLimits::MinimumCompressorMakeupDb,
+            MicrophoneProcessingLimits::MaximumCompressorMakeupDb,
+            "-12 ile 24",
+            "between -12 and 24",
+            "microphone_compressor_makeup_db=0.0"
+        },
+        ProcessingFloatSetting{
+            "MICROPHONE_LIMITER_CEILING_DB",
+            &MicrophoneProcessingSettings::limiterCeilingDb,
+            MicrophoneProcessingLimits::MinimumLimiterCeilingDb,
+            MicrophoneProcessingLimits::MaximumLimiterCeilingDb,
+            "-12 ile 0",
+            "between -12 and 0",
+            "microphone_limiter_ceiling_db=-1.0"
+        }
+    };
+
+    const ProcessingBooleanSetting* FindProcessingBooleanSetting(
+        const std::string_view name
+    )
+    {
+        const auto iterator = std::find_if(
+            ProcessingBooleanSettings.begin(),
+            ProcessingBooleanSettings.end(),
+            [name](const ProcessingBooleanSetting& setting)
+            {
+                return setting.name == name;
+            }
+        );
+
+        return iterator == ProcessingBooleanSettings.end()
+            ? nullptr
+            : &*iterator;
+    }
+
+    const ProcessingFloatSetting* FindProcessingFloatSetting(
+        const std::string_view name
+    )
+    {
+        const auto iterator = std::find_if(
+            ProcessingFloatSettings.begin(),
+            ProcessingFloatSettings.end(),
+            [name](const ProcessingFloatSetting& setting)
+            {
+                return setting.name == name;
+            }
+        );
+
+        return iterator == ProcessingFloatSettings.end()
+            ? nullptr
+            : &*iterator;
+    }
 
     std::string Trim(const std::string& text)
     {
@@ -151,6 +314,28 @@ namespace
         const std::string_view settingName
     )
     {
+        if (const auto* setting =
+                FindProcessingBooleanSetting(settingName))
+        {
+            return setting->example;
+        }
+
+        if (const auto* setting =
+                FindProcessingFloatSetting(settingName))
+        {
+            return setting->example;
+        }
+
+        if (settingName == "MICROPHONE_PROCESSING_PRESET")
+        {
+            return "microphone_processing_preset=natural";
+        }
+
+        if (settingName == "MICROPHONE_NOISE_SUPPRESSION_LEVEL")
+        {
+            return "microphone_noise_suppression_level=balanced";
+        }
+
         if (settingName == "LANGUAGE")
         {
             return "language=tr";
@@ -259,7 +444,7 @@ namespace
         return "F1=example.wav|volume=0.80|mode=restart";
     }
 
-    std::optional<float> ParseVolume(std::string text)
+    std::optional<float> ParseFiniteFloat(std::string text)
     {
         std::replace(
             text.begin(),
@@ -268,24 +453,29 @@ namespace
             '.'
         );
 
-        float volume = 0.0f;
+        float value = 0.0f;
 
         const char* begin = text.data();
         const char* end = text.data() + text.size();
 
         const auto [pointer, error] =
-            std::from_chars(
-                begin,
-                end,
-                volume
-            );
+            std::from_chars(begin, end, value);
 
-        if (error != std::errc{} || pointer != end)
+        if (error != std::errc{} || pointer != end ||
+            !std::isfinite(value))
         {
             return std::nullopt;
         }
 
-        if (volume < 0.0f || volume > 1.0f)
+        return value;
+    }
+
+    std::optional<float> ParseVolume(const std::string& text)
+    {
+        const auto volume = ParseFiniteFloat(text);
+
+        if (!volume.has_value() ||
+            *volume < 0.0f || *volume > 1.0f)
         {
             return std::nullopt;
         }
@@ -915,6 +1105,14 @@ namespace
 
     bool IsKnownSetting(const std::string& settingName)
     {
+        if (FindProcessingBooleanSetting(settingName) != nullptr ||
+            FindProcessingFloatSetting(settingName) != nullptr ||
+            settingName == "MICROPHONE_PROCESSING_PRESET" ||
+            settingName == "MICROPHONE_NOISE_SUPPRESSION_LEVEL")
+        {
+            return true;
+        }
+
         return settingName == "LANGUAGE" ||
             settingName == "THEME" ||
             settingName == "OUTPUT" ||
@@ -956,6 +1154,7 @@ bool Config::Load(const std::filesystem::path& filePath)
     microphoneVolume_ = 1.0f;
     microphoneToOutput_ = true;
     microphoneToMonitor_ = false;
+    microphoneProcessingSettings_ = {};
 
     audioSampleRate_ = 48000;
     audioBufferMilliseconds_ = 5;
@@ -1381,6 +1580,119 @@ bool Config::Load(const std::filesystem::path& filePath)
             }
 
             microphoneToMonitor_ = *enabled;
+            continue;
+        }
+
+        if (const auto* processingSetting =
+                FindProcessingBooleanSetting(settingName))
+        {
+            const auto enabled = ParseBoolean(parsedLine.rightSide);
+
+            if (!enabled.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "Mikrofon işleme ayarı true veya false olmalı: ",
+                        "The microphone-processing setting must be true or false: "
+                    )} + settingName +
+                        Localization::Text(
+                            ". Girilen değer: ",
+                            ". Entered value: "
+                        ) + parsedLine.rightSide,
+                    processingSetting->example
+                );
+                continue;
+            }
+
+            microphoneProcessingSettings_.*(processingSetting->member) =
+                *enabled;
+            continue;
+        }
+
+        if (const auto* processingSetting =
+                FindProcessingFloatSetting(settingName))
+        {
+            const auto value = ParseFiniteFloat(parsedLine.rightSide);
+            const bool valid = value.has_value() &&
+                *value >= processingSetting->minimum &&
+                *value <= processingSetting->maximum;
+
+            if (!valid)
+            {
+                const std::string_view range =
+                    Localization::GetLanguage() == Language::English
+                        ? processingSetting->rangeEnglish
+                        : processingSetting->rangeTurkish;
+
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "Mikrofon işleme ayarı sonlu bir sayı olmalı ve şu aralıkta kalmalı: ",
+                        "The microphone-processing setting must be a finite number in this range: "
+                    )} + settingName + " (" +
+                        std::string{range} + ")." +
+                        Localization::Text(
+                            " Girilen değer: ",
+                            " Entered value: "
+                        ) + parsedLine.rightSide,
+                    processingSetting->example
+                );
+                continue;
+            }
+
+            microphoneProcessingSettings_.*(processingSetting->member) =
+                *value;
+            continue;
+        }
+
+        if (settingName == "MICROPHONE_PROCESSING_PRESET")
+        {
+            const auto preset = ParseMicrophoneProcessingPreset(
+                parsedLine.rightSide
+            );
+
+            if (!preset.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "microphone_processing_preset natural, clean, strong, aggressive veya custom olmalı. Girilen değer: ",
+                        "microphone_processing_preset must be natural, clean, strong, aggressive or custom. Entered value: "
+                    )} + parsedLine.rightSide,
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            microphoneProcessingSettings_.preset = *preset;
+            continue;
+        }
+
+        if (settingName == "MICROPHONE_NOISE_SUPPRESSION_LEVEL")
+        {
+            const auto level = ParseMicrophoneNoiseSuppressionLevel(
+                parsedLine.rightSide
+            );
+
+            if (!level.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    std::string{Localization::Text(
+                        "microphone_noise_suppression_level light, balanced veya strong olmalı. Girilen değer: ",
+                        "microphone_noise_suppression_level must be light, balanced or strong. Entered value: "
+                    )} + parsedLine.rightSide,
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            microphoneProcessingSettings_.noiseSuppressionLevel = *level;
             continue;
         }
 
@@ -1868,6 +2180,51 @@ bool Config::Save(const std::filesystem::path& filePath) const
         << (microphoneToOutput_ ? "true" : "false") << '\n'
         << "microphone_to_monitor="
         << (microphoneToMonitor_ ? "true" : "false") << "\n\n"
+        << "# MİKROFON İŞLEME / MICROPHONE PROCESSING\n"
+        << "microphone_processing_enabled="
+        << (microphoneProcessingSettings_.enabled ? "true" : "false")
+        << '\n'
+        << "microphone_processing_preset="
+        << MicrophoneProcessingPresetName(
+            microphoneProcessingSettings_.preset
+        ) << '\n'
+        << "microphone_high_pass_enabled="
+        << (microphoneProcessingSettings_.highPassEnabled
+            ? "true" : "false") << '\n'
+        << std::setprecision(3)
+        << "microphone_high_pass_hz="
+        << microphoneProcessingSettings_.highPassHz << '\n'
+        << "microphone_noise_suppression_enabled="
+        << (microphoneProcessingSettings_.noiseSuppressionEnabled
+            ? "true" : "false") << '\n'
+        << "microphone_noise_suppression_level="
+        << MicrophoneNoiseSuppressionLevelName(
+            microphoneProcessingSettings_.noiseSuppressionLevel
+        ) << '\n'
+        << "microphone_agc_enabled="
+        << (microphoneProcessingSettings_.agcEnabled
+            ? "true" : "false") << '\n'
+        << "microphone_agc_target_dbfs="
+        << microphoneProcessingSettings_.agcTargetDbfs << '\n'
+        << "microphone_compressor_enabled="
+        << (microphoneProcessingSettings_.compressorEnabled
+            ? "true" : "false") << '\n'
+        << "microphone_compressor_threshold_db="
+        << microphoneProcessingSettings_.compressorThresholdDb << '\n'
+        << "microphone_compressor_ratio="
+        << microphoneProcessingSettings_.compressorRatio << '\n'
+        << "microphone_compressor_attack_ms="
+        << microphoneProcessingSettings_.compressorAttackMs << '\n'
+        << "microphone_compressor_release_ms="
+        << microphoneProcessingSettings_.compressorReleaseMs << '\n'
+        << "microphone_compressor_makeup_db="
+        << microphoneProcessingSettings_.compressorMakeupDb << '\n'
+        << "microphone_limiter_enabled="
+        << (microphoneProcessingSettings_.limiterEnabled
+            ? "true" : "false") << '\n'
+        << "microphone_limiter_ceiling_db="
+        << microphoneProcessingSettings_.limiterCeilingDb << "\n\n"
+        << std::setprecision(2)
         << "# AUDIO GECİKME AYARLARI / AUDIO LATENCY SETTINGS\n"
         << "audio_sample_rate=" << audioSampleRate_ << '\n'
         << "audio_buffer_ms=" << audioBufferMilliseconds_ << "\n\n"
@@ -2051,6 +2408,19 @@ void Config::SetMicrophoneToOutput(const bool enabled)
 void Config::SetMicrophoneToMonitor(const bool enabled)
 {
     microphoneToMonitor_ = enabled;
+}
+
+bool Config::SetMicrophoneProcessingSettings(
+    MicrophoneProcessingSettings settings
+)
+{
+    if (!IsValidMicrophoneProcessingSettings(settings))
+    {
+        return false;
+    }
+
+    microphoneProcessingSettings_ = std::move(settings);
+    return true;
 }
 
 bool Config::SetAudioSampleRate(const unsigned int sampleRate)
@@ -2275,6 +2645,12 @@ bool Config::GetMicrophoneToOutput() const
 bool Config::GetMicrophoneToMonitor() const
 {
     return microphoneToMonitor_;
+}
+
+const MicrophoneProcessingSettings&
+Config::GetMicrophoneProcessingSettings() const
+{
+    return microphoneProcessingSettings_;
 }
 
 unsigned int Config::GetAudioSampleRate() const
