@@ -1,10 +1,12 @@
 #pragma once
 
+#include "audio/MicrophoneProcessingRuntime.hpp"
 #include "miniaudio/miniaudio.h"
 #include "sound/PlaybackMode.hpp"
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -39,10 +41,17 @@ struct AudioLevelSnapshot
     float output = 0.0f;
     float monitor = 0.0f;
     float microphone = 0.0f;
+    float microphoneRaw = 0.0f;
+    float microphoneProcessed = 0.0f;
 
     bool outputAvailable = false;
     bool monitorAvailable = false;
     bool microphoneAvailable = false;
+    bool microphoneProcessingActive = false;
+    bool microphoneInputClipped = false;
+    bool microphoneInvalidSampleDetected = false;
+
+    std::uint64_t microphoneDroppedInputFrames = 0;
 };
 
 class Audio
@@ -70,6 +79,7 @@ public:
         float microphoneVolume,
         bool microphoneToOutput,
         bool microphoneToMonitor,
+        const MicrophoneProcessingSettings& microphoneProcessingSettings,
         unsigned int sampleRate,
         unsigned int bufferMilliseconds
     );
@@ -152,6 +162,12 @@ private:
         const void* inputFrames,
         ma_uint32 frameCount
     );
+
+    static void ProcessedMicrophoneOutputCallback(
+        void* context,
+        const float* interleavedStereoFrames,
+        ma_uint32 frameCount
+    ) noexcept;
 
     bool InitializeRuntime();
 
@@ -238,6 +254,7 @@ private:
     CaptureState microphoneCapture_;
     MicrophoneRoute microphoneOutputRoute_;
     MicrophoneRoute microphoneMonitorRoute_;
+    MicrophoneProcessingRuntime microphoneProcessingRuntime_;
 
     std::unordered_map<std::string, LoadedSound> loadedSounds_;
     std::unordered_map<std::string, SoundDefinition> soundDefinitions_;
@@ -253,6 +270,7 @@ private:
     bool microphoneEnabled_ = false;
     bool microphoneToOutput_ = true;
     bool microphoneToMonitor_ = false;
+    MicrophoneProcessingSettings microphoneProcessingSettings_{};
 
     ma_uint32 sampleRate_ = 48000;
     ma_uint32 bufferMilliseconds_ = 5;
@@ -263,6 +281,7 @@ private:
     std::atomic_bool recoveryRequested_{false};
     std::atomic_bool ignoreDeviceNotifications_{false};
     std::atomic<float> microphonePeak_{0.0f};
+    std::atomic_bool microphoneProcessingActive_{false};
 
     bool contextInitialized_ = false;
     bool desiredConfigurationSet_ = false;

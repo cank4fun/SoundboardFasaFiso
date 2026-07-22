@@ -223,7 +223,16 @@ namespace
                 );
             }
 
-            std::cout << '\n';
+            std::cout
+                << '\n'
+                << Localization::Text(
+                    "Mikrofon işleme: ",
+                    "Microphone processing: "
+                )
+                << (config.GetMicrophoneProcessingSettings().enabled
+                    ? Localization::Text("Açık", "Enabled")
+                    : Localization::Text("Kapalı", "Disabled"))
+                << '\n';
         }
 
         std::cout
@@ -303,6 +312,7 @@ namespace
             config.GetMicrophoneVolume(),
             config.GetMicrophoneToOutput(),
             config.GetMicrophoneToMonitor(),
+            config.GetMicrophoneProcessingSettings(),
             config.GetAudioSampleRate(),
             config.GetAudioBufferMilliseconds()
         ))

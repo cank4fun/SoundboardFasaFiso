@@ -521,6 +521,19 @@ void Audio::MicrophoneDataCallback(
         std::memory_order_relaxed
     );
 
+    if (instance->microphoneProcessingActive_.load(
+            std::memory_order_acquire
+        ))
+    {
+        static_cast<void>(
+            instance->microphoneProcessingRuntime_.PushInputFrames(
+                samples,
+                frameCount
+            )
+        );
+        return;
+    }
+
     if (instance->microphoneToOutput_)
     {
         WriteMicrophoneFrames(
@@ -535,6 +548,39 @@ void Audio::MicrophoneDataCallback(
         WriteMicrophoneFrames(
             instance->microphoneMonitorRoute_,
             inputFrames,
+            frameCount
+        );
+    }
+}
+
+void Audio::ProcessedMicrophoneOutputCallback(
+    void* const context,
+    const float* const interleavedStereoFrames,
+    const ma_uint32 frameCount
+) noexcept
+{
+    auto* const instance = static_cast<Audio*>(context);
+
+    if (instance == nullptr || interleavedStereoFrames == nullptr ||
+        frameCount == 0)
+    {
+        return;
+    }
+
+    if (instance->microphoneToOutput_)
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneOutputRoute_,
+            interleavedStereoFrames,
+            frameCount
+        );
+    }
+
+    if (instance->microphoneToMonitor_)
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneMonitorRoute_,
+            interleavedStereoFrames,
             frameCount
         );
     }
@@ -1007,6 +1053,70 @@ bool Audio::InitializeMicrophone(
         }
     }
 
+    microphoneProcessingActive_.store(
+        false,
+        std::memory_order_release
+    );
+
+    const bool nativeProcessingRequested =
+        microphoneProcessingSettings_.enabled &&
+        (microphoneProcessingSettings_.highPassEnabled ||
+            microphoneProcessingSettings_.compressorEnabled ||
+            microphoneProcessingSettings_.limiterEnabled);
+
+    if (microphoneProcessingSettings_.enabled &&
+        (microphoneProcessingSettings_.noiseSuppressionEnabled ||
+            microphoneProcessingSettings_.agcEnabled))
+    {
+        std::cerr << Localization::Text(
+            "Uyarı: Noise suppression ve AGC henüz uygulanmadı; bu aşamalar atlanacak.\n",
+            "Warning: Noise suppression and AGC are not implemented yet; these stages will be bypassed.\n"
+        );
+    }
+
+    if (nativeProcessingRequested)
+    {
+        if (captureSampleRate !=
+            MicrophoneProcessingRuntime::RequiredSampleRate)
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: Mikrofon işleme şu anda yalnızca 48000 Hz destekliyor. Filtrelenmemiş mikrofon rotasına dönülüyor. Aktif hız: ",
+                    "Warning: Microphone processing currently supports only 48000 Hz. Falling back to the unprocessed microphone route. Active rate: "
+                )
+                << captureSampleRate
+                << " Hz\n";
+        }
+        else
+        {
+            MicrophoneProcessingSettings activeSettings =
+                microphoneProcessingSettings_;
+            activeSettings.noiseSuppressionEnabled = false;
+            activeSettings.agcEnabled = false;
+
+            if (microphoneProcessingRuntime_.Initialize(
+                    captureSampleRate,
+                    2,
+                    activeSettings,
+                    &Audio::ProcessedMicrophoneOutputCallback,
+                    this
+                ))
+            {
+                microphoneProcessingActive_.store(
+                    true,
+                    std::memory_order_release
+                );
+            }
+            else
+            {
+                std::cerr << Localization::Text(
+                    "Uyarı: Mikrofon işleme runtime'ı başlatılamadı. Filtrelenmemiş mikrofon rotasına dönülüyor.\n",
+                    "Warning: The microphone-processing runtime could not be initialized. Falling back to the unprocessed microphone route.\n"
+                );
+            }
+        }
+    }
+
     result = ma_device_start(&microphoneCapture_.device);
 
     if (result != MA_SUCCESS)
@@ -1047,7 +1157,14 @@ bool Audio::InitializeMicrophone(
     std::cout
         << Localization::Text(" | Örnekleme: ", " | Sample rate: ")
         << captureSampleRate
-        << " Hz\n";
+        << " Hz"
+        << Localization::Text(" | İşleme: ", " | Processing: ")
+        << (microphoneProcessingActive_.load(
+                std::memory_order_acquire
+            )
+            ? Localization::Text("aktif", "active")
+            : Localization::Text("bypass", "bypassed"))
+        << '\n';
 
     return true;
 }
@@ -1215,6 +1332,7 @@ bool Audio::Initialize(
     const float microphoneVolume,
     const bool microphoneToOutput,
     const bool microphoneToMonitor,
+    const MicrophoneProcessingSettings& microphoneProcessingSettings,
     const unsigned int sampleRate,
     const unsigned int bufferMilliseconds
 )
@@ -1255,7 +1373,10 @@ bool Audio::Initialize(
             (microphoneToOutput || microphoneToMonitor));
 
     if (!sampleRateIsValid || !bufferIsValid ||
-        !microphoneSettingsAreValid)
+        !microphoneSettingsAreValid ||
+        !IsValidMicrophoneProcessingSettings(
+            microphoneProcessingSettings
+        ))
     {
         std::cerr
             << Localization::Text(
@@ -1283,6 +1404,7 @@ bool Audio::Initialize(
     microphoneVolume_ = microphoneVolume;
     microphoneToOutput_ = microphoneToOutput;
     microphoneToMonitor_ = microphoneToMonitor;
+    microphoneProcessingSettings_ = microphoneProcessingSettings;
     sampleRate_ = static_cast<ma_uint32>(sampleRate);
     bufferMilliseconds_ =
         static_cast<ma_uint32>(bufferMilliseconds);
@@ -2206,7 +2328,15 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
         }
     }
 
-    const float microphonePeak = snapshot.microphoneAvailable
+    const bool processingActive =
+        snapshot.microphoneAvailable &&
+        microphoneProcessingActive_.load(
+            std::memory_order_acquire
+        );
+
+    snapshot.microphoneProcessingActive = processingActive;
+
+    float microphoneRawPeak = snapshot.microphoneAvailable
         ? std::clamp(
             microphonePeak_.load(std::memory_order_relaxed),
             0.0f,
@@ -2214,7 +2344,36 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
         )
         : 0.0f;
 
-    snapshot.microphone = microphonePeak;
+    float microphoneProcessedPeak = microphoneRawPeak;
+
+    if (processingActive)
+    {
+        const MicrophoneProcessingSnapshot processingSnapshot =
+            microphoneProcessingRuntime_.GetSnapshot();
+
+        microphoneRawPeak = std::clamp(
+            processingSnapshot.rawPeak,
+            0.0f,
+            1.0f
+        );
+        microphoneProcessedPeak = std::clamp(
+            processingSnapshot.processedPeak,
+            0.0f,
+            1.0f
+        );
+        snapshot.microphoneInputClipped =
+            processingSnapshot.inputClipped;
+        snapshot.microphoneInvalidSampleDetected =
+            processingSnapshot.invalidSampleDetected;
+        snapshot.microphoneDroppedInputFrames =
+            microphoneProcessingRuntime_.GetDroppedInputFrameCount();
+    }
+
+    snapshot.microphoneRaw = microphoneRawPeak;
+    snapshot.microphoneProcessed = microphoneProcessedPeak;
+    snapshot.microphone = microphoneProcessedPeak;
+
+    const float microphonePeak = microphoneProcessedPeak;
 
     if (microphoneToOutput_ && snapshot.microphoneAvailable)
     {
@@ -2259,6 +2418,12 @@ void Audio::DestroyRuntime()
     {
         ma_device_uninit(&microphoneCapture_.device);
     }
+
+    microphoneProcessingActive_.store(
+        false,
+        std::memory_order_release
+    );
+    microphoneProcessingRuntime_.Shutdown();
 
     microphoneCapture_.initialized = false;
     microphoneCapture_.deviceName.clear();
@@ -2333,6 +2498,7 @@ void Audio::Shutdown()
     microphoneVolume_ = 1.0f;
     microphoneToOutput_ = true;
     microphoneToMonitor_ = false;
+    microphoneProcessingSettings_ = {};
 
     sampleRate_ = 48000;
     bufferMilliseconds_ = 5;
