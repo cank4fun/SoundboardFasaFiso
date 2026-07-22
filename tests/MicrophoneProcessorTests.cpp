@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <string_view>
@@ -51,6 +52,18 @@ namespace
         Expect(
             snapshot.configurationValid,
             "reset snapshot has a valid fallback configuration"
+        );
+        Expect(
+            !snapshot.noiseSuppressionRequested,
+            "reset snapshot does not request noise suppression"
+        );
+        Expect(
+            !snapshot.noiseSuppressionActive,
+            "reset snapshot has no active noise suppression"
+        );
+        Expect(
+            !snapshot.noiseSuppressionFailed,
+            "reset snapshot has no noise suppression failure"
         );
         Expect(NearlyEqual(snapshot.rawPeak, 0.0f), "reset raw peak is zero");
         Expect(
@@ -221,6 +234,88 @@ namespace
         Expect(
             snapshot.processedRms < snapshot.rawRms * 1.02f,
             "high-pass does not boost the voice-band tone"
+        );
+    }
+
+    void TestNoiseSuppressionProcessesCompleteFrames()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = false;
+        settings.noiseSuppressionEnabled = true;
+        settings.noiseSuppressionLevel =
+            MicrophoneNoiseSuppressionLevel::Balanced;
+        settings.compressorEnabled = false;
+        settings.limiterEnabled = false;
+
+        Expect(
+            processor.Initialize(settings),
+            "noise suppression settings initialize"
+        );
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        float phase = 0.0f;
+        std::uint32_t randomState = 0x12345678U;
+        bool outputChanged = false;
+        constexpr float twoPi = 6.28318530717958647692f;
+
+        for (int block = 0; block < 8; ++block)
+        {
+            for (std::size_t index = 0; index < input.size(); ++index)
+            {
+                randomState = randomState * 1664525U + 1013904223U;
+                const float noise =
+                    (static_cast<float>((randomState >> 8U) & 0xFFFFU) /
+                        32767.5f - 1.0f) * 0.08f;
+                input[index] = 0.12f * std::sin(phase) + noise;
+                phase += twoPi * 220.0f /
+                    static_cast<float>(
+                        MicrophoneProcessor::ProcessingSampleRate
+                    );
+
+                if (phase >= twoPi)
+                {
+                    phase -= twoPi;
+                }
+            }
+
+            Expect(
+                processor.ProcessBlock(input, output),
+                "noise suppression frame is processed"
+            );
+
+            for (std::size_t index = 0; index < output.size(); ++index)
+            {
+                Expect(
+                    std::isfinite(output[index]),
+                    "noise suppression output stays finite"
+                );
+                outputChanged = outputChanged ||
+                    !NearlyEqual(output[index], input[index], 0.000001f);
+            }
+        }
+
+        const MicrophoneProcessingSnapshot snapshot =
+            processor.GetSnapshot();
+        Expect(
+            snapshot.noiseSuppressionRequested,
+            "snapshot reports requested noise suppression"
+        );
+        Expect(
+            snapshot.noiseSuppressionActive,
+            "snapshot reports active noise suppression"
+        );
+        Expect(
+            !snapshot.noiseSuppressionFailed,
+            "noise suppression completes without fallback"
+        );
+        Expect(!snapshot.bypassed, "noise suppression is a processing stage");
+        Expect(outputChanged, "noise suppression changes the input signal");
+        Expect(
+            snapshot.voiceActivityProbability >= 0.0f &&
+                snapshot.voiceActivityProbability <= 1.0f,
+            "voice activity probability stays normalized"
         );
     }
 
@@ -483,6 +578,7 @@ int main()
     TestEnabledWithoutNativeStagesIsTransparent();
     TestHighPassRejectsDc();
     TestHighPassPreservesVoiceBandTone();
+    TestNoiseSuppressionProcessesCompleteFrames();
     TestCompressorReducesSustainedLoudSignal();
     TestCompressorLeavesQuietSignalNearUnity();
     TestLimiterEnforcesCeiling();

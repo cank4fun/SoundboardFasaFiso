@@ -360,12 +360,19 @@ if(BUILD_TESTING)
         tests/MicrophoneProcessorTests.cpp
         src/audio/MicrophoneProcessor.cpp
         src/audio/MicrophoneProcessingSettings.cpp
+        src/audio/RnNoiseSuppressor.cpp
     )
 
     target_include_directories(
         SoundBoardFasaFisoMicrophoneProcessorTests
         PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFisoMicrophoneProcessorTests
+        PRIVATE
+            SoundBoardFasaFisoRnNoise
     )
 
     if(MSVC)
@@ -405,6 +412,7 @@ if(BUILD_TESTING)
         src/audio/MicrophoneProcessingRuntime.cpp
         src/audio/MicrophoneProcessor.cpp
         src/audio/MicrophoneProcessingSettings.cpp
+        src/audio/RnNoiseSuppressor.cpp
         $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
     )
 
@@ -418,6 +426,12 @@ if(BUILD_TESTING)
         SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
         SYSTEM PRIVATE
             "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
+        PRIVATE
+            SoundBoardFasaFisoRnNoise
     )
 
     if(MSVC)

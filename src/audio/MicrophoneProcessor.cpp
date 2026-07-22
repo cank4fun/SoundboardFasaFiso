@@ -88,10 +88,9 @@ bool MicrophoneProcessor::ProcessBlock(
     bool inputClipped = false;
     bool invalidSampleDetected = false;
 
-    const bool nativeStageEnabled = settings_.enabled &&
-        (settings_.highPassEnabled ||
-            settings_.compressorEnabled ||
-            settings_.limiterEnabled);
+    const bool processingEnabled = settings_.enabled;
+    const bool noiseSuppressionRequested = processingEnabled &&
+        settings_.noiseSuppressionEnabled;
 
     for (std::size_t index = 0; index < SamplesPerBlock; ++index)
     {
@@ -109,22 +108,56 @@ bool MicrophoneProcessor::ProcessBlock(
             static_cast<double>(sample);
         inputClipped = inputClipped || rawMagnitude > 1.0f;
 
-        if (nativeStageEnabled)
+        if (processingEnabled && settings_.highPassEnabled)
         {
-            if (settings_.highPassEnabled)
+            sample = ProcessHighPass(sample);
+        }
+
+        preNoiseSuppressionBuffer_[index] = sample;
+    }
+
+    bool noiseSuppressionActive = false;
+
+    if (noiseSuppressionRequested && noiseSuppressionAvailable_)
+    {
+        if (noiseSuppressor_.ProcessFrame(
+                preNoiseSuppressionBuffer_,
+                noiseSuppressedBuffer_
+            ))
+        {
+            const float mix = NoiseSuppressionMix();
+
+            for (std::size_t index = 0; index < SamplesPerBlock; ++index)
             {
-                sample = ProcessHighPass(sample);
+                preNoiseSuppressionBuffer_[index] = std::lerp(
+                    preNoiseSuppressionBuffer_[index],
+                    noiseSuppressedBuffer_[index],
+                    mix
+                );
             }
 
-            if (settings_.compressorEnabled)
-            {
-                sample = ProcessCompressor(sample);
-            }
+            noiseSuppressionActive = true;
+        }
+        else
+        {
+            noiseSuppressionAvailable_ = false;
+            noiseSuppressionFailed_ = true;
+            noiseSuppressor_.Reset();
+        }
+    }
 
-            if (settings_.limiterEnabled)
-            {
-                sample = ProcessLimiter(sample);
-            }
+    for (std::size_t index = 0; index < SamplesPerBlock; ++index)
+    {
+        float sample = preNoiseSuppressionBuffer_[index];
+
+        if (processingEnabled && settings_.compressorEnabled)
+        {
+            sample = ProcessCompressor(sample);
+        }
+
+        if (processingEnabled && settings_.limiterEnabled)
+        {
+            sample = ProcessLimiter(sample);
         }
 
         output[index] = sample;
@@ -148,6 +181,12 @@ bool MicrophoneProcessor::ProcessBlock(
         )
     );
 
+    const bool processingStageApplied = processingEnabled &&
+        (settings_.highPassEnabled ||
+            noiseSuppressionActive ||
+            settings_.compressorEnabled ||
+            settings_.limiterEnabled);
+
     MicrophoneProcessingSnapshot snapshot;
     snapshot.rawPeak = rawPeak;
     snapshot.rawRms = rawRms;
@@ -155,8 +194,14 @@ bool MicrophoneProcessor::ProcessBlock(
     snapshot.processedRms = processedRms;
     snapshot.inputClipped = inputClipped;
     snapshot.invalidSampleDetected = invalidSampleDetected;
-    snapshot.bypassed = !nativeStageEnabled;
+    snapshot.noiseSuppressionRequested = noiseSuppressionRequested;
+    snapshot.noiseSuppressionActive = noiseSuppressionActive;
+    snapshot.noiseSuppressionFailed = noiseSuppressionFailed_;
+    snapshot.bypassed = !processingStageApplied;
     snapshot.configurationValid = configurationValid_;
+    snapshot.voiceActivityProbability = noiseSuppressionActive
+        ? noiseSuppressor_.GetLastVadProbability()
+        : 0.0f;
     PublishSnapshot(snapshot);
 
     return true;
@@ -186,9 +231,19 @@ MicrophoneProcessingSnapshot MicrophoneProcessor::GetSnapshot() const
             inputClipped_.load(std::memory_order_relaxed);
         snapshot.invalidSampleDetected =
             invalidSampleDetected_.load(std::memory_order_relaxed);
+        snapshot.noiseSuppressionRequested =
+            noiseSuppressionRequested_.load(std::memory_order_relaxed);
+        snapshot.noiseSuppressionActive =
+            noiseSuppressionActive_.load(std::memory_order_relaxed);
+        snapshot.noiseSuppressionFailed =
+            noiseSuppressionFailedSnapshot_.load(
+                std::memory_order_relaxed
+            );
         snapshot.bypassed = bypassed_.load(std::memory_order_relaxed);
         snapshot.configurationValid =
             snapshotConfigurationValid_.load(std::memory_order_relaxed);
+        snapshot.voiceActivityProbability =
+            voiceActivityProbability_.load(std::memory_order_relaxed);
 
         const std::uint64_t sequenceAfter =
             snapshotSequence_.load(std::memory_order_acquire);
@@ -210,6 +265,11 @@ void MicrophoneProcessor::Reset()
     settings_ = {};
     initialized_ = false;
     configurationValid_ = true;
+    noiseSuppressor_.Reset();
+    noiseSuppressionAvailable_ = false;
+    noiseSuppressionFailed_ = false;
+    preNoiseSuppressionBuffer_.fill(0.0f);
+    noiseSuppressedBuffer_.fill(0.0f);
     ResetProcessingState();
     PublishSnapshot({});
 }
@@ -240,6 +300,18 @@ void MicrophoneProcessor::ConfigureProcessingState()
     limiterCeilingLinear_ =
         DecibelsToLinear(settings_.limiterCeilingDb);
 
+    noiseSuppressor_.Reset();
+    noiseSuppressionAvailable_ = false;
+    noiseSuppressionFailed_ = false;
+
+    if (settings_.enabled && settings_.noiseSuppressionEnabled)
+    {
+        noiseSuppressionAvailable_ = noiseSuppressor_.Initialize();
+        noiseSuppressionFailed_ = !noiseSuppressionAvailable_;
+    }
+
+    preNoiseSuppressionBuffer_.fill(0.0f);
+    noiseSuppressedBuffer_.fill(0.0f);
     ResetProcessingState();
 }
 
@@ -294,6 +366,24 @@ float MicrophoneProcessor::ProcessLimiter(const float sample) const
     );
 }
 
+float MicrophoneProcessor::NoiseSuppressionMix() const noexcept
+{
+    switch (settings_.noiseSuppressionLevel)
+    {
+        case MicrophoneNoiseSuppressionLevel::Light:
+            return 0.40f;
+
+        case MicrophoneNoiseSuppressionLevel::Balanced:
+            return 0.70f;
+
+        case MicrophoneNoiseSuppressionLevel::Strong:
+            return 1.0f;
+
+        default:
+            return 0.70f;
+    }
+}
+
 void MicrophoneProcessor::PublishSnapshot(
     const MicrophoneProcessingSnapshot& snapshot
 )
@@ -318,9 +408,25 @@ void MicrophoneProcessor::PublishSnapshot(
         snapshot.invalidSampleDetected,
         std::memory_order_relaxed
     );
+    noiseSuppressionRequested_.store(
+        snapshot.noiseSuppressionRequested,
+        std::memory_order_relaxed
+    );
+    noiseSuppressionActive_.store(
+        snapshot.noiseSuppressionActive,
+        std::memory_order_relaxed
+    );
+    noiseSuppressionFailedSnapshot_.store(
+        snapshot.noiseSuppressionFailed,
+        std::memory_order_relaxed
+    );
     bypassed_.store(snapshot.bypassed, std::memory_order_relaxed);
     snapshotConfigurationValid_.store(
         snapshot.configurationValid,
+        std::memory_order_relaxed
+    );
+    voiceActivityProbability_.store(
+        snapshot.voiceActivityProbability,
         std::memory_order_relaxed
     );
 

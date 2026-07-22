@@ -298,12 +298,10 @@ void MicrophoneProcessingRuntime::ProcessAndDispatchBlock(
         return;
     }
 
-    const bool nativeProcessingEnabled = settings_.enabled &&
-        (settings_.highPassEnabled ||
-            settings_.compressorEnabled ||
-            settings_.limiterEnabled);
+    const MicrophoneProcessingSnapshot snapshot =
+        processor_.GetSnapshot();
 
-    if (!nativeProcessingEnabled)
+    if (snapshot.bypassed)
     {
         stereoOutput = stereoInput;
     }
