@@ -118,6 +118,98 @@ namespace
         );
     }
 
+    void TestPresetSnapshots()
+    {
+        struct PresetCase
+        {
+            MicrophoneProcessingPreset preset;
+            float highPassHz;
+            float thresholdDb;
+            float ratio;
+            float attackMs;
+            float releaseMs;
+            float makeupDb;
+            float limiterCeilingDb;
+        };
+
+        constexpr std::array cases{
+            PresetCase{MicrophoneProcessingPreset::Natural,
+                80.0f, -24.0f, 3.0f, 10.0f, 120.0f, 0.0f, -1.0f},
+            PresetCase{MicrophoneProcessingPreset::Clean,
+                90.0f, -27.0f, 3.5f, 8.0f, 140.0f, 2.0f, -1.0f},
+            PresetCase{MicrophoneProcessingPreset::Strong,
+                100.0f, -30.0f, 4.5f, 6.0f, 170.0f, 4.0f, -1.0f},
+            PresetCase{MicrophoneProcessingPreset::Aggressive,
+                120.0f, -34.0f, 6.0f, 4.0f, 200.0f, 6.0f, -1.5f}
+        };
+
+        for (const PresetCase& testCase : cases)
+        {
+            const auto settings = BuildMicrophoneProcessingPreset(
+                testCase.preset,
+                true
+            );
+
+            Expect(settings.has_value(), "named preset is available");
+            if (!settings.has_value())
+            {
+                continue;
+            }
+
+            Expect(settings->enabled, "preset preserves requested enabled state");
+            Expect(settings->preset == testCase.preset, "preset identity is stored");
+            Expect(settings->highPassEnabled, "preset enables high-pass");
+            Expect(settings->compressorEnabled, "preset enables compressor");
+            Expect(settings->limiterEnabled, "preset enables limiter");
+            Expect(!settings->noiseSuppressionEnabled,
+                "preset does not claim unavailable noise suppression");
+            Expect(!settings->agcEnabled,
+                "preset does not claim unavailable AGC");
+            Expect(settings->highPassHz == testCase.highPassHz,
+                "preset high-pass is stable");
+            Expect(settings->compressorThresholdDb == testCase.thresholdDb,
+                "preset threshold is stable");
+            Expect(settings->compressorRatio == testCase.ratio,
+                "preset ratio is stable");
+            Expect(settings->compressorAttackMs == testCase.attackMs,
+                "preset attack is stable");
+            Expect(settings->compressorReleaseMs == testCase.releaseMs,
+                "preset release is stable");
+            Expect(settings->compressorMakeupDb == testCase.makeupDb,
+                "preset makeup gain is stable");
+            Expect(settings->limiterCeilingDb == testCase.limiterCeilingDb,
+                "preset limiter ceiling is stable");
+            Expect(IsValidMicrophoneProcessingSettings(*settings),
+                "named preset is valid");
+            Expect(MicrophoneProcessingSettingsMatchPreset(
+                *settings,
+                testCase.preset
+            ), "preset snapshot matches itself");
+
+            MicrophoneProcessingSettings changed = *settings;
+            changed.compressorRatio += 0.5f;
+            Expect(!MicrophoneProcessingSettingsMatchPreset(
+                changed,
+                testCase.preset
+            ), "edited settings no longer match the preset");
+        }
+
+        const auto disabled = BuildMicrophoneProcessingPreset(
+            MicrophoneProcessingPreset::Natural,
+            false
+        );
+        Expect(disabled.has_value() && !disabled->enabled,
+            "preset preserves disabled master switch");
+        Expect(!BuildMicrophoneProcessingPreset(
+            MicrophoneProcessingPreset::Custom,
+            true
+        ).has_value(), "custom is not a fixed preset snapshot");
+        Expect(!BuildMicrophoneProcessingPreset(
+            static_cast<MicrophoneProcessingPreset>(999),
+            true
+        ).has_value(), "unknown preset has no snapshot");
+    }
+
     void TestRangeValidation()
     {
         using namespace MicrophoneProcessingLimits;
@@ -229,6 +321,7 @@ int main()
 {
     TestDefaults();
     TestStableNamesAndParsing();
+    TestPresetSnapshots();
     TestRangeValidation();
     TestUnknownEnums();
 

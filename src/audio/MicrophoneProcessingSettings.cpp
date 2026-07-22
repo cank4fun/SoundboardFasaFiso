@@ -166,6 +166,103 @@ ParseMicrophoneNoiseSuppressionLevel(const std::string_view value)
     return std::nullopt;
 }
 
+std::optional<MicrophoneProcessingSettings>
+BuildMicrophoneProcessingPreset(
+    const MicrophoneProcessingPreset preset,
+    const bool enabled
+)
+{
+    MicrophoneProcessingSettings settings;
+    settings.enabled = enabled;
+    settings.preset = preset;
+    settings.noiseSuppressionEnabled = false;
+    settings.agcEnabled = false;
+
+    // Conservative native-filter starting points. Live voice-chat A/B
+    // testing may tune these values before the v2.1 release.
+    switch (preset)
+    {
+        case MicrophoneProcessingPreset::Natural:
+            settings.highPassHz = 80.0f;
+            settings.compressorThresholdDb = -24.0f;
+            settings.compressorRatio = 3.0f;
+            settings.compressorAttackMs = 10.0f;
+            settings.compressorReleaseMs = 120.0f;
+            settings.compressorMakeupDb = 0.0f;
+            settings.limiterCeilingDb = -1.0f;
+            break;
+
+        case MicrophoneProcessingPreset::Clean:
+            settings.highPassHz = 90.0f;
+            settings.compressorThresholdDb = -27.0f;
+            settings.compressorRatio = 3.5f;
+            settings.compressorAttackMs = 8.0f;
+            settings.compressorReleaseMs = 140.0f;
+            settings.compressorMakeupDb = 2.0f;
+            settings.limiterCeilingDb = -1.0f;
+            break;
+
+        case MicrophoneProcessingPreset::Strong:
+            settings.highPassHz = 100.0f;
+            settings.compressorThresholdDb = -30.0f;
+            settings.compressorRatio = 4.5f;
+            settings.compressorAttackMs = 6.0f;
+            settings.compressorReleaseMs = 170.0f;
+            settings.compressorMakeupDb = 4.0f;
+            settings.limiterCeilingDb = -1.0f;
+            break;
+
+        case MicrophoneProcessingPreset::Aggressive:
+            settings.highPassHz = 120.0f;
+            settings.compressorThresholdDb = -34.0f;
+            settings.compressorRatio = 6.0f;
+            settings.compressorAttackMs = 4.0f;
+            settings.compressorReleaseMs = 200.0f;
+            settings.compressorMakeupDb = 6.0f;
+            settings.limiterCeilingDb = -1.5f;
+            break;
+
+        case MicrophoneProcessingPreset::Custom:
+            return std::nullopt;
+
+        default:
+            return std::nullopt;
+    }
+
+    return settings;
+}
+
+bool MicrophoneProcessingSettingsMatchPreset(
+    const MicrophoneProcessingSettings& settings,
+    const MicrophoneProcessingPreset preset
+)
+{
+    const auto expected = BuildMicrophoneProcessingPreset(
+        preset,
+        settings.enabled
+    );
+
+    return expected.has_value() &&
+        settings.enabled == expected->enabled &&
+        settings.highPassEnabled == expected->highPassEnabled &&
+        settings.highPassHz == expected->highPassHz &&
+        settings.noiseSuppressionEnabled ==
+            expected->noiseSuppressionEnabled &&
+        settings.noiseSuppressionLevel ==
+            expected->noiseSuppressionLevel &&
+        settings.agcEnabled == expected->agcEnabled &&
+        settings.agcTargetDbfs == expected->agcTargetDbfs &&
+        settings.compressorEnabled == expected->compressorEnabled &&
+        settings.compressorThresholdDb ==
+            expected->compressorThresholdDb &&
+        settings.compressorRatio == expected->compressorRatio &&
+        settings.compressorAttackMs == expected->compressorAttackMs &&
+        settings.compressorReleaseMs == expected->compressorReleaseMs &&
+        settings.compressorMakeupDb == expected->compressorMakeupDb &&
+        settings.limiterEnabled == expected->limiterEnabled &&
+        settings.limiterCeilingDb == expected->limiterCeilingDb;
+}
+
 bool IsValidMicrophoneProcessingSettings(
     const MicrophoneProcessingSettings& settings
 )

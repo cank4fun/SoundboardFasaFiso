@@ -84,6 +84,17 @@ std::optional<MicrophoneProcessingPreset> ParseMicrophoneProcessingPreset(
 std::optional<MicrophoneNoiseSuppressionLevel>
 ParseMicrophoneNoiseSuppressionLevel(std::string_view value);
 
+std::optional<MicrophoneProcessingSettings>
+BuildMicrophoneProcessingPreset(
+    MicrophoneProcessingPreset preset,
+    bool enabled
+);
+
+bool MicrophoneProcessingSettingsMatchPreset(
+    const MicrophoneProcessingSettings& settings,
+    MicrophoneProcessingPreset preset
+);
+
 bool IsValidMicrophoneProcessingSettings(
     const MicrophoneProcessingSettings& settings
 );

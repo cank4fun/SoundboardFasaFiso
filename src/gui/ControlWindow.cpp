@@ -22,6 +22,7 @@
 #include <cwctype>
 #include <iostream>
 #include <iterator>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -131,6 +132,47 @@ namespace
         return std::to_wstring(
             static_cast<int>(volume * 100.0f + 0.5f)
         ) + L"%";
+    }
+
+    constexpr std::array MicrophoneProcessingPresetOrder{
+        MicrophoneProcessingPreset::Natural,
+        MicrophoneProcessingPreset::Clean,
+        MicrophoneProcessingPreset::Strong,
+        MicrophoneProcessingPreset::Aggressive,
+        MicrophoneProcessingPreset::Custom
+    };
+
+    int MicrophoneProcessingPresetIndex(
+        const MicrophoneProcessingPreset preset
+    )
+    {
+        const auto iterator = std::find(
+            MicrophoneProcessingPresetOrder.begin(),
+            MicrophoneProcessingPresetOrder.end(),
+            preset
+        );
+
+        return iterator == MicrophoneProcessingPresetOrder.end()
+            ? static_cast<int>(MicrophoneProcessingPresetOrder.size() - 1)
+            : static_cast<int>(std::distance(
+                MicrophoneProcessingPresetOrder.begin(),
+                iterator
+            ));
+    }
+
+    std::optional<MicrophoneProcessingPreset>
+    MicrophoneProcessingPresetFromIndex(const int index)
+    {
+        if (index < 0 ||
+            static_cast<std::size_t>(index) >=
+                MicrophoneProcessingPresetOrder.size())
+        {
+            return std::nullopt;
+        }
+
+        return MicrophoneProcessingPresetOrder[
+            static_cast<std::size_t>(index)
+        ];
     }
 }
 
@@ -436,6 +478,8 @@ void ControlWindow::Shutdown()
     applySettingsButton_ = nullptr;
     microphoneProcessingGroup_ = nullptr;
     microphoneProcessingEnabledCheck_ = nullptr;
+    microphoneProcessingPresetCaption_ = nullptr;
+    microphoneProcessingPresetCombo_ = nullptr;
     microphoneProcessingStatusCaption_ = nullptr;
     microphoneProcessingStatusValue_ = nullptr;
     microphoneRawMeterCaption_ = nullptr;
@@ -511,6 +555,7 @@ void ControlWindow::Shutdown()
     monitorMeterAvailable_ = false;
     microphoneMeterAvailable_ = false;
     microphoneProcessingMeterAvailable_ = false;
+    populatingMicrophoneProcessingControls_ = false;
 }
 
 void ControlWindow::Show()
@@ -993,6 +1038,35 @@ LRESULT ControlWindow::HandleWindowMessage(
             {
                 LoadSelectedBindingIntoEditor();
                 return 0;
+            }
+
+            if (controlId == IdMicrophoneProcessingPreset &&
+                notificationCode == CBN_SELCHANGE)
+            {
+                ApplySelectedMicrophoneProcessingPreset();
+                return 0;
+            }
+
+            const HWND commandControl = reinterpret_cast<HWND>(lParam);
+            const bool nativeFilterEditChanged =
+                notificationCode == EN_CHANGE &&
+                (commandControl == microphoneHighPassHzEdit_ ||
+                    commandControl == microphoneCompressorThresholdEdit_ ||
+                    commandControl == microphoneCompressorRatioEdit_ ||
+                    commandControl == microphoneCompressorAttackEdit_ ||
+                    commandControl == microphoneCompressorReleaseEdit_ ||
+                    commandControl == microphoneCompressorMakeupEdit_ ||
+                    commandControl == microphoneLimiterCeilingEdit_);
+            const bool nativeFilterToggleChanged =
+                notificationCode == BN_CLICKED &&
+                (commandControl == microphoneHighPassEnabledCheck_ ||
+                    commandControl == microphoneCompressorEnabledCheck_ ||
+                    commandControl == microphoneLimiterEnabledCheck_);
+
+            if (!populatingMicrophoneProcessingControls_ &&
+                (nativeFilterEditChanged || nativeFilterToggleChanged))
+            {
+                MarkMicrophoneProcessingPresetCustom();
             }
 
             constexpr int AcceleratorNotificationCode = 1;
@@ -1512,6 +1586,15 @@ bool ControlWindow::CreateControls()
     microphoneProcessingEnabledCheck_ = createControl(
         L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
     );
+    microphoneProcessingPresetCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneProcessingPresetCombo_ = createControl(
+        L"COMBOBOX", L"",
+        CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP,
+        IdMicrophoneProcessingPreset,
+        WS_EX_CLIENTEDGE
+    );
     microphoneProcessingStatusCaption_ = createControl(
         L"STATIC", L"", SS_LEFT, 0
     );
@@ -1739,6 +1822,8 @@ bool ControlWindow::CreateControls()
         refreshDevicesButton_,
         applySettingsButton_, microphoneProcessingGroup_,
         microphoneProcessingEnabledCheck_,
+        microphoneProcessingPresetCaption_,
+        microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
         microphoneProcessingStatusValue_, microphoneRawMeterCaption_,
         microphoneRawLevelMeter_, microphoneProcessedMeterCaption_,
@@ -2444,6 +2529,17 @@ void ControlWindow::LayoutControls(
         );
         rowY += 34;
 
+        moveWindow(
+            microphoneProcessingPresetCaption_,
+            innerX, rowY + 4, 94, 20, TRUE
+        );
+        moveWindow(
+            microphoneProcessingPresetCombo_,
+            innerX + 94, rowY,
+            std::max(180, columnWidth - 94), 220, TRUE
+        );
+        rowY += 34;
+
         const int meterGap = 24;
         const int meterWidth = (innerWidth - meterGap) / 2;
         moveWindow(
@@ -2782,6 +2878,8 @@ void ControlWindow::UpdatePageVisibility()
 
     const HWND microphoneProcessingControls[]{
         microphoneProcessingGroup_, microphoneProcessingEnabledCheck_,
+        microphoneProcessingPresetCaption_,
+        microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
         microphoneProcessingStatusValue_, microphoneRawMeterCaption_,
         microphoneRawLevelMeter_, microphoneProcessedMeterCaption_,
@@ -2873,9 +2971,9 @@ void ControlWindow::ApplyTheme()
         ? L"DarkMode_CFD"
         : L"Explorer";
 
-    const std::array<HWND, 5> combos{
+    const std::array<HWND, 6> combos{
         outputCombo_, monitorCombo_, microphoneCombo_,
-        sampleRateCombo_, bufferCombo_
+        sampleRateCombo_, bufferCombo_, microphoneProcessingPresetCombo_
     };
 
     for (const HWND control : combos)
@@ -3012,6 +3110,8 @@ void ControlWindow::ApplyFonts()
         sampleRateCaption_, sampleRateCombo_, bufferCaption_, bufferCombo_,
         languageCaption_, languageCombo_, startWithWindowsCheck_,
         checkUpdatesOnStartCheck_, microphoneProcessingEnabledCheck_,
+        microphoneProcessingPresetCaption_,
+        microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
         microphoneProcessingStatusValue_, microphoneRawMeterCaption_,
         microphoneProcessedMeterCaption_,
@@ -4005,6 +4105,10 @@ void ControlWindow::RefreshLocalizedText()
         )
     );
     SetControlText(
+        microphoneProcessingPresetCaption_,
+        Localization::Text(L"Preset:", L"Preset:")
+    );
+    SetControlText(
         microphoneProcessingStatusCaption_,
         Localization::Text(L"Canlı durum:", L"Live status:")
     );
@@ -4086,10 +4190,12 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         microphoneUnavailableFeaturesCaption_,
         Localization::Text(
-            L"Noise suppression, AGC ve preset seçimi sonraki aşamada eklenecek. Bu ekranda şu an high-pass, compressor ve limiter ayarlanır.",
-            L"Noise suppression, AGC, and preset selection will be added in a later phase. This page currently configures high-pass, compressor, and limiter."
+            L"Presetler mevcut native filtreleri ayarlar. Noise suppression ve AGC sonraki aşamada eklenecek.",
+            L"Presets configure the current native filters. Noise suppression and AGC will be added in a later phase."
         )
     );
+
+    PopulateMicrophoneProcessingPresetCombo();
 
     SetControlText(
         controlHotkeysGroup_,
@@ -4373,12 +4479,201 @@ void ControlWindow::PopulateNumericCombos()
     AddComboItem(languageCombo_, L"English");
 }
 
+void ControlWindow::PopulateMicrophoneProcessingPresetCombo()
+{
+    if (microphoneProcessingPresetCombo_ == nullptr)
+    {
+        return;
+    }
+
+    MicrophoneProcessingPreset selectedPreset =
+        currentConfig_.GetMicrophoneProcessingSettings().preset;
+    const int currentSelection = static_cast<int>(SendMessageW(
+        microphoneProcessingPresetCombo_,
+        CB_GETCURSEL,
+        0,
+        0
+    ));
+
+    if (const auto currentPreset =
+            MicrophoneProcessingPresetFromIndex(currentSelection))
+    {
+        selectedPreset = *currentPreset;
+    }
+
+    const bool previousPopulationState =
+        populatingMicrophoneProcessingControls_;
+    populatingMicrophoneProcessingControls_ = true;
+
+    SendMessageW(
+        microphoneProcessingPresetCombo_,
+        CB_RESETCONTENT,
+        0,
+        0
+    );
+    AddComboItem(
+        microphoneProcessingPresetCombo_,
+        Localization::Text(L"Doğal", L"Natural")
+    );
+    AddComboItem(
+        microphoneProcessingPresetCombo_,
+        Localization::Text(L"Temiz", L"Clean")
+    );
+    AddComboItem(
+        microphoneProcessingPresetCombo_,
+        Localization::Text(L"Güçlü", L"Strong")
+    );
+    AddComboItem(
+        microphoneProcessingPresetCombo_,
+        Localization::Text(L"Agresif", L"Aggressive")
+    );
+    AddComboItem(
+        microphoneProcessingPresetCombo_,
+        Localization::Text(L"Özel", L"Custom")
+    );
+
+    SendMessageW(
+        microphoneProcessingPresetCombo_,
+        CB_SETCURSEL,
+        static_cast<WPARAM>(
+            MicrophoneProcessingPresetIndex(selectedPreset)
+        ),
+        0
+    );
+
+    populatingMicrophoneProcessingControls_ = previousPopulationState;
+}
+
+void ControlWindow::ApplySelectedMicrophoneProcessingPreset()
+{
+    if (populatingMicrophoneProcessingControls_ ||
+        microphoneProcessingPresetCombo_ == nullptr)
+    {
+        return;
+    }
+
+    const int selection = static_cast<int>(SendMessageW(
+        microphoneProcessingPresetCombo_,
+        CB_GETCURSEL,
+        0,
+        0
+    ));
+    const auto preset = MicrophoneProcessingPresetFromIndex(selection);
+
+    if (!preset.has_value() ||
+        *preset == MicrophoneProcessingPreset::Custom)
+    {
+        return;
+    }
+
+    const bool enabled = SendMessageW(
+        microphoneProcessingEnabledCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+    const auto settings = BuildMicrophoneProcessingPreset(
+        *preset,
+        enabled
+    );
+
+    if (!settings.has_value())
+    {
+        return;
+    }
+
+    const auto setCheck = [](const HWND control, const bool checked)
+    {
+        SendMessageW(
+            control,
+            BM_SETCHECK,
+            checked ? BST_CHECKED : BST_UNCHECKED,
+            0
+        );
+    };
+    const auto formatValue = [](const float value)
+    {
+        std::wostringstream stream;
+        stream << std::fixed << std::setprecision(3) << value;
+        return stream.str();
+    };
+
+    populatingMicrophoneProcessingControls_ = true;
+    setCheck(
+        microphoneHighPassEnabledCheck_,
+        settings->highPassEnabled
+    );
+    setCheck(
+        microphoneCompressorEnabledCheck_,
+        settings->compressorEnabled
+    );
+    setCheck(
+        microphoneLimiterEnabledCheck_,
+        settings->limiterEnabled
+    );
+    SetControlText(
+        microphoneHighPassHzEdit_,
+        formatValue(settings->highPassHz)
+    );
+    SetControlText(
+        microphoneCompressorThresholdEdit_,
+        formatValue(settings->compressorThresholdDb)
+    );
+    SetControlText(
+        microphoneCompressorRatioEdit_,
+        formatValue(settings->compressorRatio)
+    );
+    SetControlText(
+        microphoneCompressorAttackEdit_,
+        formatValue(settings->compressorAttackMs)
+    );
+    SetControlText(
+        microphoneCompressorReleaseEdit_,
+        formatValue(settings->compressorReleaseMs)
+    );
+    SetControlText(
+        microphoneCompressorMakeupEdit_,
+        formatValue(settings->compressorMakeupDb)
+    );
+    SetControlText(
+        microphoneLimiterCeilingEdit_,
+        formatValue(settings->limiterCeilingDb)
+    );
+    populatingMicrophoneProcessingControls_ = false;
+
+    SetStatus(Localization::Text(
+        L"Preset değerleri önizlendi. Uygulamak için Kaydet ve uygula'ya basın.",
+        L"Preset values are previewed. Select Save and apply to activate them."
+    ));
+}
+
+void ControlWindow::MarkMicrophoneProcessingPresetCustom()
+{
+    if (populatingMicrophoneProcessingControls_ ||
+        microphoneProcessingPresetCombo_ == nullptr)
+    {
+        return;
+    }
+
+    SendMessageW(
+        microphoneProcessingPresetCombo_,
+        CB_SETCURSEL,
+        static_cast<WPARAM>(MicrophoneProcessingPresetIndex(
+            MicrophoneProcessingPreset::Custom
+        )),
+        0
+    );
+}
+
 void ControlWindow::PopulateMicrophoneProcessingControls()
 {
     if (microphoneProcessingEnabledCheck_ == nullptr)
     {
         return;
     }
+
+    populatingMicrophoneProcessingControls_ = true;
+    PopulateMicrophoneProcessingPresetCombo();
 
     const MicrophoneProcessingSettings& settings =
         currentConfig_.GetMicrophoneProcessingSettings();
@@ -4407,6 +4702,21 @@ void ControlWindow::PopulateMicrophoneProcessingControls()
         settings.compressorEnabled
     );
     setCheck(microphoneLimiterEnabledCheck_, settings.limiterEnabled);
+    const MicrophoneProcessingPreset displayedPreset =
+        MicrophoneProcessingSettingsMatchPreset(
+            settings,
+            settings.preset
+        )
+            ? settings.preset
+            : MicrophoneProcessingPreset::Custom;
+    SendMessageW(
+        microphoneProcessingPresetCombo_,
+        CB_SETCURSEL,
+        static_cast<WPARAM>(MicrophoneProcessingPresetIndex(
+            displayedPreset
+        )),
+        0
+    );
 
     SetControlText(
         microphoneHighPassHzEdit_,
@@ -4436,6 +4746,7 @@ void ControlWindow::PopulateMicrophoneProcessingControls()
         microphoneLimiterCeilingEdit_,
         formatValue(settings.limiterCeilingDb)
     );
+    populatingMicrophoneProcessingControls_ = false;
 }
 
 void ControlWindow::PopulateControlHotkeys()
@@ -4758,67 +5069,80 @@ bool ControlWindow::SavePendingSettings()
         return false;
     }
 
-    const MicrophoneProcessingSettings previousProcessingSettings =
-        processingSettings;
+    const int presetSelection = static_cast<int>(SendMessageW(
+        microphoneProcessingPresetCombo_,
+        CB_GETCURSEL,
+        0,
+        0
+    ));
+    const auto selectedPreset =
+        MicrophoneProcessingPresetFromIndex(presetSelection);
 
-    processingSettings.enabled = SendMessageW(
+    if (!selectedPreset.has_value())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Geçerli bir mikrofon preset'i seçin.",
+                L"Select a valid microphone preset."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
+    const bool processingEnabled = SendMessageW(
         microphoneProcessingEnabledCheck_,
         BM_GETCHECK,
         0,
         0
     ) == BST_CHECKED;
-    processingSettings.highPassEnabled = SendMessageW(
-        microphoneHighPassEnabledCheck_,
-        BM_GETCHECK,
-        0,
-        0
-    ) == BST_CHECKED;
-    processingSettings.highPassHz = highPassHz;
-    processingSettings.compressorEnabled = SendMessageW(
-        microphoneCompressorEnabledCheck_,
-        BM_GETCHECK,
-        0,
-        0
-    ) == BST_CHECKED;
-    processingSettings.compressorThresholdDb =
-        compressorThresholdDb;
-    processingSettings.compressorRatio = compressorRatio;
-    processingSettings.compressorAttackMs = compressorAttackMs;
-    processingSettings.compressorReleaseMs = compressorReleaseMs;
-    processingSettings.compressorMakeupDb = compressorMakeupDb;
-    processingSettings.limiterEnabled = SendMessageW(
-        microphoneLimiterEnabledCheck_,
-        BM_GETCHECK,
-        0,
-        0
-    ) == BST_CHECKED;
-    processingSettings.limiterCeilingDb = limiterCeilingDb;
 
-    const bool nativeFilterSettingsChanged =
-        processingSettings.highPassEnabled !=
-            previousProcessingSettings.highPassEnabled ||
-        processingSettings.highPassHz !=
-            previousProcessingSettings.highPassHz ||
-        processingSettings.compressorEnabled !=
-            previousProcessingSettings.compressorEnabled ||
-        processingSettings.compressorThresholdDb !=
-            previousProcessingSettings.compressorThresholdDb ||
-        processingSettings.compressorRatio !=
-            previousProcessingSettings.compressorRatio ||
-        processingSettings.compressorAttackMs !=
-            previousProcessingSettings.compressorAttackMs ||
-        processingSettings.compressorReleaseMs !=
-            previousProcessingSettings.compressorReleaseMs ||
-        processingSettings.compressorMakeupDb !=
-            previousProcessingSettings.compressorMakeupDb ||
-        processingSettings.limiterEnabled !=
-            previousProcessingSettings.limiterEnabled ||
-        processingSettings.limiterCeilingDb !=
-            previousProcessingSettings.limiterCeilingDb;
-
-    if (nativeFilterSettingsChanged)
+    if (*selectedPreset != MicrophoneProcessingPreset::Custom)
     {
+        const auto presetSettings = BuildMicrophoneProcessingPreset(
+            *selectedPreset,
+            processingEnabled
+        );
+
+        if (!presetSettings.has_value())
+        {
+            return false;
+        }
+
+        processingSettings = *presetSettings;
+    }
+    else
+    {
+        processingSettings.enabled = processingEnabled;
         processingSettings.preset = MicrophoneProcessingPreset::Custom;
+        processingSettings.highPassEnabled = SendMessageW(
+            microphoneHighPassEnabledCheck_,
+            BM_GETCHECK,
+            0,
+            0
+        ) == BST_CHECKED;
+        processingSettings.highPassHz = highPassHz;
+        processingSettings.compressorEnabled = SendMessageW(
+            microphoneCompressorEnabledCheck_,
+            BM_GETCHECK,
+            0,
+            0
+        ) == BST_CHECKED;
+        processingSettings.compressorThresholdDb =
+            compressorThresholdDb;
+        processingSettings.compressorRatio = compressorRatio;
+        processingSettings.compressorAttackMs = compressorAttackMs;
+        processingSettings.compressorReleaseMs = compressorReleaseMs;
+        processingSettings.compressorMakeupDb = compressorMakeupDb;
+        processingSettings.limiterEnabled = SendMessageW(
+            microphoneLimiterEnabledCheck_,
+            BM_GETCHECK,
+            0,
+            0
+        ) == BST_CHECKED;
+        processingSettings.limiterCeilingDb = limiterCeilingDb;
     }
 
     if (!IsValidMicrophoneProcessingSettings(processingSettings))

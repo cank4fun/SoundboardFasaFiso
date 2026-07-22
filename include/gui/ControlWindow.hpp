@@ -115,6 +115,7 @@ private:
     static constexpr int IdHotkeysTab = 1026;
     static constexpr int IdCancelHotkeyCapture = 1027;
     static constexpr int IdMicrophoneProcessingTab = 1028;
+    static constexpr int IdMicrophoneProcessingPreset = 1029;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -167,6 +168,9 @@ private:
     void PopulateDeviceCombos();
     void PopulateNumericCombos();
     void PopulateMicrophoneProcessingControls();
+    void PopulateMicrophoneProcessingPresetCombo();
+    void ApplySelectedMicrophoneProcessingPreset();
+    void MarkMicrophoneProcessingPresetCustom();
     void PopulateControlHotkeys();
     void UpdateVolumeLabels();
     void UpdateBindingVolumeLabel();
@@ -275,6 +279,8 @@ private:
 
     HWND microphoneProcessingGroup_ = nullptr;
     HWND microphoneProcessingEnabledCheck_ = nullptr;
+    HWND microphoneProcessingPresetCaption_ = nullptr;
+    HWND microphoneProcessingPresetCombo_ = nullptr;
     HWND microphoneProcessingStatusCaption_ = nullptr;
     HWND microphoneProcessingStatusValue_ = nullptr;
     HWND microphoneRawMeterCaption_ = nullptr;
@@ -375,6 +381,7 @@ private:
     bool monitorMeterAvailable_ = false;
     bool microphoneMeterAvailable_ = false;
     bool microphoneProcessingMeterAvailable_ = false;
+    bool populatingMicrophoneProcessingControls_ = false;
 
     std::jthread updateCheckThread_;
     std::mutex updateCheckMutex_;
