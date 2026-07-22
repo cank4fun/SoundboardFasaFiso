@@ -174,7 +174,7 @@ private:
     void LoadSelectedBindingIntoEditor();
     void ClearBindingEditor();
     bool AddOrUpdateBinding(bool updateExisting);
-    bool RemoveSelectedBinding();
+    bool RemoveSelectedBinding(bool requireConfirmation = true);
     void BrowseForSoundFile();
     void BeginHotkeyCapture();
     bool CaptureHotkeyFromMessage(WPARAM virtualKey);

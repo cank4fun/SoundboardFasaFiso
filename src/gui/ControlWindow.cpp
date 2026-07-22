@@ -1116,6 +1116,22 @@ LRESULT ControlWindow::HandleWindowMessage(
             break;
         }
 
+        case WM_VKEYTOITEM:
+            if (reinterpret_cast<HWND>(lParam) == bindingsList_ &&
+                LOWORD(wParam) == VK_DELETE)
+            {
+                if (!capturingBindingHotkey_ &&
+                    selectedBindingIndex_ >= 0 &&
+                    static_cast<std::size_t>(selectedBindingIndex_) <
+                        pendingBindings_.size())
+                {
+                    RemoveSelectedBinding(false);
+                }
+
+                return static_cast<LRESULT>(-2);
+            }
+            return static_cast<LRESULT>(-1);
+
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
             if (capturingBindingHotkey_ &&
@@ -1483,7 +1499,7 @@ bool ControlWindow::CreateControls()
         L"LISTBOX",
         L"",
         WS_VSCROLL | WS_HSCROLL | LBS_NOINTEGRALHEIGHT |
-            LBS_NOTIFY | WS_TABSTOP,
+            LBS_NOTIFY | LBS_WANTKEYBOARDINPUT | WS_TABSTOP,
         IdBindingsList,
         WS_EX_CLIENTEDGE
     );
@@ -4582,7 +4598,9 @@ bool ControlWindow::AddOrUpdateBinding(const bool updateExisting)
     return true;
 }
 
-bool ControlWindow::RemoveSelectedBinding()
+bool ControlWindow::RemoveSelectedBinding(
+    const bool requireConfirmation
+)
 {
     if (selectedBindingIndex_ < 0 ||
         static_cast<std::size_t>(selectedBindingIndex_) >=
@@ -4600,19 +4618,22 @@ bool ControlWindow::RemoveSelectedBinding()
         return false;
     }
 
-    const int answer = MessageBoxW(
-        window_,
-        Localization::Text(
-            L"Seçili ses ataması silinsin mi? Ses dosyasının kendisi silinmeyecek.",
-            L"Remove the selected sound binding? The audio file itself will not be deleted."
-        ),
-        L"SoundBoardFasaFiso",
-        MB_YESNO | MB_ICONQUESTION
-    );
-
-    if (answer != IDYES)
+    if (requireConfirmation)
     {
-        return false;
+        const int answer = MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Seçili ses ataması silinsin mi? Ses dosyasının kendisi silinmeyecek.",
+                L"Remove the selected sound binding? The audio file itself will not be deleted."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_YESNO | MB_ICONQUESTION
+        );
+
+        if (answer != IDYES)
+        {
+            return false;
+        }
     }
 
     pendingBindings_.erase(
