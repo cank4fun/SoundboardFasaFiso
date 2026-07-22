@@ -1,7 +1,9 @@
 #pragma once
 
 #include "audio/MicrophoneProcessingSettings.hpp"
+#include "audio/RnNoiseSuppressor.hpp"
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -16,8 +18,13 @@ struct MicrophoneProcessingSnapshot
 
     bool inputClipped = false;
     bool invalidSampleDetected = false;
+    bool noiseSuppressionRequested = false;
+    bool noiseSuppressionActive = false;
+    bool noiseSuppressionFailed = false;
     bool bypassed = true;
     bool configurationValid = true;
+
+    float voiceActivityProbability = 0.0f;
 };
 
 class MicrophoneProcessor
@@ -54,6 +61,7 @@ private:
     [[nodiscard]] float ProcessHighPass(float sample);
     [[nodiscard]] float ProcessCompressor(float sample);
     [[nodiscard]] float ProcessLimiter(float sample) const;
+    [[nodiscard]] float NoiseSuppressionMix() const noexcept;
 
     void PublishSnapshot(
         const MicrophoneProcessingSnapshot& snapshot
@@ -77,6 +85,12 @@ private:
 
     float limiterCeilingLinear_ = 1.0f;
 
+    RnNoiseSuppressor noiseSuppressor_;
+    std::array<float, SamplesPerBlock> preNoiseSuppressionBuffer_{};
+    std::array<float, SamplesPerBlock> noiseSuppressedBuffer_{};
+    bool noiseSuppressionAvailable_ = false;
+    bool noiseSuppressionFailed_ = false;
+
     std::atomic<std::uint64_t> snapshotSequence_{0};
     std::atomic<float> rawPeak_{0.0f};
     std::atomic<float> rawRms_{0.0f};
@@ -84,6 +98,10 @@ private:
     std::atomic<float> processedRms_{0.0f};
     std::atomic_bool inputClipped_{false};
     std::atomic_bool invalidSampleDetected_{false};
+    std::atomic_bool noiseSuppressionRequested_{false};
+    std::atomic_bool noiseSuppressionActive_{false};
+    std::atomic_bool noiseSuppressionFailedSnapshot_{false};
     std::atomic_bool bypassed_{true};
     std::atomic_bool snapshotConfigurationValid_{true};
+    std::atomic<float> voiceActivityProbability_{0.0f};
 };

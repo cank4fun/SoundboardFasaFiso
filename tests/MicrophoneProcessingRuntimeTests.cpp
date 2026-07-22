@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <limits>
 #include <thread>
@@ -210,6 +211,91 @@ namespace
             snapshot.processedPeak <= expectedCeiling + 0.0001f;
     }
 
+    bool TestNoiseSuppressionProducesProcessedStereo()
+    {
+        MicrophoneProcessingRuntime runtime;
+        TestSink sink;
+        MicrophoneProcessingSettings settings;
+        settings.enabled = true;
+        settings.highPassEnabled = false;
+        settings.noiseSuppressionEnabled = true;
+        settings.noiseSuppressionLevel =
+            MicrophoneNoiseSuppressionLevel::Balanced;
+        settings.compressorEnabled = false;
+        settings.limiterEnabled = false;
+
+        if (!runtime.Initialize(
+                MicrophoneProcessingRuntime::RequiredSampleRate,
+                MicrophoneProcessingRuntime::RequiredInputChannels,
+                settings,
+                &CaptureOutput,
+                &sink
+            ))
+        {
+            return false;
+        }
+
+        std::array<float, StereoSampleCount> input{};
+        std::uint32_t randomState = 0x12345678U;
+        float phase = 0.0f;
+        constexpr float twoPi = 6.28318530717958647692f;
+
+        for (std::size_t frame = 0;
+            frame < MicrophoneProcessor::SamplesPerBlock;
+            ++frame)
+        {
+            randomState = randomState * 1664525U + 1013904223U;
+            const float noise =
+                (static_cast<float>((randomState >> 8U) & 0xFFFFU) /
+                    32767.5f - 1.0f) * 0.08f;
+            const float sample = 0.12f * std::sin(phase) + noise;
+            const std::size_t index = frame * 2;
+            input[index] = sample;
+            input[index + 1] = sample;
+            phase += twoPi * 220.0f /
+                static_cast<float>(
+                    MicrophoneProcessingRuntime::RequiredSampleRate
+                );
+        }
+
+        const ma_uint32 written = runtime.PushInputFrames(
+            input.data(),
+            static_cast<ma_uint32>(
+                MicrophoneProcessor::SamplesPerBlock
+            )
+        );
+
+        const bool received = WaitForOutput(sink);
+        const auto snapshot = runtime.GetSnapshot();
+        bool outputValid = received;
+        bool outputChanged = false;
+
+        for (std::size_t frame = 0;
+            frame < MicrophoneProcessor::SamplesPerBlock && outputValid;
+            ++frame)
+        {
+            const std::size_t index = frame * 2;
+            outputValid = std::isfinite(sink.samples[index]) &&
+                std::isfinite(sink.samples[index + 1]) &&
+                NearlyEqual(
+                    sink.samples[index],
+                    sink.samples[index + 1]
+                );
+            outputChanged = outputChanged ||
+                !NearlyEqual(sink.samples[index], input[index], 0.000001f);
+        }
+
+        runtime.Shutdown();
+
+        return written == MicrophoneProcessor::SamplesPerBlock &&
+            outputValid &&
+            outputChanged &&
+            snapshot.noiseSuppressionRequested &&
+            snapshot.noiseSuppressionActive &&
+            !snapshot.noiseSuppressionFailed &&
+            !snapshot.bypassed;
+    }
+
     bool TestRejectsInvalidSettings()
     {
         MicrophoneProcessingRuntime runtime;
@@ -240,6 +326,8 @@ int main()
         {"Rejects unsupported format", &TestRejectsUnsupportedFormat},
         {"Bypass preserves stereo", &TestBypassPreservesStereoSamples},
         {"Limiter emits mono stereo", &TestLimiterProducesMonoStereoOutput},
+        {"Noise suppression emits processed stereo",
+            &TestNoiseSuppressionProducesProcessedStereo},
         {"Rejects invalid settings", &TestRejectsInvalidSettings}
     };
 

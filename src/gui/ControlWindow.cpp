@@ -4190,8 +4190,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         microphoneUnavailableFeaturesCaption_,
         Localization::Text(
-            L"Presetler mevcut native filtreleri ayarlar. Noise suppression ve AGC sonraki aşamada eklenecek.",
-            L"Presets configure the current native filters. Noise suppression and AGC will be added in a later phase."
+            L"Noise suppression config.txt üzerinden kullanılabilir. GUI kontrolü ve AGC sonraki aşamada eklenecek.",
+            L"Noise suppression is available through config.txt. Its GUI control and AGC will be added later."
         )
     );
 
@@ -4913,6 +4913,13 @@ void ControlWindow::UpdateLevelMeters()
                 L"Bypassed / disabled"
             );
         }
+        else if (snapshot.microphoneNoiseSuppressionFailed)
+        {
+            status = Localization::Text(
+                L"Aktif • noise suppression bypass edildi",
+                L"Active • noise suppression bypassed"
+            );
+        }
         else if (snapshot.microphoneInvalidSampleDetected)
         {
             status = Localization::Text(
@@ -4925,6 +4932,13 @@ void ControlWindow::UpdateLevelMeters()
             status = Localization::Text(
                 L"Aktif • giriş clipping",
                 L"Active • input clipping"
+            );
+        }
+        else if (snapshot.microphoneNoiseSuppressionActive)
+        {
+            status = Localization::Text(
+                L"Aktif • noise suppression",
+                L"Active • noise suppression"
             );
         }
         else
