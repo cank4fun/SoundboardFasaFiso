@@ -48,6 +48,13 @@ public:
     void Reset();
 
 private:
+    void ConfigureProcessingState();
+    void ResetProcessingState();
+
+    [[nodiscard]] float ProcessHighPass(float sample);
+    [[nodiscard]] float ProcessCompressor(float sample);
+    [[nodiscard]] float ProcessLimiter(float sample) const;
+
     void PublishSnapshot(
         const MicrophoneProcessingSnapshot& snapshot
     );
@@ -55,6 +62,20 @@ private:
     MicrophoneProcessingSettings settings_{};
     bool initialized_ = false;
     bool configurationValid_ = true;
+
+    float highPassB0_ = 1.0f;
+    float highPassB1_ = 0.0f;
+    float highPassB2_ = 0.0f;
+    float highPassA1_ = 0.0f;
+    float highPassA2_ = 0.0f;
+    float highPassState1_ = 0.0f;
+    float highPassState2_ = 0.0f;
+
+    float compressorAttackCoefficient_ = 0.0f;
+    float compressorReleaseCoefficient_ = 0.0f;
+    float compressorEnvelope_ = 0.0f;
+
+    float limiterCeilingLinear_ = 1.0f;
 
     std::atomic<std::uint64_t> snapshotSequence_{0};
     std::atomic<float> rawPeak_{0.0f};

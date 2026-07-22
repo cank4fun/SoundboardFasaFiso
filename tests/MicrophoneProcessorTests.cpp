@@ -110,11 +110,22 @@ namespace
         );
     }
 
-    void TestEnabledSettingsRemainBypassedUntilStagesExist()
+    MicrophoneProcessingSettings NativeStageSettings()
     {
-        MicrophoneProcessor processor;
         MicrophoneProcessingSettings settings;
         settings.enabled = true;
+        settings.noiseSuppressionEnabled = false;
+        settings.agcEnabled = false;
+        return settings;
+    }
+
+    void TestEnabledWithoutNativeStagesIsTransparent()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = false;
+        settings.compressorEnabled = false;
+        settings.limiterEnabled = false;
 
         Expect(processor.Initialize(settings), "enabled settings initialize");
 
@@ -128,11 +139,197 @@ namespace
         );
         Expect(
             samples == original,
-            "the foundation does not change samples before stages exist"
+            "no native stages is sample-transparent"
         );
         Expect(
             processor.GetSnapshot().bypassed,
-            "the foundation explicitly reports bypass"
+            "no native stages reports bypass"
+        );
+    }
+
+    void TestHighPassRejectsDc()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = true;
+        settings.highPassHz = 80.0f;
+        settings.compressorEnabled = false;
+        settings.limiterEnabled = false;
+
+        Expect(processor.Initialize(settings), "high-pass settings initialize");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        input.fill(0.5f);
+
+        for (int block = 0; block < 100; ++block)
+        {
+            Expect(
+                processor.ProcessBlock(input, output),
+                "high-pass DC block is processed"
+            );
+        }
+
+        const MicrophoneProcessingSnapshot snapshot =
+            processor.GetSnapshot();
+        Expect(
+            snapshot.processedRms < 0.001f,
+            "high-pass strongly rejects settled DC"
+        );
+        Expect(!snapshot.bypassed, "high-pass reports active processing");
+    }
+
+    void TestHighPassPreservesVoiceBandTone()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = true;
+        settings.highPassHz = 80.0f;
+        settings.compressorEnabled = false;
+        settings.limiterEnabled = false;
+
+        Expect(processor.Initialize(settings), "voice-band settings initialize");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        constexpr float frequency = 1000.0f;
+        constexpr float amplitude = 0.25f;
+        constexpr float twoPi = 6.28318530717958647692f;
+
+        for (std::size_t index = 0; index < input.size(); ++index)
+        {
+            input[index] = amplitude * std::sin(
+                twoPi * frequency * static_cast<float>(index) /
+                static_cast<float>(MicrophoneProcessor::ProcessingSampleRate)
+            );
+        }
+
+        for (int block = 0; block < 4; ++block)
+        {
+            Expect(
+                processor.ProcessBlock(input, output),
+                "voice-band tone block is processed"
+            );
+        }
+
+        const MicrophoneProcessingSnapshot snapshot =
+            processor.GetSnapshot();
+        Expect(
+            snapshot.processedRms > snapshot.rawRms * 0.98f,
+            "80 Hz high-pass preserves a 1 kHz tone"
+        );
+        Expect(
+            snapshot.processedRms < snapshot.rawRms * 1.02f,
+            "high-pass does not boost the voice-band tone"
+        );
+    }
+
+    void TestCompressorReducesSustainedLoudSignal()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = false;
+        settings.compressorEnabled = true;
+        settings.compressorThresholdDb = -24.0f;
+        settings.compressorRatio = 4.0f;
+        settings.compressorAttackMs = 1.0f;
+        settings.compressorReleaseMs = 100.0f;
+        settings.compressorMakeupDb = 0.0f;
+        settings.limiterEnabled = false;
+
+        Expect(processor.Initialize(settings), "compressor settings initialize");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        input.fill(0.5f);
+
+        for (int block = 0; block < 20; ++block)
+        {
+            Expect(
+                processor.ProcessBlock(input, output),
+                "compressor loud block is processed"
+            );
+        }
+
+        const MicrophoneProcessingSnapshot snapshot =
+            processor.GetSnapshot();
+        Expect(
+            snapshot.processedRms < 0.14f,
+            "compressor reduces sustained loud speech"
+        );
+        Expect(
+            snapshot.processedRms > 0.08f,
+            "compressor output remains within the expected range"
+        );
+    }
+
+    void TestCompressorLeavesQuietSignalNearUnity()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = false;
+        settings.compressorEnabled = true;
+        settings.compressorThresholdDb = -24.0f;
+        settings.compressorRatio = 4.0f;
+        settings.compressorAttackMs = 1.0f;
+        settings.compressorReleaseMs = 100.0f;
+        settings.compressorMakeupDb = 0.0f;
+        settings.limiterEnabled = false;
+
+        Expect(processor.Initialize(settings), "quiet compressor settings initialize");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        input.fill(0.02f);
+
+        Expect(
+            processor.ProcessBlock(input, output),
+            "compressor quiet block is processed"
+        );
+        Expect(
+            NearlyEqual(output.back(), 0.02f, 0.0001f),
+            "compressor leaves below-threshold signal near unity"
+        );
+    }
+
+    void TestLimiterEnforcesCeiling()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = false;
+        settings.compressorEnabled = false;
+        settings.limiterEnabled = true;
+        settings.limiterCeilingDb = -6.0f;
+
+        Expect(processor.Initialize(settings), "limiter settings initialize");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        input[0] = 0.9f;
+        input[1] = -0.9f;
+        input[2] = 0.25f;
+
+        Expect(
+            processor.ProcessBlock(input, output),
+            "limiter block is processed"
+        );
+
+        const float ceiling = std::pow(10.0f, -6.0f / 20.0f);
+        Expect(
+            NearlyEqual(output[0], ceiling),
+            "positive peak is limited to the ceiling"
+        );
+        Expect(
+            NearlyEqual(output[1], -ceiling),
+            "negative peak is limited to the ceiling"
+        );
+        Expect(
+            NearlyEqual(output[2], 0.25f),
+            "signal below the ceiling is unchanged"
+        );
+        Expect(
+            processor.GetSnapshot().processedPeak <= ceiling + 0.00001f,
+            "published processed peak respects the limiter ceiling"
         );
     }
 
@@ -283,7 +480,12 @@ int main()
 {
     TestConstantsAndResetState();
     TestDisabledProcessingIsTransparent();
-    TestEnabledSettingsRemainBypassedUntilStagesExist();
+    TestEnabledWithoutNativeStagesIsTransparent();
+    TestHighPassRejectsDc();
+    TestHighPassPreservesVoiceBandTone();
+    TestCompressorReducesSustainedLoudSignal();
+    TestCompressorLeavesQuietSignalNearUnity();
+    TestLimiterEnforcesCeiling();
     TestInvalidConfigurationFallsBackSafely();
     TestInvalidUpdatesAreTransactional();
     TestInvalidBuffersAreRejected();
