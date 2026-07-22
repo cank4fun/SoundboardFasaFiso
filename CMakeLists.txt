@@ -62,6 +62,7 @@ add_executable(
     src/main.cpp
     src/audio/Audio.cpp
     src/audio/MicrophoneProcessingSettings.cpp
+    src/audio/MicrophoneProcessor.cpp
     $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
     src/config/Config.cpp
     src/diagnostics/Logger.cpp
@@ -238,6 +239,50 @@ if(BUILD_TESTING)
     add_test(
         NAME MicrophoneProcessingSettings
         COMMAND SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoMicrophoneProcessorTests
+        EXCLUDE_FROM_ALL
+        tests/MicrophoneProcessorTests.cpp
+        src/audio/MicrophoneProcessor.cpp
+        src/audio/MicrophoneProcessingSettings.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoMicrophoneProcessorTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoMicrophoneProcessorTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoMicrophoneProcessorTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoMicrophoneProcessorTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME MicrophoneProcessor
+        COMMAND SoundBoardFasaFisoMicrophoneProcessorTests
     )
 endif()
 
