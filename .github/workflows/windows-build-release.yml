@@ -78,6 +78,7 @@ jobs:
           --target
           SoundBoardFasaFisoMicrophoneProcessingSettingsTests
           SoundBoardFasaFisoMicrophoneProcessorTests
+          SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
           --parallel
 
       - name: Run tests

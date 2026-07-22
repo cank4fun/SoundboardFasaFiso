@@ -63,6 +63,7 @@ add_executable(
     src/audio/Audio.cpp
     src/audio/MicrophoneProcessingSettings.cpp
     src/audio/MicrophoneProcessor.cpp
+    src/audio/MicrophoneProcessingRuntime.cpp
     $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
     src/config/Config.cpp
     src/diagnostics/Logger.cpp
@@ -283,6 +284,58 @@ if(BUILD_TESTING)
     add_test(
         NAME MicrophoneProcessor
         COMMAND SoundBoardFasaFisoMicrophoneProcessorTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
+        EXCLUDE_FROM_ALL
+        tests/MicrophoneProcessingRuntimeTests.cpp
+        src/audio/MicrophoneProcessingRuntime.cpp
+        src/audio/MicrophoneProcessor.cpp
+        src/audio/MicrophoneProcessingSettings.cpp
+        $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
+        SYSTEM PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME MicrophoneProcessingRuntime
+        COMMAND SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
     )
 endif()
 
