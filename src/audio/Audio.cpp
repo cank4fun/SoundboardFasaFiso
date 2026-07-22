@@ -1058,23 +1058,23 @@ bool Audio::InitializeMicrophone(
         std::memory_order_release
     );
 
-    const bool nativeProcessingRequested =
+    const bool processingRequested =
         microphoneProcessingSettings_.enabled &&
         (microphoneProcessingSettings_.highPassEnabled ||
+            microphoneProcessingSettings_.noiseSuppressionEnabled ||
             microphoneProcessingSettings_.compressorEnabled ||
             microphoneProcessingSettings_.limiterEnabled);
 
     if (microphoneProcessingSettings_.enabled &&
-        (microphoneProcessingSettings_.noiseSuppressionEnabled ||
-            microphoneProcessingSettings_.agcEnabled))
+        microphoneProcessingSettings_.agcEnabled)
     {
         std::cerr << Localization::Text(
-            "Uyarı: Noise suppression ve AGC henüz uygulanmadı; bu aşamalar atlanacak.\n",
-            "Warning: Noise suppression and AGC are not implemented yet; these stages will be bypassed.\n"
+            "Uyarı: AGC henüz uygulanmadı; bu aşama atlanacak.\n",
+            "Warning: AGC is not implemented yet; this stage will be bypassed.\n"
         );
     }
 
-    if (nativeProcessingRequested)
+    if (processingRequested)
     {
         if (captureSampleRate !=
             MicrophoneProcessingRuntime::RequiredSampleRate)
@@ -1091,7 +1091,6 @@ bool Audio::InitializeMicrophone(
         {
             MicrophoneProcessingSettings activeSettings =
                 microphoneProcessingSettings_;
-            activeSettings.noiseSuppressionEnabled = false;
             activeSettings.agcEnabled = false;
 
             if (microphoneProcessingRuntime_.Initialize(
@@ -2361,6 +2360,10 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
             0.0f,
             1.0f
         );
+        snapshot.microphoneNoiseSuppressionActive =
+            processingSnapshot.noiseSuppressionActive;
+        snapshot.microphoneNoiseSuppressionFailed =
+            processingSnapshot.noiseSuppressionFailed;
         snapshot.microphoneInputClipped =
             processingSnapshot.inputClipped;
         snapshot.microphoneInvalidSampleDetected =

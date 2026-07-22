@@ -48,6 +48,8 @@ struct AudioLevelSnapshot
     bool monitorAvailable = false;
     bool microphoneAvailable = false;
     bool microphoneProcessingActive = false;
+    bool microphoneNoiseSuppressionActive = false;
+    bool microphoneNoiseSuppressionFailed = false;
     bool microphoneInputClipped = false;
     bool microphoneInvalidSampleDetected = false;
 
