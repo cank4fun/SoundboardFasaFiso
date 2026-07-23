@@ -185,22 +185,32 @@ jobs:
           $zip = $env:PORTABLE_ZIP
           $checksum = $env:PORTABLE_SHA256
           $title = "SoundBoardFasaFiso $tag"
+          $notes = "docs/releases/$tag.md"
 
           gh release view $tag 2>$null | Out-Null
 
           if ($LASTEXITCODE -eq 0) {
             gh release upload $tag $zip $checksum --clobber
           }
-          elseif ($tag -match "-") {
-            gh release create $tag $zip $checksum `
-              --title $title `
-              --generate-notes `
-              --prerelease
-          }
           else {
-            gh release create $tag $zip $checksum `
-              --title $title `
-              --generate-notes
+            $arguments = @(
+              "release", "create", $tag, $zip, $checksum,
+              "--title", $title,
+              "--verify-tag"
+            )
+
+            if (Test-Path $notes) {
+              $arguments += @("--notes-file", $notes)
+            }
+            else {
+              $arguments += "--generate-notes"
+            }
+
+            if ($tag -match "-") {
+              $arguments += "--prerelease"
+            }
+
+            & gh @arguments
           }
 
           if ($LASTEXITCODE -ne 0) {
