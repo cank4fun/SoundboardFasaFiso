@@ -1312,6 +1312,29 @@ bool Audio::InitializeRuntime()
             return false;
         }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        const float referenceVolume =
+            monitorMuted_ ? 0.0f : monitorVolume_;
+
+        if (!aecRenderReferenceMixer_.Initialize(referenceVolume))
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: AEC render referans mikseri başlatılamadı. Echo cancellation güvenli biçimde bypass edilecek. Hata: ",
+                    "Warning: The AEC render-reference mixer could not be initialized. Echo cancellation will be safely bypassed. Error: "
+                )
+                << aecRenderReferenceMixer_.LastError()
+                << '\n';
+        }
+        else
+        {
+            std::cout << Localization::Text(
+                "AEC render referansı: Hazır\n",
+                "AEC render reference: Ready\n"
+            );
+        }
+#endif
+
         if (outputEngine_.deviceName ==
             monitorEngine_.deviceName)
         {
@@ -1540,6 +1563,40 @@ bool Audio::InitializeVoiceFromFile(
         }
     }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.monitorSound &&
+        aecRenderReferenceMixer_.IsInitialized())
+    {
+        voice.aecReferenceSound =
+            std::make_unique<ma_sound>();
+
+        result =
+            ma_sound_init_from_file_w(
+                aecRenderReferenceMixer_.GetEngine(),
+                pathString.c_str(),
+                flags,
+                nullptr,
+                nullptr,
+                voice.aecReferenceSound.get()
+            );
+
+        if (result != MA_SUCCESS)
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: Ses AEC render referansına yüklenemedi; normal oynatma devam edecek: ",
+                    "Warning: The sound could not be loaded into the AEC render reference; normal playback will continue: "
+                )
+                << PathToUtf8(definition.path)
+                << Localization::Text(". Hata: ", ". Error: ")
+                << result
+                << '\n';
+
+            voice.aecReferenceSound.reset();
+        }
+    }
+#endif
+
     const ma_bool32 shouldLoop =
         definition.mode == PlaybackMode::Loop
             ? MA_TRUE
@@ -1567,6 +1624,21 @@ bool Audio::InitializeVoiceFromFile(
             shouldLoop
         );
     }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound)
+    {
+        ma_sound_set_volume(
+            voice.aecReferenceSound.get(),
+            definition.volume
+        );
+
+        ma_sound_set_looping(
+            voice.aecReferenceSound.get(),
+            shouldLoop
+        );
+    }
+#endif
 
     return true;
 }
@@ -1639,6 +1711,39 @@ bool Audio::InitializeVoiceCopy(
         }
     }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (sourceVoice.aecReferenceSound &&
+        aecRenderReferenceMixer_.IsInitialized())
+    {
+        voice.aecReferenceSound =
+            std::make_unique<ma_sound>();
+
+        result =
+            ma_sound_init_copy(
+                aecRenderReferenceMixer_.GetEngine(),
+                sourceVoice.aecReferenceSound.get(),
+                flags,
+                nullptr,
+                voice.aecReferenceSound.get()
+            );
+
+        if (result != MA_SUCCESS)
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: Overlap voice AEC render referansı için oluşturulamadı; normal oynatma devam edecek: ",
+                    "Warning: The overlap voice could not be created for the AEC render reference; normal playback will continue: "
+                )
+                << PathToUtf8(definition.path)
+                << Localization::Text(". Hata: ", ". Error: ")
+                << result
+                << '\n';
+
+            voice.aecReferenceSound.reset();
+        }
+    }
+#endif
+
     ma_sound_set_volume(
         voice.outputSound.get(),
         definition.volume
@@ -1661,6 +1766,21 @@ bool Audio::InitializeVoiceCopy(
             MA_FALSE
         );
     }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound)
+    {
+        ma_sound_set_volume(
+            voice.aecReferenceSound.get(),
+            definition.volume
+        );
+
+        ma_sound_set_looping(
+            voice.aecReferenceSound.get(),
+            MA_FALSE
+        );
+    }
+#endif
 
     return true;
 }
@@ -1793,6 +1913,25 @@ bool Audio::PrepareVoiceForPlayback(
         success = false;
     }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound &&
+        !PrepareSoundForPlayback(
+            voice.aecReferenceSound.get()
+        ))
+    {
+        std::cerr
+            << Localization::Text(
+                "Uyarı: AEC render referansı hazırlanamadı; normal oynatma devam edecek: ",
+                "Warning: The AEC render reference could not be prepared; normal playback will continue: "
+            )
+            << soundId
+            << '\n';
+
+        ma_sound_uninit(voice.aecReferenceSound.get());
+        voice.aecReferenceSound.reset();
+    }
+#endif
+
     return success;
 }
 
@@ -1851,6 +1990,31 @@ bool Audio::StartVoice(
         }
     }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound)
+    {
+        result = ma_sound_start(
+            voice.aecReferenceSound.get()
+        );
+
+        if (result != MA_SUCCESS)
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: AEC render referansı başlatılamadı; normal oynatma devam edecek: ",
+                    "Warning: The AEC render reference could not be started; normal playback will continue: "
+                )
+                << soundId
+                << Localization::Text(". Hata: ", ". Error: ")
+                << result
+                << '\n';
+
+            ma_sound_uninit(voice.aecReferenceSound.get());
+            voice.aecReferenceSound.reset();
+        }
+    }
+#endif
+
     return true;
 }
 
@@ -1873,6 +2037,17 @@ bool Audio::IsVoicePlaying(const Voice& voice)
 
 void Audio::DestroyVoice(Voice& voice)
 {
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound)
+    {
+        ma_sound_uninit(
+            voice.aecReferenceSound.get()
+        );
+
+        voice.aecReferenceSound.reset();
+    }
+#endif
+
     if (voice.monitorSound)
     {
         ma_sound_uninit(
@@ -2184,12 +2359,40 @@ MuteToggleResult Audio::ToggleOutputMute()
 
 MuteToggleResult Audio::ToggleMonitorMute()
 {
-    return ToggleEngineMute(
+    const MuteToggleResult result = ToggleEngineMute(
         monitorEngine_,
         monitorVolume_,
         monitorMuted_,
         Localization::Text("Monitör çıkışı", "Monitor output")
     );
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if ((result == MuteToggleResult::Muted ||
+            result == MuteToggleResult::Unmuted) &&
+        aecRenderReferenceMixer_.IsInitialized())
+    {
+        const float referenceVolume =
+            monitorMuted_ ? 0.0f : monitorVolume_;
+
+        if (!aecRenderReferenceMixer_.SetVolume(referenceVolume))
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: AEC render referansı monitör mute durumuyla eşitlenemedi. Audio runtime yeniden başlatılacak. Hata: ",
+                    "Warning: The AEC render reference could not be synchronized with the monitor mute state. The audio runtime will be restarted. Error: "
+                )
+                << aecRenderReferenceMixer_.LastError()
+                << '\n';
+
+            recoveryRequested_.store(
+                true,
+                std::memory_order_release
+            );
+        }
+    }
+#endif
+
+    return result;
 }
 
 MicrophoneTestMonitorResult Audio::SetMicrophoneTestMonitorEnabled(
@@ -2566,6 +2769,10 @@ void Audio::DestroyRuntime()
     }
 
     loadedSounds_.clear();
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    aecRenderReferenceMixer_.Reset();
+#endif
 
     if (monitorEngine_.initialized)
     {

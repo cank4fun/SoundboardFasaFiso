@@ -1,6 +1,10 @@
 #pragma once
 
 #include "audio/MicrophoneProcessingRuntime.hpp"
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+#include "audio/AecRenderReferenceMixer.hpp"
+#endif
 #include "miniaudio/miniaudio.h"
 #include "sound/PlaybackMode.hpp"
 
@@ -165,6 +169,10 @@ private:
     {
         std::unique_ptr<ma_sound> outputSound;
         std::unique_ptr<ma_sound> monitorSound;
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        std::unique_ptr<ma_sound> aecReferenceSound;
+#endif
     };
 
     struct LoadedSound
@@ -278,6 +286,10 @@ private:
     MicrophoneRoute microphoneMonitorRoute_;
     MicrophoneRoute microphoneTestMonitorRoute_;
     MicrophoneProcessingRuntime microphoneProcessingRuntime_;
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    AecRenderReferenceMixer aecRenderReferenceMixer_;
+#endif
 
     std::unordered_map<std::string, LoadedSound> loadedSounds_;
     std::unordered_map<std::string, SoundDefinition> soundDefinitions_;

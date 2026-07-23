@@ -319,6 +319,18 @@ if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
         "WebRTC AEC3 spike target: ${SOUNDBOARD_WEBRTC_TARGET}"
     )
 
+    target_sources(
+        SoundBoardFasaFiso
+        PRIVATE
+            src/audio/AecRenderReferenceMixer.cpp
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFiso
+        PRIVATE
+            SOUNDBOARD_ENABLE_WEBRTC_AEC3=1
+    )
+
     add_executable(
         SoundBoardFasaFisoWebRtcAec3Smoke
         spikes/WebRtcAec3BuildSmoke.cpp
