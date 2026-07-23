@@ -26,6 +26,19 @@ option(
     OFF
 )
 
+option(
+    SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE
+    "Build the isolated WebRTC AEC3 compile and processing smoke test"
+    OFF
+)
+
+set(
+    SOUNDBOARD_WEBRTC_TARGET
+    ""
+    CACHE STRING
+    "Optional imported CMake target provided by unofficial-webrtc"
+)
+
 include(CTest)
 
 set(SOUNDBOARD_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -257,6 +270,97 @@ add_custom_target(
 )
 
 add_dependencies(SoundBoardFasaFiso SyncRuntimeFiles)
+
+if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
+    find_package(unofficial-webrtc CONFIG REQUIRED)
+
+    if(SOUNDBOARD_WEBRTC_TARGET STREQUAL "")
+        foreach(
+            webrtc_candidate
+            IN ITEMS
+                unofficial::webrtc::webrtc
+                unofficial-webrtc::webrtc
+                webrtc::webrtc
+        )
+            if(TARGET "${webrtc_candidate}")
+                set(SOUNDBOARD_WEBRTC_TARGET "${webrtc_candidate}")
+                break()
+            endif()
+        endforeach()
+    endif()
+
+    if(SOUNDBOARD_WEBRTC_TARGET STREQUAL "")
+        get_property(
+            SOUNDBOARD_IMPORTED_TARGETS
+            DIRECTORY
+            PROPERTY IMPORTED_TARGETS
+        )
+
+        foreach(webrtc_candidate IN LISTS SOUNDBOARD_IMPORTED_TARGETS)
+            if(webrtc_candidate MATCHES "(^|::)webrtc$")
+                set(SOUNDBOARD_WEBRTC_TARGET "${webrtc_candidate}")
+                break()
+            endif()
+        endforeach()
+    endif()
+
+    if(
+        SOUNDBOARD_WEBRTC_TARGET STREQUAL ""
+        OR NOT TARGET "${SOUNDBOARD_WEBRTC_TARGET}"
+    )
+        message(FATAL_ERROR
+            "The unofficial-webrtc package was found, but its imported target "
+            "could not be selected. Configure again with "
+            "-DSOUNDBOARD_WEBRTC_TARGET=<target-name>."
+        )
+    endif()
+
+    message(STATUS
+        "WebRTC AEC3 spike target: ${SOUNDBOARD_WEBRTC_TARGET}"
+    )
+
+    add_executable(
+        SoundBoardFasaFisoWebRtcAec3Smoke
+        spikes/WebRtcAec3BuildSmoke.cpp
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFisoWebRtcAec3Smoke
+        PRIVATE
+            "${SOUNDBOARD_WEBRTC_TARGET}"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoWebRtcAec3Smoke
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoWebRtcAec3Smoke
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        set_property(
+            TARGET SoundBoardFasaFisoWebRtcAec3Smoke
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    if(BUILD_TESTING)
+        add_test(
+            NAME WebRtcAec3BuildSmoke
+            COMMAND SoundBoardFasaFisoWebRtcAec3Smoke
+        )
+    endif()
+endif()
 
 if(BUILD_TESTING)
     add_executable(
