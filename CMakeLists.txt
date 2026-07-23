@@ -354,10 +354,65 @@ if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
         )
     endif()
 
+    add_executable(
+        SoundBoardFasaFisoWebRtcAec3ProcessorTests
+        tests/WebRtcAec3ProcessorTests.cpp
+        src/audio/WebRtcAec3Processor.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoWebRtcAec3ProcessorTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFisoWebRtcAec3ProcessorTests
+        PRIVATE
+            "${SOUNDBOARD_WEBRTC_TARGET}"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoWebRtcAec3ProcessorTests
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoWebRtcAec3ProcessorTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoWebRtcAec3ProcessorTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoWebRtcAec3ProcessorTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
     if(BUILD_TESTING)
         add_test(
             NAME WebRtcAec3BuildSmoke
             COMMAND SoundBoardFasaFisoWebRtcAec3Smoke
+        )
+
+        add_test(
+            NAME WebRtcAec3Processor
+            COMMAND SoundBoardFasaFisoWebRtcAec3ProcessorTests
         )
     endif()
 endif()
