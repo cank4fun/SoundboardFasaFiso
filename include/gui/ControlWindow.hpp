@@ -8,6 +8,7 @@
 #define NOMINMAX
 #endif
 
+#include "audio/PlaybackState.hpp"
 #include "config/Config.hpp"
 #include "update/UpdateChecker.hpp"
 
@@ -78,7 +79,8 @@ private:
         Main,
         Settings,
         MicrophoneProcessing,
-        Hotkeys
+        Hotkeys,
+        Playback
     };
 
     static constexpr int InitialClientWidth = 960;
@@ -118,6 +120,12 @@ private:
     static constexpr int IdMicrophoneProcessingPreset = 1029;
     static constexpr int IdMicrophoneTestMonitor = 1030;
     static constexpr int IdMicrophoneNoiseSuppressionLevel = 1031;
+    static constexpr int IdPlaybackTab = 1032;
+    static constexpr int IdPlaybackList = 1033;
+    static constexpr int IdPlaybackPauseResume = 1034;
+    static constexpr int IdPlaybackStop = 1035;
+    static constexpr int IdPlaybackSeekSlider = 1036;
+    static constexpr int IdPlaybackVolumeSlider = 1037;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -178,6 +186,13 @@ private:
     void UpdateVolumeLabels();
     void UpdateBindingVolumeLabel();
     void UpdateLevelMeters();
+    void UpdatePlaybackControls(bool force = false);
+    void LoadSelectedPlaybackIntoControls();
+    void ToggleSelectedPlaybackPause();
+    void StopSelectedPlayback();
+    void SeekSelectedPlayback();
+    void SetSelectedPlaybackVolume();
+    [[nodiscard]] PlaybackId SelectedPlaybackId() const noexcept;
     void ToggleMicrophoneTestMonitor();
     void StopMicrophoneTestMonitor();
     void HandleUpdateCheckCompleted();
@@ -238,6 +253,7 @@ private:
     HWND settingsTabButton_ = nullptr;
     HWND microphoneProcessingTabButton_ = nullptr;
     HWND hotkeysTabButton_ = nullptr;
+    HWND playbackTabButton_ = nullptr;
     HWND statusCaption_ = nullptr;
     HWND statusValue_ = nullptr;
 
@@ -248,6 +264,22 @@ private:
     HWND mainMonitorLevelMeter_ = nullptr;
     HWND mainMicrophoneMeterCaption_ = nullptr;
     HWND mainMicrophoneLevelMeter_ = nullptr;
+
+    HWND playbackGroup_ = nullptr;
+    HWND playbackList_ = nullptr;
+    HWND playbackDetailsGroup_ = nullptr;
+    HWND playbackSoundCaption_ = nullptr;
+    HWND playbackSoundValue_ = nullptr;
+    HWND playbackStatusCaption_ = nullptr;
+    HWND playbackStatusValue_ = nullptr;
+    HWND playbackPositionCaption_ = nullptr;
+    HWND playbackPositionValue_ = nullptr;
+    HWND playbackSeekSlider_ = nullptr;
+    HWND playbackVolumeCaption_ = nullptr;
+    HWND playbackVolumeSlider_ = nullptr;
+    HWND playbackVolumeValue_ = nullptr;
+    HWND playbackPauseResumeButton_ = nullptr;
+    HWND playbackStopButton_ = nullptr;
 
     HWND settingsGroup_ = nullptr;
     HWND outputCaption_ = nullptr;
@@ -395,6 +427,17 @@ private:
     bool microphoneMeterAvailable_ = false;
     bool microphoneProcessingMeterAvailable_ = false;
     bool populatingMicrophoneProcessingControls_ = false;
+
+    std::vector<PlaybackSnapshot> playbackSnapshots_;
+    PlaybackId selectedPlaybackId_ = InvalidPlaybackId;
+    ULONGLONG lastPlaybackRefreshTick_ = 0;
+    bool populatingPlaybackControls_ = false;
+    bool playbackSeekDragging_ = false;
+    PlaybackId playbackSeekInteractionId_ = InvalidPlaybackId;
+    int playbackSeekPreviewPosition_ = 0;
+    PlaybackId pendingPlaybackSeekId_ = InvalidPlaybackId;
+    float pendingPlaybackSeekSeconds_ = 0.0f;
+    ULONGLONG pendingPlaybackSeekTick_ = 0;
 
     std::jthread updateCheckThread_;
     std::mutex updateCheckMutex_;

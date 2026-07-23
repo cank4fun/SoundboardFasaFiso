@@ -26,13 +26,33 @@ Overlap voices receive independent IDs. Restart, toggle and loop modes continue
 to preserve their existing hotkey behavior. A stopped or restarted voice
 invalidates its previous session ID.
 
+## Active-playback controls
+
+The native control panel now includes an **Active Playbacks** tab. It refreshes
+from the session snapshot API without changing the existing hotkey paths and
+keeps the selected `PlaybackId` stable while positions advance. The selected
+session can be paused or resumed, stopped independently, seeked within decoded
+duration and given a temporary runtime volume. Double-clicking a session also
+toggles pause/resume.
+
+The controls operate on a running session only. They do not rewrite the
+binding's saved volume or playback mode; persistent binding edits remain in the
+Home editor and are applied through **Save and apply**.
+
+Playback time keeps fractional seconds, using centiseconds for clips below ten
+seconds. The seek thumb is not overwritten by the periodic runtime refresh while
+the user has mouse capture, and the final seek is committed once when dragging
+ends. This is especially important for the bundled example clips, which are only
+about half a second long. After a seek is committed, the UI keeps the target
+position until the audio engine reports the updated cursor; this prevents the
+thumb from briefly jumping back to the pre-seek position.
+
 ## Planned follow-up
 
-1. Add the active-playback panel, progress bars and seek interaction.
-2. Add configurable fade-in and fade-out envelopes.
-3. Add richer retrigger policies and queue controls.
-4. Add categories, search, favorites and profiles.
-5. Add Auto-PTT, recording, editing, TTS and external control APIs.
+1. Add configurable fade-in and fade-out envelopes.
+2. Add richer retrigger policies and queue controls.
+3. Add categories, search, favorites and profiles.
+4. Add Auto-PTT, recording, editing, TTS and external control APIs.
 
 ## Configuration durability
 

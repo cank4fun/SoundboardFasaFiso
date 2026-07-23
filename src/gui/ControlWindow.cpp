@@ -51,6 +51,10 @@ namespace
     constexpr int ThemeToggleWidth = 190;
     constexpr int CardRadius = 12;
     constexpr int MaximumContentWidth = 1260;
+    constexpr ULONGLONG PlaybackRefreshIntervalMilliseconds = 100;
+    constexpr ULONGLONG PlaybackSeekPendingMilliseconds = 1000;
+    constexpr int PlaybackSeekMinimum = 0;
+    constexpr int PlaybackSeekMaximum = 1000;
 
     COLORREF BlendColor(
         const COLORREF first,
@@ -132,6 +136,105 @@ namespace
         return std::to_wstring(
             static_cast<int>(volume * 100.0f + 0.5f)
         ) + L"%";
+    }
+
+    int PlaybackSeekSliderPosition(
+        const float positionSeconds,
+        const float durationSeconds
+    )
+    {
+        if (!std::isfinite(positionSeconds) ||
+            !std::isfinite(durationSeconds) ||
+            durationSeconds <= 0.0f)
+        {
+            return PlaybackSeekMinimum;
+        }
+
+        return static_cast<int>(std::clamp(
+            positionSeconds / durationSeconds,
+            0.0f,
+            1.0f
+        ) * static_cast<float>(PlaybackSeekMaximum) + 0.5f);
+    }
+
+    float PlaybackSeekSeconds(
+        const int sliderPosition,
+        const float durationSeconds
+    )
+    {
+        if (!std::isfinite(durationSeconds) || durationSeconds <= 0.0f)
+        {
+            return 0.0f;
+        }
+
+        const int clampedPosition = std::clamp(
+            sliderPosition,
+            PlaybackSeekMinimum,
+            PlaybackSeekMaximum
+        );
+
+        return durationSeconds *
+            static_cast<float>(clampedPosition) /
+            static_cast<float>(PlaybackSeekMaximum);
+    }
+
+    std::wstring FormatPlaybackTime(
+        const float seconds,
+        const float referenceDuration
+    )
+    {
+        const double safeSeconds = std::max(
+            0.0,
+            std::isfinite(seconds)
+                ? static_cast<double>(seconds)
+                : 0.0
+        );
+        const double safeDuration = std::max(
+            0.0,
+            std::isfinite(referenceDuration)
+                ? static_cast<double>(referenceDuration)
+                : 0.0
+        );
+
+        // Very short soundboard clips used to render as 0:00 / 0:00
+        // because the old formatter discarded the fractional second.
+        // Keep centiseconds below ten seconds and tenths afterwards.
+        const int fractionalDigits = safeDuration > 0.0 &&
+            safeDuration < 10.0
+            ? 2
+            : 1;
+        const unsigned long long fractionScale = fractionalDigits == 2
+            ? 100ULL
+            : 10ULL;
+        const auto totalUnits = static_cast<unsigned long long>(
+            std::llround(safeSeconds *
+                static_cast<double>(fractionScale))
+        );
+        const auto unitsPerHour = 3600ULL * fractionScale;
+        const auto unitsPerMinute = 60ULL * fractionScale;
+        const auto hours = totalUnits / unitsPerHour;
+        const auto minutes = (totalUnits / unitsPerMinute) % 60ULL;
+        const auto remainingSeconds =
+            (totalUnits / fractionScale) % 60ULL;
+        const auto fraction = totalUnits % fractionScale;
+
+        std::wostringstream text;
+        text << std::setfill(L'0');
+
+        if (hours != 0)
+        {
+            text << hours << L':'
+                << std::setw(2) << minutes << L':'
+                << std::setw(2) << remainingSeconds;
+        }
+        else
+        {
+            text << minutes << L':'
+                << std::setw(2) << remainingSeconds;
+        }
+
+        text << L'.' << std::setw(fractionalDigits) << fraction;
+        return text.str();
     }
 
     constexpr std::array MicrophoneProcessingPresetOrder{
@@ -476,6 +579,7 @@ void ControlWindow::Shutdown()
     settingsTabButton_ = nullptr;
     microphoneProcessingTabButton_ = nullptr;
     hotkeysTabButton_ = nullptr;
+    playbackTabButton_ = nullptr;
     statusCaption_ = nullptr;
     statusValue_ = nullptr;
     mainQuickGroup_ = nullptr;
@@ -485,6 +589,21 @@ void ControlWindow::Shutdown()
     mainMonitorLevelMeter_ = nullptr;
     mainMicrophoneMeterCaption_ = nullptr;
     mainMicrophoneLevelMeter_ = nullptr;
+    playbackGroup_ = nullptr;
+    playbackList_ = nullptr;
+    playbackDetailsGroup_ = nullptr;
+    playbackSoundCaption_ = nullptr;
+    playbackSoundValue_ = nullptr;
+    playbackStatusCaption_ = nullptr;
+    playbackStatusValue_ = nullptr;
+    playbackPositionCaption_ = nullptr;
+    playbackPositionValue_ = nullptr;
+    playbackSeekSlider_ = nullptr;
+    playbackVolumeCaption_ = nullptr;
+    playbackVolumeSlider_ = nullptr;
+    playbackVolumeValue_ = nullptr;
+    playbackPauseResumeButton_ = nullptr;
+    playbackStopButton_ = nullptr;
     settingsGroup_ = nullptr;
     outputCaption_ = nullptr;
     outputCombo_ = nullptr;
@@ -604,6 +723,16 @@ void ControlWindow::Shutdown()
     microphoneMeterAvailable_ = false;
     microphoneProcessingMeterAvailable_ = false;
     populatingMicrophoneProcessingControls_ = false;
+    playbackSnapshots_.clear();
+    selectedPlaybackId_ = InvalidPlaybackId;
+    lastPlaybackRefreshTick_ = 0;
+    populatingPlaybackControls_ = false;
+    playbackSeekDragging_ = false;
+    playbackSeekInteractionId_ = InvalidPlaybackId;
+    playbackSeekPreviewPosition_ = PlaybackSeekMinimum;
+    pendingPlaybackSeekId_ = InvalidPlaybackId;
+    pendingPlaybackSeekSeconds_ = 0.0f;
+    pendingPlaybackSeekTick_ = 0;
 }
 
 void ControlWindow::Show()
@@ -1082,6 +1211,30 @@ LRESULT ControlWindow::HandleWindowMessage(
             const int controlId = LOWORD(wParam);
             const int notificationCode = HIWORD(wParam);
 
+            if (controlId == IdPlaybackList &&
+                (notificationCode == LBN_SELCHANGE ||
+                    notificationCode == LBN_DBLCLK))
+            {
+                if (populatingPlaybackControls_)
+                {
+                    return 0;
+                }
+
+                selectedPlaybackId_ = SelectedPlaybackId();
+                playbackSeekDragging_ = false;
+                playbackSeekInteractionId_ = InvalidPlaybackId;
+                pendingPlaybackSeekId_ = InvalidPlaybackId;
+                pendingPlaybackSeekTick_ = 0;
+                LoadSelectedPlaybackIntoControls();
+
+                if (notificationCode == LBN_DBLCLK)
+                {
+                    ToggleSelectedPlaybackPause();
+                }
+
+                return 0;
+            }
+
             if (controlId == IdBindingsList &&
                 (notificationCode == LBN_SELCHANGE ||
                     notificationCode == LBN_DBLCLK))
@@ -1157,6 +1310,19 @@ LRESULT ControlWindow::HandleWindowMessage(
 
                 case IdHotkeysTab:
                     SetActivePage(ControlPage::Hotkeys);
+                    return 0;
+
+                case IdPlaybackTab:
+                    SetActivePage(ControlPage::Playback);
+                    UpdatePlaybackControls(true);
+                    return 0;
+
+                case IdPlaybackPauseResume:
+                    ToggleSelectedPlaybackPause();
+                    return 0;
+
+                case IdPlaybackStop:
+                    StopSelectedPlayback();
                     return 0;
 
                 case IdApplySettings:
@@ -1346,6 +1512,93 @@ LRESULT ControlWindow::HandleWindowMessage(
                 );
                 return 0;
             }
+
+            if (slider == playbackSeekSlider_)
+            {
+                if (!populatingPlaybackControls_)
+                {
+                    const int scrollCode = LOWORD(wParam);
+                    const int reportedPosition =
+                        scrollCode == TB_THUMBTRACK ||
+                            scrollCode == TB_THUMBPOSITION
+                        ? std::clamp(
+                            static_cast<int>(HIWORD(wParam)),
+                            PlaybackSeekMinimum,
+                            PlaybackSeekMaximum
+                        )
+                        : static_cast<int>(SendMessageW(
+                            playbackSeekSlider_,
+                            TBM_GETPOS,
+                            0,
+                            0
+                        ));
+
+                    playbackSeekPreviewPosition_ = reportedPosition;
+
+                    switch (scrollCode)
+                    {
+                    case TB_THUMBTRACK:
+                        playbackSeekDragging_ = true;
+                        playbackSeekInteractionId_ = SelectedPlaybackId();
+                        LoadSelectedPlaybackIntoControls();
+                        break;
+
+                    case TB_THUMBPOSITION:
+                        playbackSeekDragging_ = false;
+                        playbackSeekInteractionId_ = SelectedPlaybackId();
+                        SeekSelectedPlayback();
+                        playbackSeekInteractionId_ = InvalidPlaybackId;
+                        break;
+
+                    case TB_ENDTRACK:
+                        // Trackbars do not emit THUMBPOSITION on every input
+                        // path. Commit the preview once if a drag is still
+                        // active, but never refresh from a stale runtime
+                        // snapshot immediately after the seek.
+                        if (playbackSeekDragging_)
+                        {
+                            playbackSeekDragging_ = false;
+                            SeekSelectedPlayback();
+                        }
+                        playbackSeekInteractionId_ = InvalidPlaybackId;
+                        break;
+
+                    default:
+                        // Keyboard, page and channel clicks arrive through
+                        // line/page/top/bottom notifications. Treat the
+                        // trackbar's resulting position as one atomic seek.
+                        playbackSeekDragging_ = false;
+                        playbackSeekInteractionId_ = SelectedPlaybackId();
+                        SeekSelectedPlayback();
+                        playbackSeekInteractionId_ = InvalidPlaybackId;
+                        break;
+                    }
+                }
+
+                RedrawWindow(
+                    slider,
+                    nullptr,
+                    nullptr,
+                    RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW
+                );
+                return 0;
+            }
+
+            if (slider == playbackVolumeSlider_)
+            {
+                if (!populatingPlaybackControls_)
+                {
+                    SetSelectedPlaybackVolume();
+                }
+
+                RedrawWindow(
+                    slider,
+                    nullptr,
+                    nullptr,
+                    RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW
+                );
+                return 0;
+            }
             break;
         }
 
@@ -1511,6 +1764,9 @@ bool ControlWindow::CreateControls()
     hotkeysTabButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdHotkeysTab
     );
+    playbackTabButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdPlaybackTab
+    );
 
     statusCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     statusValue_ = createControl(L"STATIC", L"", SS_LEFT, 0);
@@ -1522,6 +1778,63 @@ bool ControlWindow::CreateControls()
     mainMonitorLevelMeter_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
     mainMicrophoneMeterCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     mainMicrophoneLevelMeter_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
+
+    playbackGroup_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
+    playbackList_ = createControl(
+        L"LISTBOX",
+        L"",
+        LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | WS_VSCROLL |
+            WS_TABSTOP,
+        IdPlaybackList,
+        WS_EX_CLIENTEDGE
+    );
+    playbackDetailsGroup_ = createControl(
+        L"STATIC", L"", SS_OWNERDRAW, 0
+    );
+    playbackSoundCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    playbackSoundValue_ = createControl(
+        L"STATIC", L"", SS_LEFT | SS_PATHELLIPSIS, 0
+    );
+    playbackStatusCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    playbackStatusValue_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    playbackPositionCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    playbackPositionValue_ = createControl(L"STATIC", L"", SS_RIGHT, 0);
+    playbackSeekSlider_ = createControl(
+        TRACKBAR_CLASSW,
+        L"",
+        TBS_HORZ | TBS_NOTICKS | WS_TABSTOP,
+        IdPlaybackSeekSlider
+    );
+    playbackVolumeCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    playbackVolumeSlider_ = createControl(
+        TRACKBAR_CLASSW,
+        L"",
+        TBS_HORZ | TBS_NOTICKS | WS_TABSTOP,
+        IdPlaybackVolumeSlider
+    );
+    playbackVolumeValue_ = createControl(L"STATIC", L"", SS_RIGHT, 0);
+    playbackPauseResumeButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
+        IdPlaybackPauseResume
+    );
+    playbackStopButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdPlaybackStop
+    );
+
+    SendMessageW(
+        playbackSeekSlider_,
+        TBM_SETRANGE,
+        TRUE,
+        MAKELPARAM(0, 1000)
+    );
+    SendMessageW(playbackSeekSlider_, TBM_SETPAGESIZE, 0, 25);
+    SendMessageW(
+        playbackVolumeSlider_,
+        TBM_SETRANGE,
+        TRUE,
+        MAKELPARAM(0, 100)
+    );
+    SendMessageW(playbackVolumeSlider_, TBM_SETPAGESIZE, 0, 5);
 
     settingsGroup_ = createControl(L"STATIC", L"", SS_OWNERDRAW, 0);
     outputCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
@@ -1897,10 +2210,18 @@ bool ControlWindow::CreateControls()
         headerLabel_, subtitleLabel_, themeToggleButton_,
         mainTabButton_, settingsTabButton_,
         microphoneProcessingTabButton_, hotkeysTabButton_,
+        playbackTabButton_,
         statusCaption_, statusValue_, mainQuickGroup_,
         mainOutputMeterCaption_, mainOutputLevelMeter_,
         mainMonitorMeterCaption_, mainMonitorLevelMeter_,
         mainMicrophoneMeterCaption_, mainMicrophoneLevelMeter_,
+        playbackGroup_, playbackList_, playbackDetailsGroup_,
+        playbackSoundCaption_, playbackSoundValue_,
+        playbackStatusCaption_, playbackStatusValue_,
+        playbackPositionCaption_, playbackPositionValue_,
+        playbackSeekSlider_, playbackVolumeCaption_,
+        playbackVolumeSlider_, playbackVolumeValue_,
+        playbackPauseResumeButton_, playbackStopButton_,
         settingsGroup_,
         outputCaption_, outputCombo_, outputVolumeCaption_,
         outputVolumeSlider_, outputLevelMeter_, outputVolumeValue_,
@@ -1981,6 +2302,7 @@ bool ControlWindow::CreateAccelerators()
         {FCONTROL | FVIRTKEY, static_cast<WORD>('3'), IdHotkeysTab},
         {FCONTROL | FVIRTKEY, static_cast<WORD>('4'),
             IdMicrophoneProcessingTab},
+        {FCONTROL | FVIRTKEY, static_cast<WORD>('5'), IdPlaybackTab},
         {FCONTROL | FVIRTKEY, static_cast<WORD>('S'), IdApplySettings},
         {FVIRTKEY, VK_ESCAPE, IdCancelHotkeyCapture}
     };
@@ -2069,7 +2391,7 @@ void ControlWindow::LayoutControls(
     constexpr int tabGap = 6;
     const HWND tabs[]{
         mainTabButton_, settingsTabButton_, hotkeysTabButton_,
-        microphoneProcessingTabButton_
+        microphoneProcessingTabButton_, playbackTabButton_
     };
 
     for (std::size_t index = 0; index < std::size(tabs); ++index)
@@ -2363,6 +2685,125 @@ void ControlWindow::LayoutControls(
                 TRUE
             );
         }
+    }
+    else if (activePage_ == ControlPage::Playback)
+    {
+        moveWindow(
+            playbackGroup_,
+            contentX,
+            pageY,
+            contentWidth,
+            pageHeight,
+            TRUE
+        );
+
+        const int innerX = contentX + 14;
+        const int innerY = pageY + 31;
+        const int innerWidth = contentWidth - 28;
+        const int innerHeight = pageHeight - 43;
+        const int columnGap = 12;
+        const int detailsWidth = std::clamp(
+            innerWidth * 38 / 100,
+            300,
+            410
+        );
+        const int listWidth = std::max(
+            260,
+            innerWidth - detailsWidth - columnGap
+        );
+
+        moveWindow(
+            playbackList_,
+            innerX,
+            innerY,
+            listWidth,
+            innerHeight,
+            TRUE
+        );
+
+        const int detailsX = innerX + listWidth + columnGap;
+        moveWindow(
+            playbackDetailsGroup_,
+            detailsX,
+            innerY,
+            detailsWidth,
+            innerHeight,
+            TRUE
+        );
+
+        const int detailsMargin = 14;
+        const int detailsContentX = detailsX + detailsMargin;
+        const int detailsContentWidth = detailsWidth - detailsMargin * 2;
+        const int labelWidth = 76;
+        int rowY = innerY + 35;
+
+        moveWindow(
+            playbackSoundCaption_,
+            detailsContentX, rowY + 2, labelWidth, 20, TRUE
+        );
+        moveWindow(
+            playbackSoundValue_,
+            detailsContentX + labelWidth, rowY + 2,
+            detailsContentWidth - labelWidth, 20, TRUE
+        );
+        rowY += 32;
+
+        moveWindow(
+            playbackStatusCaption_,
+            detailsContentX, rowY + 2, labelWidth, 20, TRUE
+        );
+        moveWindow(
+            playbackStatusValue_,
+            detailsContentX + labelWidth, rowY + 2,
+            detailsContentWidth - labelWidth, 20, TRUE
+        );
+        rowY += 36;
+
+        moveWindow(
+            playbackPositionCaption_,
+            detailsContentX, rowY, detailsContentWidth / 2, 20, TRUE
+        );
+        moveWindow(
+            playbackPositionValue_,
+            detailsContentX + detailsContentWidth / 2, rowY,
+            detailsContentWidth / 2, 20, TRUE
+        );
+        rowY += 23;
+        moveWindow(
+            playbackSeekSlider_,
+            detailsContentX, rowY, detailsContentWidth, 28, TRUE
+        );
+        rowY += 43;
+
+        moveWindow(
+            playbackVolumeCaption_,
+            detailsContentX, rowY + 3, labelWidth, 20, TRUE
+        );
+        moveWindow(
+            playbackVolumeSlider_,
+            detailsContentX + labelWidth, rowY,
+            detailsContentWidth - labelWidth - 46, 28, TRUE
+        );
+        moveWindow(
+            playbackVolumeValue_,
+            detailsContentX + detailsContentWidth - 42,
+            rowY + 3, 42, 20, TRUE
+        );
+
+        const int actionGap = 8;
+        const int actionWidth =
+            (detailsContentWidth - actionGap) / 2;
+        const int actionY = innerY + innerHeight - ButtonHeight - 14;
+
+        moveWindow(
+            playbackPauseResumeButton_,
+            detailsContentX, actionY, actionWidth, ButtonHeight, TRUE
+        );
+        moveWindow(
+            playbackStopButton_,
+            detailsContentX + actionWidth + actionGap,
+            actionY, actionWidth, ButtonHeight, TRUE
+        );
     }
     else if (activePage_ == ControlPage::Settings)
     {
@@ -2975,6 +3416,10 @@ void ControlWindow::SetActivePage(const ControlPage page)
     {
         activeTab = hotkeysTabButton_;
     }
+    else if (activePage_ == ControlPage::Playback)
+    {
+        activeTab = playbackTabButton_;
+    }
 
     if (activeTab != nullptr)
     {
@@ -3003,6 +3448,16 @@ void ControlWindow::UpdatePageVisibility()
         bindingVolumeSlider_, bindingVolumeValue_, addBindingButton_,
         updateBindingButton_, removeBindingButton_, clearBindingButton_,
         reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_
+    };
+
+    const HWND playbackControls[]{
+        playbackGroup_, playbackList_, playbackDetailsGroup_,
+        playbackSoundCaption_, playbackSoundValue_,
+        playbackStatusCaption_, playbackStatusValue_,
+        playbackPositionCaption_, playbackPositionValue_,
+        playbackSeekSlider_, playbackVolumeCaption_,
+        playbackVolumeSlider_, playbackVolumeValue_,
+        playbackPauseResumeButton_, playbackStopButton_
     };
 
     const HWND settingsControls[]{
@@ -3063,6 +3518,10 @@ void ControlWindow::UpdatePageVisibility()
     {
         setVisible(control, activePage_ == ControlPage::Main);
     }
+    for (const HWND control : playbackControls)
+    {
+        setVisible(control, activePage_ == ControlPage::Playback);
+    }
     for (const HWND control : settingsControls)
     {
         setVisible(control, activePage_ == ControlPage::Settings);
@@ -3079,7 +3538,10 @@ void ControlWindow::UpdatePageVisibility()
         setVisible(control, activePage_ == ControlPage::Hotkeys);
     }
 
-    setVisible(applySettingsButton_, true);
+    setVisible(
+        applySettingsButton_,
+        activePage_ != ControlPage::Playback
+    );
 
     RedrawWindow(
         mainTabButton_, nullptr, nullptr,
@@ -3095,6 +3557,10 @@ void ControlWindow::UpdatePageVisibility()
     );
     RedrawWindow(
         hotkeysTabButton_, nullptr, nullptr,
+        RDW_INVALIDATE | RDW_UPDATENOW
+    );
+    RedrawWindow(
+        playbackTabButton_, nullptr, nullptr,
         RDW_INVALIDATE | RDW_UPDATENOW
     );
 }
@@ -3147,14 +3613,15 @@ void ControlWindow::ApplyTheme()
         SetWindowTheme(bindingModeCombo_, comboTheme, nullptr);
     }
 
-    const std::array<HWND, 16> edits{
+    const std::array<HWND, 17> edits{
         stopHotkeyEdit_, outputMuteHotkeyEdit_, monitorMuteHotkeyEdit_,
         reloadHotkeyEdit_, exitHotkeyEdit_, bindingHotkeyEdit_,
         bindingFileEdit_, bindingsList_, microphoneHighPassHzEdit_,
         microphoneAgcTargetEdit_, microphoneCompressorThresholdEdit_,
         microphoneCompressorRatioEdit_, microphoneCompressorAttackEdit_,
         microphoneCompressorReleaseEdit_,
-        microphoneCompressorMakeupEdit_, microphoneLimiterCeilingEdit_
+        microphoneCompressorMakeupEdit_, microphoneLimiterCeilingEdit_,
+        playbackList_
     };
 
     for (const HWND control : edits)
@@ -3165,9 +3632,10 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 4> sliders{
+    const std::array<HWND, 6> sliders{
         outputVolumeSlider_, monitorVolumeSlider_,
-        microphoneVolumeSlider_, bindingVolumeSlider_
+        microphoneVolumeSlider_, bindingVolumeSlider_,
+        playbackSeekSlider_, playbackVolumeSlider_
     };
 
     for (const HWND control : sliders)
@@ -3295,7 +3763,12 @@ void ControlWindow::ApplyFonts()
         exitHotkeyCaption_, exitHotkeyEdit_, bindingsList_,
         bindingHotkeyCaption_, bindingHotkeyEdit_, bindingFileCaption_,
         bindingFileEdit_, bindingModeCaption_, bindingModeCombo_,
-        bindingVolumeCaption_, bindingVolumeSlider_, bindingVolumeValue_
+        bindingVolumeCaption_, bindingVolumeSlider_, bindingVolumeValue_,
+        playbackList_, playbackSoundCaption_, playbackSoundValue_,
+        playbackStatusCaption_, playbackStatusValue_,
+        playbackPositionCaption_, playbackPositionValue_,
+        playbackSeekSlider_, playbackVolumeCaption_,
+        playbackVolumeSlider_, playbackVolumeValue_
     };
 
     for (const HWND control : bodyControls)
@@ -3314,13 +3787,14 @@ void ControlWindow::ApplyFonts()
     const HWND buttons[]{
         themeToggleButton_, mainTabButton_, settingsTabButton_,
         microphoneProcessingTabButton_, hotkeysTabButton_,
-        refreshDevicesButton_, applySettingsButton_,
+        playbackTabButton_, refreshDevicesButton_, applySettingsButton_,
         microphoneTestMonitorButton_,
         captureHotkeyButton_, browseSoundButton_, addBindingButton_,
         updateBindingButton_, removeBindingButton_, clearBindingButton_,
         reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_,
         openConfigButton_, openSoundsButton_, openLogsButton_,
-        checkUpdatesButton_, consoleButton_, exitButton_
+        checkUpdatesButton_, consoleButton_, exitButton_,
+        playbackPauseResumeButton_, playbackStopButton_
     };
 
     for (const HWND control : buttons)
@@ -3644,7 +4118,9 @@ void ControlWindow::DrawModernButton(const DRAWITEMSTRUCT& item)
             (item.hwndItem == microphoneProcessingTabButton_ &&
                 activePage_ == ControlPage::MicrophoneProcessing) ||
             (item.hwndItem == hotkeysTabButton_ &&
-                activePage_ == ControlPage::Hotkeys);
+                activePage_ == ControlPage::Hotkeys) ||
+            (item.hwndItem == playbackTabButton_ &&
+                activePage_ == ControlPage::Playback);
 
         COLORREF surface = active
             ? BlendColor(cardColor_, accentColor_, 18)
@@ -3827,7 +4303,9 @@ bool ControlWindow::IsSliderControl(const HWND control) const
     return control == outputVolumeSlider_ ||
         control == monitorVolumeSlider_ ||
         control == microphoneVolumeSlider_ ||
-        control == bindingVolumeSlider_;
+        control == bindingVolumeSlider_ ||
+        control == playbackSeekSlider_ ||
+        control == playbackVolumeSlider_;
 }
 
 bool ControlWindow::IsLevelMeterControl(const HWND control) const
@@ -4084,6 +4562,8 @@ void ControlWindow::PaintWindowBackground()
 bool ControlWindow::IsCardControl(const HWND control) const
 {
     return control == mainQuickGroup_ ||
+        control == playbackGroup_ ||
+        control == playbackDetailsGroup_ ||
         control == settingsGroup_ ||
         control == settingsToolsGroup_ ||
         control == microphoneProcessingGroup_ ||
@@ -4104,13 +4584,15 @@ bool ControlWindow::IsNavigationTab(const HWND control) const
     return control == mainTabButton_ ||
         control == settingsTabButton_ ||
         control == microphoneProcessingTabButton_ ||
-        control == hotkeysTabButton_;
+        control == hotkeysTabButton_ ||
+        control == playbackTabButton_;
 }
 
 bool ControlWindow::IsDangerButton(const HWND control) const
 {
     return control == exitButton_ ||
-        control == removeBindingButton_;
+        control == removeBindingButton_ ||
+        control == playbackStopButton_;
 }
 
 HBRUSH ControlWindow::StaticBrushFor(const HWND control) const
@@ -4147,8 +4629,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         subtitleLabel_,
         Localization::Text(
-            L"Tek pencere • Ctrl+1/2/3/4: sekmeler • Ctrl+S: kaydet",
-            L"Single window • Ctrl+1/2/3/4: tabs • Ctrl+S: save"
+            L"Tek pencere • Ctrl+1/2/3/4/5: sekmeler • Ctrl+S: kaydet",
+            L"Single window • Ctrl+1/2/3/4/5: tabs • Ctrl+S: save"
         )
     );
     SetControlText(
@@ -4173,6 +4655,10 @@ void ControlWindow::RefreshLocalizedText()
         hotkeysTabButton_,
         Localization::Text(L"Hotkey'ler", L"Hotkeys")
     );
+    SetControlText(
+        playbackTabButton_,
+        Localization::Text(L"Oynatma", L"Playback")
+    );
 
     SetControlText(statusCaption_, Localization::Text(L"Durum:", L"Status:"));
     SetControlText(
@@ -4190,6 +4676,34 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         mainMicrophoneMeterCaption_,
         Localization::Text(L"Mikrofon", L"Microphone")
+    );
+    SetControlText(
+        playbackGroup_,
+        Localization::Text(L"Etkin oynatmalar", L"Active playbacks")
+    );
+    SetControlText(
+        playbackDetailsGroup_,
+        Localization::Text(L"Seçili oynatma", L"Selected playback")
+    );
+    SetControlText(
+        playbackSoundCaption_,
+        Localization::Text(L"Ses:", L"Sound:")
+    );
+    SetControlText(
+        playbackStatusCaption_,
+        Localization::Text(L"Durum:", L"Status:")
+    );
+    SetControlText(
+        playbackPositionCaption_,
+        Localization::Text(L"Konum", L"Position")
+    );
+    SetControlText(
+        playbackVolumeCaption_,
+        Localization::Text(L"Ses:", L"Volume:")
+    );
+    SetControlText(
+        playbackStopButton_,
+        Localization::Text(L"Bu sesi durdur", L"Stop this sound")
     );
     SetControlText(
         settingsGroup_,
@@ -4449,6 +4963,7 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(checkUpdatesButton_, Localization::Text(L"Güncelleme denetle", L"Check for updates"));
     SetControlText(consoleButton_, Localization::Text(L"Hata ayıklama konsolunu aç/gizle", L"Open/hide debug console"));
     SetControlText(exitButton_, Localization::Text(L"Programı kapat", L"Exit"));
+    LoadSelectedPlaybackIntoControls();
 }
 
 void ControlWindow::PopulateBindings()
@@ -5155,12 +5670,545 @@ void ControlWindow::UpdateVolumeLabels()
 }
 
 
+PlaybackId ControlWindow::SelectedPlaybackId() const noexcept
+{
+    if (playbackList_ == nullptr)
+    {
+        return InvalidPlaybackId;
+    }
+
+    const LRESULT selectedIndex = SendMessageW(
+        playbackList_,
+        LB_GETCURSEL,
+        0,
+        0
+    );
+
+    if (selectedIndex == LB_ERR)
+    {
+        return InvalidPlaybackId;
+    }
+
+    const LRESULT itemData = SendMessageW(
+        playbackList_,
+        LB_GETITEMDATA,
+        static_cast<WPARAM>(selectedIndex),
+        0
+    );
+
+    return itemData == LB_ERR
+        ? InvalidPlaybackId
+        : static_cast<PlaybackId>(itemData);
+}
+
+void ControlWindow::UpdatePlaybackControls(const bool force)
+{
+    if (window_ == nullptr || playbackList_ == nullptr)
+    {
+        return;
+    }
+
+    if (!force && activePage_ != ControlPage::Playback)
+    {
+        return;
+    }
+
+    const ULONGLONG now = GetTickCount64();
+
+    if (!force && lastPlaybackRefreshTick_ != 0 &&
+        now - lastPlaybackRefreshTick_ <
+            PlaybackRefreshIntervalMilliseconds)
+    {
+        return;
+    }
+
+    lastPlaybackRefreshTick_ = now;
+
+    PlaybackId preferredSelection = playbackSeekDragging_ &&
+        playbackSeekInteractionId_ != InvalidPlaybackId
+        ? playbackSeekInteractionId_
+        : SelectedPlaybackId();
+
+    if (preferredSelection == InvalidPlaybackId)
+    {
+        preferredSelection = selectedPlaybackId_;
+    }
+
+    playbackSnapshots_ = audio_ != nullptr
+        ? audio_->GetPlaybackSnapshots()
+        : std::vector<PlaybackSnapshot>{};
+
+    if (pendingPlaybackSeekId_ != InvalidPlaybackId)
+    {
+        const auto pendingSnapshot = std::find_if(
+            playbackSnapshots_.begin(),
+            playbackSnapshots_.end(),
+            [this](const PlaybackSnapshot& snapshot)
+            {
+                return snapshot.id == pendingPlaybackSeekId_;
+            }
+        );
+        const ULONGLONG pendingAge = now - pendingPlaybackSeekTick_;
+
+        if (pendingSnapshot == playbackSnapshots_.end())
+        {
+            pendingPlaybackSeekId_ = InvalidPlaybackId;
+            pendingPlaybackSeekTick_ = 0;
+        }
+        else
+        {
+            const float tolerance = std::max(
+                0.08f,
+                pendingSnapshot->durationSeconds * 0.01f
+            );
+            const bool runtimeCaughtUp = std::abs(
+                pendingSnapshot->positionSeconds -
+                    pendingPlaybackSeekSeconds_
+            ) <= tolerance;
+
+            if (runtimeCaughtUp ||
+                pendingAge >= PlaybackSeekPendingMilliseconds)
+            {
+                pendingPlaybackSeekId_ = InvalidPlaybackId;
+                pendingPlaybackSeekTick_ = 0;
+            }
+        }
+    }
+
+    populatingPlaybackControls_ = true;
+    SendMessageW(playbackList_, WM_SETREDRAW, FALSE, 0);
+    SendMessageW(playbackList_, LB_RESETCONTENT, 0, 0);
+
+    int selectedIndex = -1;
+
+    for (const PlaybackSnapshot& snapshot : playbackSnapshots_)
+    {
+        const std::wstring state = snapshot.status == PlaybackStatus::Paused
+            ? Localization::Text(L"Duraklatıldı", L"Paused")
+            : Localization::Text(L"Çalıyor", L"Playing");
+        const std::wstring mode = Utf8ToWide(
+            std::string{PlaybackModeName(snapshot.mode)}
+        );
+        const std::wstring row =
+            L"#" + std::to_wstring(snapshot.id) + L"  " +
+            Utf8ToWide(snapshot.soundId) + L"  •  " + state +
+            L"  •  " + FormatPlaybackTime(
+                snapshot.positionSeconds,
+                snapshot.durationSeconds
+            ) + L" / " + FormatPlaybackTime(
+                snapshot.durationSeconds,
+                snapshot.durationSeconds
+            ) +
+            L"  •  " + mode + L"  •  " +
+            BuildVolumeText(snapshot.volume);
+
+        const LRESULT itemIndex = SendMessageW(
+            playbackList_,
+            LB_ADDSTRING,
+            0,
+            reinterpret_cast<LPARAM>(row.c_str())
+        );
+
+        if (itemIndex == LB_ERR || itemIndex == LB_ERRSPACE)
+        {
+            continue;
+        }
+
+        SendMessageW(
+            playbackList_,
+            LB_SETITEMDATA,
+            static_cast<WPARAM>(itemIndex),
+            static_cast<LPARAM>(snapshot.id)
+        );
+
+        if (snapshot.id == preferredSelection)
+        {
+            selectedIndex = static_cast<int>(itemIndex);
+        }
+    }
+
+    if (selectedIndex < 0 && !playbackSnapshots_.empty())
+    {
+        selectedIndex = 0;
+    }
+
+    if (selectedIndex >= 0)
+    {
+        SendMessageW(
+            playbackList_,
+            LB_SETCURSEL,
+            static_cast<WPARAM>(selectedIndex),
+            0
+        );
+    }
+
+    SendMessageW(playbackList_, WM_SETREDRAW, TRUE, 0);
+    InvalidateRect(playbackList_, nullptr, TRUE);
+    populatingPlaybackControls_ = false;
+
+    selectedPlaybackId_ = SelectedPlaybackId();
+    LoadSelectedPlaybackIntoControls();
+}
+
+void ControlWindow::LoadSelectedPlaybackIntoControls()
+{
+    if (playbackSeekSlider_ == nullptr ||
+        playbackVolumeSlider_ == nullptr)
+    {
+        return;
+    }
+
+    const PlaybackId playbackId = SelectedPlaybackId();
+    const auto snapshotIterator = std::find_if(
+        playbackSnapshots_.begin(),
+        playbackSnapshots_.end(),
+        [playbackId](const PlaybackSnapshot& snapshot)
+        {
+            return snapshot.id == playbackId;
+        }
+    );
+
+    const bool available = snapshotIterator != playbackSnapshots_.end();
+    const bool seekAvailable = available &&
+        snapshotIterator->durationSeconds > 0.0f;
+
+    EnableWindow(playbackSeekSlider_, seekAvailable ? TRUE : FALSE);
+    EnableWindow(playbackVolumeSlider_, available ? TRUE : FALSE);
+    EnableWindow(playbackPauseResumeButton_, available ? TRUE : FALSE);
+    EnableWindow(playbackStopButton_, available ? TRUE : FALSE);
+
+    populatingPlaybackControls_ = true;
+
+    if (!available)
+    {
+        selectedPlaybackId_ = InvalidPlaybackId;
+        playbackSeekDragging_ = false;
+        playbackSeekInteractionId_ = InvalidPlaybackId;
+        playbackSeekPreviewPosition_ = PlaybackSeekMinimum;
+        pendingPlaybackSeekId_ = InvalidPlaybackId;
+        pendingPlaybackSeekTick_ = 0;
+        SetControlText(
+            playbackSoundValue_,
+            Localization::Text(L"Etkin ses yok", L"No active sound")
+        );
+        SetControlText(playbackStatusValue_, L"—");
+        SetControlText(playbackPositionValue_, L"0:00.0 / 0:00.0");
+        SetControlText(playbackVolumeValue_, L"0%");
+        SetControlText(
+            playbackPauseResumeButton_,
+            Localization::Text(L"Duraklat", L"Pause")
+        );
+        SendMessageW(playbackSeekSlider_, TBM_SETPOS, TRUE, 0);
+        SendMessageW(playbackVolumeSlider_, TBM_SETPOS, TRUE, 0);
+        populatingPlaybackControls_ = false;
+        return;
+    }
+
+    const PlaybackSnapshot& snapshot = *snapshotIterator;
+    selectedPlaybackId_ = snapshot.id;
+
+    const std::wstring state = snapshot.status == PlaybackStatus::Paused
+        ? Localization::Text(L"Duraklatıldı", L"Paused")
+        : Localization::Text(L"Çalıyor", L"Playing");
+    const std::wstring mode = Utf8ToWide(
+        std::string{PlaybackModeName(snapshot.mode)}
+    );
+
+    SetControlText(playbackSoundValue_, Utf8ToWide(snapshot.soundId));
+    SetControlText(playbackStatusValue_, state + L" • " + mode);
+
+    const ULONGLONG now = GetTickCount64();
+    const bool seekInteractionActive =
+        playbackSeekDragging_ &&
+        playbackSeekInteractionId_ == snapshot.id;
+    const bool pendingSeekActive =
+        pendingPlaybackSeekId_ == snapshot.id &&
+        pendingPlaybackSeekTick_ != 0 &&
+        now - pendingPlaybackSeekTick_ <
+            PlaybackSeekPendingMilliseconds;
+
+    float displayedPosition = snapshot.positionSeconds;
+    int displayedSliderPosition = PlaybackSeekSliderPosition(
+        snapshot.positionSeconds,
+        snapshot.durationSeconds
+    );
+
+    if (seekInteractionActive)
+    {
+        displayedSliderPosition = playbackSeekPreviewPosition_;
+        displayedPosition = PlaybackSeekSeconds(
+            displayedSliderPosition,
+            snapshot.durationSeconds
+        );
+    }
+    else if (pendingSeekActive)
+    {
+        displayedPosition = std::clamp(
+            pendingPlaybackSeekSeconds_,
+            0.0f,
+            snapshot.durationSeconds
+        );
+        displayedSliderPosition = PlaybackSeekSliderPosition(
+            displayedPosition,
+            snapshot.durationSeconds
+        );
+    }
+
+    // Do not send TBM_SETPOS while the native trackbar owns mouse
+    // capture. Even writing the same position can make the thumb jitter
+    // under high-frequency playback refreshes.
+    if (!seekInteractionActive && GetCapture() != playbackSeekSlider_)
+    {
+        SendMessageW(
+            playbackSeekSlider_,
+            TBM_SETPOS,
+            TRUE,
+            displayedSliderPosition
+        );
+    }
+
+    SetControlText(
+        playbackPositionValue_,
+        FormatPlaybackTime(
+            displayedPosition,
+            snapshot.durationSeconds
+        ) + L" / " + FormatPlaybackTime(
+            snapshot.durationSeconds,
+            snapshot.durationSeconds
+        )
+    );
+
+    const int volumePosition = static_cast<int>(
+        std::clamp(snapshot.volume, 0.0f, 1.0f) * 100.0f + 0.5f
+    );
+    SendMessageW(
+        playbackVolumeSlider_,
+        TBM_SETPOS,
+        TRUE,
+        volumePosition
+    );
+    SetControlText(
+        playbackVolumeValue_,
+        std::to_wstring(volumePosition) + L"%"
+    );
+    SetControlText(
+        playbackPauseResumeButton_,
+        snapshot.status == PlaybackStatus::Paused
+            ? Localization::Text(L"Devam ettir", L"Resume")
+            : Localization::Text(L"Duraklat", L"Pause")
+    );
+
+    populatingPlaybackControls_ = false;
+}
+
+void ControlWindow::ToggleSelectedPlaybackPause()
+{
+    if (audio_ == nullptr)
+    {
+        return;
+    }
+
+    const PlaybackId playbackId = SelectedPlaybackId();
+    const auto snapshotIterator = std::find_if(
+        playbackSnapshots_.begin(),
+        playbackSnapshots_.end(),
+        [playbackId](const PlaybackSnapshot& snapshot)
+        {
+            return snapshot.id == playbackId;
+        }
+    );
+
+    if (snapshotIterator == playbackSnapshots_.end())
+    {
+        return;
+    }
+
+    const bool resume =
+        snapshotIterator->status == PlaybackStatus::Paused;
+    const bool success = resume
+        ? audio_->ResumePlayback(playbackId)
+        : audio_->PausePlayback(playbackId);
+
+    SetStatus(success
+        ? (resume
+            ? Localization::Text(
+                L"Seçili ses devam ettirildi.",
+                L"Selected sound resumed."
+            )
+            : Localization::Text(
+                L"Seçili ses duraklatıldı.",
+                L"Selected sound paused."
+            ))
+        : Localization::Text(
+            L"Seçili sesin oynatma durumu değiştirilemedi.",
+            L"The selected playback state could not be changed."
+        ));
+
+    UpdatePlaybackControls(true);
+}
+
+void ControlWindow::StopSelectedPlayback()
+{
+    if (audio_ == nullptr)
+    {
+        return;
+    }
+
+    const PlaybackId playbackId = SelectedPlaybackId();
+
+    if (playbackId == InvalidPlaybackId)
+    {
+        return;
+    }
+
+    const bool success = audio_->StopPlayback(playbackId);
+
+    SetStatus(success
+        ? Localization::Text(
+            L"Seçili ses durduruldu.",
+            L"Selected sound stopped."
+        )
+        : Localization::Text(
+            L"Seçili ses durdurulamadı.",
+            L"The selected sound could not be stopped."
+        ));
+
+    UpdatePlaybackControls(true);
+}
+
+void ControlWindow::SeekSelectedPlayback()
+{
+    if (audio_ == nullptr)
+    {
+        return;
+    }
+
+    const PlaybackId playbackId = SelectedPlaybackId();
+    const auto snapshotIterator = std::find_if(
+        playbackSnapshots_.begin(),
+        playbackSnapshots_.end(),
+        [playbackId](const PlaybackSnapshot& snapshot)
+        {
+            return snapshot.id == playbackId;
+        }
+    );
+
+    if (snapshotIterator == playbackSnapshots_.end() ||
+        snapshotIterator->durationSeconds <= 0.0f)
+    {
+        return;
+    }
+
+    const int sliderPosition = std::clamp(
+        static_cast<int>(SendMessageW(
+            playbackSeekSlider_,
+            TBM_GETPOS,
+            0,
+            0
+        )),
+        PlaybackSeekMinimum,
+        PlaybackSeekMaximum
+    );
+    const float targetSeconds = PlaybackSeekSeconds(
+        sliderPosition,
+        snapshotIterator->durationSeconds
+    );
+
+    if (!audio_->SeekPlayback(playbackId, targetSeconds))
+    {
+        pendingPlaybackSeekId_ = InvalidPlaybackId;
+        pendingPlaybackSeekTick_ = 0;
+        SetStatus(Localization::Text(
+            L"Seçili sesin konumu değiştirilemedi.",
+            L"The selected sound could not be seeked."
+        ));
+        return;
+    }
+
+    // Keep the committed target locally until miniaudio's cursor snapshot
+    // catches up. Refreshing immediately used to overwrite the thumb with
+    // the pre-seek position and made the control appear to snap backwards.
+    snapshotIterator->positionSeconds = targetSeconds;
+    pendingPlaybackSeekId_ = playbackId;
+    pendingPlaybackSeekSeconds_ = targetSeconds;
+    pendingPlaybackSeekTick_ = GetTickCount64();
+    playbackSeekPreviewPosition_ = sliderPosition;
+
+    SetControlText(
+        playbackPositionValue_,
+        FormatPlaybackTime(
+            targetSeconds,
+            snapshotIterator->durationSeconds
+        ) + L" / " + FormatPlaybackTime(
+            snapshotIterator->durationSeconds,
+            snapshotIterator->durationSeconds
+        )
+    );
+}
+
+void ControlWindow::SetSelectedPlaybackVolume()
+{
+    if (audio_ == nullptr)
+    {
+        return;
+    }
+
+    const PlaybackId playbackId = SelectedPlaybackId();
+
+    if (playbackId == InvalidPlaybackId)
+    {
+        return;
+    }
+
+    const int sliderPosition = static_cast<int>(SendMessageW(
+        playbackVolumeSlider_,
+        TBM_GETPOS,
+        0,
+        0
+    ));
+    const float volume = std::clamp(
+        static_cast<float>(sliderPosition) / 100.0f,
+        0.0f,
+        1.0f
+    );
+
+    if (!audio_->SetPlaybackVolume(playbackId, volume))
+    {
+        SetStatus(Localization::Text(
+            L"Seçili sesin seviyesi değiştirilemedi.",
+            L"The selected sound volume could not be changed."
+        ));
+        return;
+    }
+
+    SetControlText(
+        playbackVolumeValue_,
+        std::to_wstring(sliderPosition) + L"%"
+    );
+
+    const auto snapshotIterator = std::find_if(
+        playbackSnapshots_.begin(),
+        playbackSnapshots_.end(),
+        [playbackId](const PlaybackSnapshot& snapshot)
+        {
+            return snapshot.id == playbackId;
+        }
+    );
+
+    if (snapshotIterator != playbackSnapshots_.end())
+    {
+        snapshotIterator->volume = volume;
+    }
+}
+
 void ControlWindow::UpdateLevelMeters()
 {
     if (window_ == nullptr || IsWindowVisible(window_) == FALSE)
     {
         return;
     }
+
+    UpdatePlaybackControls();
 
     AudioLevelSnapshot snapshot;
 

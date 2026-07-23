@@ -9,6 +9,9 @@
 - Added generated license notices for WebRTC and its transitive static dependencies.
 - Kept a dependency-free build with AEC unavailable when WebRTC is disabled.
 - Added the playback-session foundation with stable runtime IDs, live position/duration snapshots and per-session pause, resume, stop, seek and volume APIs.
+- Added an Active Playbacks tab with live session rows, selection-preserving refresh, pause/resume, per-session stop, seek and volume controls.
+- Fixed sub-second playback timing display and made the seek thumb stable during mouse and keyboard interaction.
+- Prevented committed seeks from snapping back to stale runtime positions while the audio cursor catches up.
 - Made config replacement atomic on Windows and kept `config.txt.bak` as the last known-good saved configuration.
 
 ## 2.0.0
