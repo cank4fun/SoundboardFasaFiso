@@ -55,6 +55,7 @@ struct AudioLevelSnapshot
     float microphoneRawRms = 0.0f;
     float microphoneProcessedRms = 0.0f;
     float microphoneVoiceActivityProbability = 0.0f;
+    float microphoneAgcGainDb = 0.0f;
 
     bool outputAvailable = false;
     bool monitorAvailable = false;
@@ -63,6 +64,7 @@ struct AudioLevelSnapshot
     bool microphoneTestMonitorActive = false;
     bool microphoneNoiseSuppressionActive = false;
     bool microphoneNoiseSuppressionFailed = false;
+    bool microphoneAgcActive = false;
     bool microphoneInputClipped = false;
     bool microphoneInvalidSampleDetected = false;
 

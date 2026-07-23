@@ -186,6 +186,8 @@ BuildMicrophoneProcessingPreset(
             settings.noiseSuppressionLevel =
                 MicrophoneNoiseSuppressionLevel::Light;
             settings.highPassHz = 80.0f;
+            settings.agcEnabled = false;
+            settings.agcTargetDbfs = -18.0f;
             settings.compressorThresholdDb = -24.0f;
             settings.compressorRatio = 3.0f;
             settings.compressorAttackMs = 10.0f;
@@ -198,6 +200,8 @@ BuildMicrophoneProcessingPreset(
             settings.noiseSuppressionLevel =
                 MicrophoneNoiseSuppressionLevel::Balanced;
             settings.highPassHz = 90.0f;
+            settings.agcEnabled = true;
+            settings.agcTargetDbfs = -18.0f;
             settings.compressorThresholdDb = -27.0f;
             settings.compressorRatio = 3.5f;
             settings.compressorAttackMs = 8.0f;
@@ -210,6 +214,8 @@ BuildMicrophoneProcessingPreset(
             settings.noiseSuppressionLevel =
                 MicrophoneNoiseSuppressionLevel::Strong;
             settings.highPassHz = 100.0f;
+            settings.agcEnabled = true;
+            settings.agcTargetDbfs = -17.0f;
             settings.compressorThresholdDb = -30.0f;
             settings.compressorRatio = 4.5f;
             settings.compressorAttackMs = 6.0f;
@@ -222,6 +228,8 @@ BuildMicrophoneProcessingPreset(
             settings.noiseSuppressionLevel =
                 MicrophoneNoiseSuppressionLevel::Strong;
             settings.highPassHz = 120.0f;
+            settings.agcEnabled = true;
+            settings.agcTargetDbfs = -16.0f;
             settings.compressorThresholdDb = -34.0f;
             settings.compressorRatio = 6.0f;
             settings.compressorAttackMs = 4.0f;

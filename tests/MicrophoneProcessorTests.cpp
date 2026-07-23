@@ -42,6 +42,14 @@ namespace
             MicrophoneProcessor::SamplesPerBlock == 480,
             "processing block is 10 ms"
         );
+        Expect(
+            MicrophoneProcessor::MinimumAgcGainDb == -12.0f,
+            "AGC attenuation limit is stable"
+        );
+        Expect(
+            MicrophoneProcessor::MaximumAgcGainDb == 18.0f,
+            "AGC boost limit is stable"
+        );
 
         MicrophoneProcessor processor;
         Expect(!processor.IsInitialized(), "processor starts uninitialized");
@@ -64,6 +72,11 @@ namespace
         Expect(
             !snapshot.noiseSuppressionFailed,
             "reset snapshot has no noise suppression failure"
+        );
+        Expect(!snapshot.agcActive, "reset snapshot has no active AGC");
+        Expect(
+            NearlyEqual(snapshot.agcGainDb, 0.0f),
+            "reset AGC gain is zero"
         );
         Expect(NearlyEqual(snapshot.rawPeak, 0.0f), "reset raw peak is zero");
         Expect(
@@ -316,6 +329,147 @@ namespace
             snapshot.voiceActivityProbability >= 0.0f &&
                 snapshot.voiceActivityProbability <= 1.0f,
             "voice activity probability stays normalized"
+        );
+    }
+
+    void TestAgcRaisesQuietSpeechTowardTarget()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = false;
+        settings.agcEnabled = true;
+        settings.agcTargetDbfs = -18.0f;
+        settings.compressorEnabled = false;
+        settings.limiterEnabled = false;
+
+        Expect(processor.Initialize(settings), "quiet AGC settings initialize");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        input.fill(0.05f);
+
+        for (int block = 0; block < 200; ++block)
+        {
+            Expect(
+                processor.ProcessBlock(input, output),
+                "quiet AGC block is processed"
+            );
+        }
+
+        const MicrophoneProcessingSnapshot snapshot = processor.GetSnapshot();
+        Expect(snapshot.agcActive, "AGC is reported as active");
+        Expect(
+            snapshot.agcGainDb > 7.0f && snapshot.agcGainDb < 8.5f,
+            "AGC converges near the requested quiet-speech gain"
+        );
+        Expect(
+            snapshot.processedRms > 0.11f && snapshot.processedRms < 0.14f,
+            "AGC raises quiet speech toward the target"
+        );
+        Expect(!snapshot.bypassed, "AGC is a processing stage");
+    }
+
+    void TestAgcAttenuatesLoudSpeechWithinLimit()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = false;
+        settings.agcEnabled = true;
+        settings.agcTargetDbfs = -18.0f;
+        settings.compressorEnabled = false;
+        settings.limiterEnabled = false;
+
+        Expect(processor.Initialize(settings), "loud AGC settings initialize");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        input.fill(0.5f);
+
+        for (int block = 0; block < 100; ++block)
+        {
+            Expect(
+                processor.ProcessBlock(input, output),
+                "loud AGC block is processed"
+            );
+        }
+
+        const MicrophoneProcessingSnapshot snapshot = processor.GetSnapshot();
+        Expect(
+            snapshot.agcGainDb >= MicrophoneProcessor::MinimumAgcGainDb &&
+                snapshot.agcGainDb < -11.0f,
+            "AGC attenuation respects its lower gain limit"
+        );
+        Expect(
+            snapshot.processedRms > 0.12f && snapshot.processedRms < 0.14f,
+            "AGC attenuates sustained loud speech"
+        );
+    }
+
+    void TestAgcDoesNotRaiseSilenceNoiseFloor()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = false;
+        settings.agcEnabled = true;
+        settings.agcTargetDbfs = -3.0f;
+        settings.compressorEnabled = false;
+        settings.limiterEnabled = false;
+
+        Expect(processor.Initialize(settings), "silence AGC settings initialize");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        input.fill(0.0001f);
+
+        for (int block = 0; block < 200; ++block)
+        {
+            Expect(
+                processor.ProcessBlock(input, output),
+                "silence AGC block is processed"
+            );
+        }
+
+        const MicrophoneProcessingSnapshot snapshot = processor.GetSnapshot();
+        Expect(snapshot.agcActive, "AGC remains enabled during silence");
+        Expect(
+            NearlyEqual(snapshot.agcGainDb, 0.0f, 0.01f),
+            "AGC does not increase gain below the silence threshold"
+        );
+        Expect(
+            NearlyEqual(snapshot.processedRms, 0.0001f, 0.000001f),
+            "silence-level input is not amplified"
+        );
+    }
+
+    void TestAgcBoostIsCapped()
+    {
+        MicrophoneProcessor processor;
+        MicrophoneProcessingSettings settings = NativeStageSettings();
+        settings.highPassEnabled = false;
+        settings.agcEnabled = true;
+        settings.agcTargetDbfs = -3.0f;
+        settings.compressorEnabled = false;
+        settings.limiterEnabled = false;
+
+        Expect(processor.Initialize(settings), "AGC cap settings initialize");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        input.fill(0.002f);
+
+        for (int block = 0; block < 300; ++block)
+        {
+            Expect(
+                processor.ProcessBlock(input, output),
+                "AGC cap block is processed"
+            );
+        }
+
+        const MicrophoneProcessingSnapshot snapshot = processor.GetSnapshot();
+        Expect(
+            snapshot.agcGainDb <= MicrophoneProcessor::MaximumAgcGainDb &&
+                snapshot.agcGainDb > 17.0f,
+            "AGC boost respects its upper gain limit"
         );
     }
 
@@ -579,6 +733,10 @@ int main()
     TestHighPassRejectsDc();
     TestHighPassPreservesVoiceBandTone();
     TestNoiseSuppressionProcessesCompleteFrames();
+    TestAgcRaisesQuietSpeechTowardTarget();
+    TestAgcAttenuatesLoudSpeechWithinLimit();
+    TestAgcDoesNotRaiseSilenceNoiseFloor();
+    TestAgcBoostIsCapped();
     TestCompressorReducesSustainedLoudSignal();
     TestCompressorLeavesQuietSignalNearUnity();
     TestLimiterEnforcesCeiling();

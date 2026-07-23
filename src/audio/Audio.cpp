@@ -1102,17 +1102,9 @@ bool Audio::InitializeMicrophone(
         microphoneProcessingSettings_.enabled &&
         (microphoneProcessingSettings_.highPassEnabled ||
             microphoneProcessingSettings_.noiseSuppressionEnabled ||
+            microphoneProcessingSettings_.agcEnabled ||
             microphoneProcessingSettings_.compressorEnabled ||
             microphoneProcessingSettings_.limiterEnabled);
-
-    if (microphoneProcessingSettings_.enabled &&
-        microphoneProcessingSettings_.agcEnabled)
-    {
-        std::cerr << Localization::Text(
-            "Uyarı: AGC henüz uygulanmadı; bu aşama atlanacak.\n",
-            "Warning: AGC is not implemented yet; this stage will be bypassed.\n"
-        );
-    }
 
     if (processingRequested)
     {
@@ -1129,14 +1121,10 @@ bool Audio::InitializeMicrophone(
         }
         else
         {
-            MicrophoneProcessingSettings activeSettings =
-                microphoneProcessingSettings_;
-            activeSettings.agcEnabled = false;
-
             if (microphoneProcessingRuntime_.Initialize(
                     captureSampleRate,
                     2,
-                    activeSettings,
+                    microphoneProcessingSettings_,
                     &Audio::ProcessedMicrophoneOutputCallback,
                     this
                 ))
@@ -2484,6 +2472,8 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
             processingSnapshot.noiseSuppressionActive;
         snapshot.microphoneNoiseSuppressionFailed =
             processingSnapshot.noiseSuppressionFailed;
+        snapshot.microphoneAgcActive = processingSnapshot.agcActive;
+        snapshot.microphoneAgcGainDb = processingSnapshot.agcGainDb;
         snapshot.microphoneInputClipped =
             processingSnapshot.inputClipped;
         snapshot.microphoneInvalidSampleDetected =

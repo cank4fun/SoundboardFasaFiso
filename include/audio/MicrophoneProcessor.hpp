@@ -21,10 +21,12 @@ struct MicrophoneProcessingSnapshot
     bool noiseSuppressionRequested = false;
     bool noiseSuppressionActive = false;
     bool noiseSuppressionFailed = false;
+    bool agcActive = false;
     bool bypassed = true;
     bool configurationValid = true;
 
     float voiceActivityProbability = 0.0f;
+    float agcGainDb = 0.0f;
 };
 
 class MicrophoneProcessor
@@ -32,6 +34,9 @@ class MicrophoneProcessor
 public:
     static constexpr unsigned int ProcessingSampleRate = 48000;
     static constexpr std::size_t SamplesPerBlock = 480;
+    static constexpr float MinimumAgcGainDb = -12.0f;
+    static constexpr float MaximumAgcGainDb = 18.0f;
+    static constexpr float AgcSilenceThresholdDbfs = -55.0f;
 
     MicrophoneProcessor() = default;
 
@@ -59,6 +64,7 @@ private:
     void ResetProcessingState();
 
     [[nodiscard]] float ProcessHighPass(float sample);
+    void UpdateAgcGain(float blockRms);
     [[nodiscard]] float ProcessCompressor(float sample);
     [[nodiscard]] float ProcessLimiter(float sample) const;
     [[nodiscard]] float NoiseSuppressionMix() const noexcept;
@@ -78,6 +84,11 @@ private:
     float highPassA2_ = 0.0f;
     float highPassState1_ = 0.0f;
     float highPassState2_ = 0.0f;
+
+    float agcGainReductionCoefficient_ = 0.0f;
+    float agcGainIncreaseCoefficient_ = 0.0f;
+    float agcSilenceReturnCoefficient_ = 0.0f;
+    float agcGainDb_ = 0.0f;
 
     float compressorAttackCoefficient_ = 0.0f;
     float compressorReleaseCoefficient_ = 0.0f;
@@ -101,7 +112,9 @@ private:
     std::atomic_bool noiseSuppressionRequested_{false};
     std::atomic_bool noiseSuppressionActive_{false};
     std::atomic_bool noiseSuppressionFailedSnapshot_{false};
+    std::atomic_bool agcActive_{false};
     std::atomic_bool bypassed_{true};
     std::atomic_bool snapshotConfigurationValid_{true};
     std::atomic<float> voiceActivityProbability_{0.0f};
+    std::atomic<float> agcGainDbSnapshot_{0.0f};
 };

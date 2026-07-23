@@ -292,6 +292,9 @@ private:
     HWND microphoneNoiseSuppressionEnabledCheck_ = nullptr;
     HWND microphoneNoiseSuppressionLevelCaption_ = nullptr;
     HWND microphoneNoiseSuppressionLevelCombo_ = nullptr;
+    HWND microphoneAgcEnabledCheck_ = nullptr;
+    HWND microphoneAgcTargetCaption_ = nullptr;
+    HWND microphoneAgcTargetEdit_ = nullptr;
     HWND microphoneRawMeterCaption_ = nullptr;
     HWND microphoneRawLevelMeter_ = nullptr;
     HWND microphoneProcessedMeterCaption_ = nullptr;

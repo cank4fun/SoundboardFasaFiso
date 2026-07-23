@@ -7,6 +7,10 @@
 namespace
 {
     constexpr float MinimumEnvelope = 0.000001f;
+    constexpr float AgcGainReductionMilliseconds = 80.0f;
+    constexpr float AgcGainIncreaseMilliseconds = 500.0f;
+    constexpr float AgcSilenceReturnMilliseconds = 200.0f;
+    constexpr float AgcDeadbandDb = 0.5f;
 
     float DecibelsToLinear(const float decibels)
     {
@@ -23,6 +27,18 @@ namespace
         const float seconds = milliseconds / 1000.0f;
         return std::exp(
             -1.0f /
+            (seconds *
+                static_cast<float>(
+                    MicrophoneProcessor::ProcessingSampleRate
+                ))
+        );
+    }
+
+    float BlockTimeCoefficient(const float milliseconds)
+    {
+        const float seconds = milliseconds / 1000.0f;
+        return std::exp(
+            -static_cast<float>(MicrophoneProcessor::SamplesPerBlock) /
             (seconds *
                 static_cast<float>(
                     MicrophoneProcessor::ProcessingSampleRate
@@ -146,9 +162,45 @@ bool MicrophoneProcessor::ProcessBlock(
         }
     }
 
+    const bool agcActive = processingEnabled && settings_.agcEnabled;
+    const float previousAgcGainDb = agcGainDb_;
+
+    if (agcActive)
+    {
+        double agcSquareSum = 0.0;
+
+        for (const float sample : preNoiseSuppressionBuffer_)
+        {
+            agcSquareSum += static_cast<double>(sample) *
+                static_cast<double>(sample);
+        }
+
+        const float agcInputRms = static_cast<float>(std::sqrt(
+            agcSquareSum / static_cast<double>(SamplesPerBlock)
+        ));
+        UpdateAgcGain(agcInputRms);
+    }
+    else
+    {
+        agcGainDb_ = 0.0f;
+    }
+
     for (std::size_t index = 0; index < SamplesPerBlock; ++index)
     {
         float sample = preNoiseSuppressionBuffer_[index];
+
+        if (agcActive)
+        {
+            const float interpolation =
+                static_cast<float>(index + 1) /
+                static_cast<float>(SamplesPerBlock);
+            const float gainDb = std::lerp(
+                previousAgcGainDb,
+                agcGainDb_,
+                interpolation
+            );
+            sample *= DecibelsToLinear(gainDb);
+        }
 
         if (processingEnabled && settings_.compressorEnabled)
         {
@@ -184,6 +236,7 @@ bool MicrophoneProcessor::ProcessBlock(
     const bool processingStageApplied = processingEnabled &&
         (settings_.highPassEnabled ||
             noiseSuppressionActive ||
+            settings_.agcEnabled ||
             settings_.compressorEnabled ||
             settings_.limiterEnabled);
 
@@ -197,11 +250,13 @@ bool MicrophoneProcessor::ProcessBlock(
     snapshot.noiseSuppressionRequested = noiseSuppressionRequested;
     snapshot.noiseSuppressionActive = noiseSuppressionActive;
     snapshot.noiseSuppressionFailed = noiseSuppressionFailed_;
+    snapshot.agcActive = agcActive;
     snapshot.bypassed = !processingStageApplied;
     snapshot.configurationValid = configurationValid_;
     snapshot.voiceActivityProbability = noiseSuppressionActive
         ? noiseSuppressor_.GetLastVadProbability()
         : 0.0f;
+    snapshot.agcGainDb = agcActive ? agcGainDb_ : 0.0f;
     PublishSnapshot(snapshot);
 
     return true;
@@ -239,11 +294,15 @@ MicrophoneProcessingSnapshot MicrophoneProcessor::GetSnapshot() const
             noiseSuppressionFailedSnapshot_.load(
                 std::memory_order_relaxed
             );
+        snapshot.agcActive =
+            agcActive_.load(std::memory_order_relaxed);
         snapshot.bypassed = bypassed_.load(std::memory_order_relaxed);
         snapshot.configurationValid =
             snapshotConfigurationValid_.load(std::memory_order_relaxed);
         snapshot.voiceActivityProbability =
             voiceActivityProbability_.load(std::memory_order_relaxed);
+        snapshot.agcGainDb =
+            agcGainDbSnapshot_.load(std::memory_order_relaxed);
 
         const std::uint64_t sequenceAfter =
             snapshotSequence_.load(std::memory_order_acquire);
@@ -293,6 +352,13 @@ void MicrophoneProcessor::ConfigureProcessingState()
     highPassA1_ = (-2.0f * cosine) * inverseA0;
     highPassA2_ = (1.0f - alpha) * inverseA0;
 
+    agcGainReductionCoefficient_ =
+        BlockTimeCoefficient(AgcGainReductionMilliseconds);
+    agcGainIncreaseCoefficient_ =
+        BlockTimeCoefficient(AgcGainIncreaseMilliseconds);
+    agcSilenceReturnCoefficient_ =
+        BlockTimeCoefficient(AgcSilenceReturnMilliseconds);
+
     compressorAttackCoefficient_ =
         TimeCoefficient(settings_.compressorAttackMs);
     compressorReleaseCoefficient_ =
@@ -319,6 +385,7 @@ void MicrophoneProcessor::ResetProcessingState()
 {
     highPassState1_ = 0.0f;
     highPassState2_ = 0.0f;
+    agcGainDb_ = 0.0f;
     compressorEnvelope_ = 0.0f;
 }
 
@@ -330,6 +397,38 @@ float MicrophoneProcessor::ProcessHighPass(const float sample)
     highPassState2_ = highPassB2_ * sample -
         highPassA2_ * output;
     return output;
+}
+
+void MicrophoneProcessor::UpdateAgcGain(const float blockRms)
+{
+    const float inputDbfs = LinearToDecibels(blockRms);
+    float desiredGainDb = 0.0f;
+    float coefficient = agcSilenceReturnCoefficient_;
+
+    if (inputDbfs >= AgcSilenceThresholdDbfs)
+    {
+        desiredGainDb = std::clamp(
+            settings_.agcTargetDbfs - inputDbfs,
+            MinimumAgcGainDb,
+            MaximumAgcGainDb
+        );
+
+        if (std::abs(desiredGainDb - agcGainDb_) <= AgcDeadbandDb)
+        {
+            desiredGainDb = agcGainDb_;
+        }
+
+        coefficient = desiredGainDb < agcGainDb_
+            ? agcGainReductionCoefficient_
+            : agcGainIncreaseCoefficient_;
+    }
+
+    agcGainDb_ = std::clamp(
+        coefficient * agcGainDb_ +
+            (1.0f - coefficient) * desiredGainDb,
+        MinimumAgcGainDb,
+        MaximumAgcGainDb
+    );
 }
 
 float MicrophoneProcessor::ProcessCompressor(const float sample)
@@ -420,6 +519,7 @@ void MicrophoneProcessor::PublishSnapshot(
         snapshot.noiseSuppressionFailed,
         std::memory_order_relaxed
     );
+    agcActive_.store(snapshot.agcActive, std::memory_order_relaxed);
     bypassed_.store(snapshot.bypassed, std::memory_order_relaxed);
     snapshotConfigurationValid_.store(
         snapshot.configurationValid,
@@ -427,6 +527,10 @@ void MicrophoneProcessor::PublishSnapshot(
     );
     voiceActivityProbability_.store(
         snapshot.voiceActivityProbability,
+        std::memory_order_relaxed
+    );
+    agcGainDbSnapshot_.store(
+        snapshot.agcGainDb,
         std::memory_order_relaxed
     );
 

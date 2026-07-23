@@ -527,6 +527,9 @@ void ControlWindow::Shutdown()
     microphoneNoiseSuppressionEnabledCheck_ = nullptr;
     microphoneNoiseSuppressionLevelCaption_ = nullptr;
     microphoneNoiseSuppressionLevelCombo_ = nullptr;
+    microphoneAgcEnabledCheck_ = nullptr;
+    microphoneAgcTargetCaption_ = nullptr;
+    microphoneAgcTargetEdit_ = nullptr;
     microphoneRawMeterCaption_ = nullptr;
     microphoneRawLevelMeter_ = nullptr;
     microphoneProcessedMeterCaption_ = nullptr;
@@ -1105,6 +1108,7 @@ LRESULT ControlWindow::HandleWindowMessage(
             const bool nativeFilterEditChanged =
                 notificationCode == EN_CHANGE &&
                 (commandControl == microphoneHighPassHzEdit_ ||
+                    commandControl == microphoneAgcTargetEdit_ ||
                     commandControl == microphoneCompressorThresholdEdit_ ||
                     commandControl == microphoneCompressorRatioEdit_ ||
                     commandControl == microphoneCompressorAttackEdit_ ||
@@ -1116,6 +1120,7 @@ LRESULT ControlWindow::HandleWindowMessage(
                 (commandControl == microphoneHighPassEnabledCheck_ ||
                     commandControl ==
                         microphoneNoiseSuppressionEnabledCheck_ ||
+                    commandControl == microphoneAgcEnabledCheck_ ||
                     commandControl == microphoneCompressorEnabledCheck_ ||
                     commandControl == microphoneLimiterEnabledCheck_);
 
@@ -1677,6 +1682,16 @@ bool ControlWindow::CreateControls()
         IdMicrophoneNoiseSuppressionLevel,
         WS_EX_CLIENTEDGE
     );
+    microphoneAgcEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
+    microphoneAgcTargetCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneAgcTargetEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0,
+        WS_EX_CLIENTEDGE
+    );
     microphoneRawMeterCaption_ = createControl(
         L"STATIC", L"", SS_LEFT, 0
     );
@@ -1904,7 +1919,9 @@ bool ControlWindow::CreateControls()
         microphoneProcessingStatusValue_, microphoneTestMonitorButton_,
         microphoneNoiseSuppressionEnabledCheck_,
         microphoneNoiseSuppressionLevelCaption_,
-        microphoneNoiseSuppressionLevelCombo_, microphoneRawMeterCaption_,
+        microphoneNoiseSuppressionLevelCombo_, microphoneAgcEnabledCheck_,
+        microphoneAgcTargetCaption_, microphoneAgcTargetEdit_,
+        microphoneRawMeterCaption_,
         microphoneRawLevelMeter_, microphoneProcessedMeterCaption_,
         microphoneProcessedLevelMeter_,
         microphoneHighPassEnabledCheck_, microphoneHighPassHzCaption_,
@@ -2638,6 +2655,20 @@ void ControlWindow::LayoutControls(
         );
         rowY += 34;
 
+        moveWindow(
+            microphoneAgcEnabledCheck_,
+            innerX, rowY, columnWidth, 22, TRUE
+        );
+        moveWindow(
+            microphoneAgcTargetCaption_,
+            rightX, rowY + 4, labelWidth, 20, TRUE
+        );
+        moveWindow(
+            microphoneAgcTargetEdit_,
+            rightX + labelWidth, rowY, editWidth, 25, TRUE
+        );
+        rowY += 34;
+
         const int meterGap = 24;
         const int meterWidth = (innerWidth - meterGap) / 2;
         moveWindow(
@@ -2982,7 +3013,9 @@ void ControlWindow::UpdatePageVisibility()
         microphoneProcessingStatusValue_, microphoneTestMonitorButton_,
         microphoneNoiseSuppressionEnabledCheck_,
         microphoneNoiseSuppressionLevelCaption_,
-        microphoneNoiseSuppressionLevelCombo_, microphoneRawMeterCaption_,
+        microphoneNoiseSuppressionLevelCombo_, microphoneAgcEnabledCheck_,
+        microphoneAgcTargetCaption_, microphoneAgcTargetEdit_,
+        microphoneRawMeterCaption_,
         microphoneRawLevelMeter_, microphoneProcessedMeterCaption_,
         microphoneProcessedLevelMeter_, microphoneHighPassEnabledCheck_,
         microphoneHighPassHzCaption_, microphoneHighPassHzEdit_,
@@ -3096,11 +3129,11 @@ void ControlWindow::ApplyTheme()
         SetWindowTheme(bindingModeCombo_, comboTheme, nullptr);
     }
 
-    const std::array<HWND, 15> edits{
+    const std::array<HWND, 16> edits{
         stopHotkeyEdit_, outputMuteHotkeyEdit_, monitorMuteHotkeyEdit_,
         reloadHotkeyEdit_, exitHotkeyEdit_, bindingHotkeyEdit_,
         bindingFileEdit_, bindingsList_, microphoneHighPassHzEdit_,
-        microphoneCompressorThresholdEdit_,
+        microphoneAgcTargetEdit_, microphoneCompressorThresholdEdit_,
         microphoneCompressorRatioEdit_, microphoneCompressorAttackEdit_,
         microphoneCompressorReleaseEdit_,
         microphoneCompressorMakeupEdit_, microphoneLimiterCeilingEdit_
@@ -3128,12 +3161,12 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 10> checkBoxes{
+    const std::array<HWND, 11> checkBoxes{
         microphoneEnabledCheck_, microphoneToOutputCheck_,
         microphoneToMonitorCheck_, startWithWindowsCheck_,
         checkUpdatesOnStartCheck_, microphoneProcessingEnabledCheck_,
         microphoneNoiseSuppressionEnabledCheck_,
-        microphoneHighPassEnabledCheck_,
+        microphoneAgcEnabledCheck_, microphoneHighPassEnabledCheck_,
         microphoneCompressorEnabledCheck_, microphoneLimiterEnabledCheck_
     };
 
@@ -3219,7 +3252,9 @@ void ControlWindow::ApplyFonts()
         microphoneProcessingStatusValue_,
         microphoneNoiseSuppressionEnabledCheck_,
         microphoneNoiseSuppressionLevelCaption_,
-        microphoneNoiseSuppressionLevelCombo_, microphoneRawMeterCaption_,
+        microphoneNoiseSuppressionLevelCombo_, microphoneAgcEnabledCheck_,
+        microphoneAgcTargetCaption_, microphoneAgcTargetEdit_,
+        microphoneRawMeterCaption_,
         microphoneProcessedMeterCaption_,
         microphoneHighPassEnabledCheck_, microphoneHighPassHzCaption_,
         microphoneHighPassHzEdit_, microphoneCompressorEnabledCheck_,
@@ -4243,6 +4278,20 @@ void ControlWindow::RefreshLocalizedText()
         Localization::Text(L"Seviye:", L"Level:")
     );
     SetControlText(
+        microphoneAgcEnabledCheck_,
+        Localization::Text(
+            L"Otomatik gain control'ü etkinleştir",
+            L"Enable automatic gain control"
+        )
+    );
+    SetControlText(
+        microphoneAgcTargetCaption_,
+        Localization::Text(
+            L"AGC hedefi (-40 ile -3 dBFS):",
+            L"AGC target (-40 to -3 dBFS):"
+        )
+    );
+    SetControlText(
         microphoneRawMeterCaption_,
         Localization::Text(L"Ham mikrofon seviyesi", L"Raw microphone level")
     );
@@ -4320,8 +4369,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         microphoneUnavailableFeaturesCaption_,
         Localization::Text(
-            L"RNNoise seviyesi işlenmiş sinyaldeki wet mix miktarını belirler. Test düğmesi işlenmiş mikrofonu geçici olarak monitöre gönderir. AGC sonraki aşamada eklenecek.",
-            L"The RNNoise level controls the wet mix applied to the processed signal. The test button temporarily sends the processed microphone to the monitor. AGC will be added later."
+            L"RNNoise seviyesi wet mix miktarını belirler. AGC sessizlikte gain yükseltmez ve uyguladığı gain canlı durumda gösterilir. Test düğmesi işlenmiş mikrofonu geçici olarak monitöre gönderir.",
+            L"The RNNoise level controls the wet mix. AGC does not raise gain during silence, and its applied gain is shown in the live status. The test button temporarily sends the processed microphone to the monitor."
         )
     );
 
@@ -4801,6 +4850,10 @@ void ControlWindow::ApplySelectedMicrophoneProcessingPreset()
         0
     );
     setCheck(
+        microphoneAgcEnabledCheck_,
+        settings->agcEnabled
+    );
+    setCheck(
         microphoneHighPassEnabledCheck_,
         settings->highPassEnabled
     );
@@ -4811,6 +4864,10 @@ void ControlWindow::ApplySelectedMicrophoneProcessingPreset()
     setCheck(
         microphoneLimiterEnabledCheck_,
         settings->limiterEnabled
+    );
+    SetControlText(
+        microphoneAgcTargetEdit_,
+        formatValue(settings->agcTargetDbfs)
     );
     SetControlText(
         microphoneHighPassHzEdit_,
@@ -4910,6 +4967,7 @@ void ControlWindow::PopulateMicrophoneProcessingControls()
         )),
         0
     );
+    setCheck(microphoneAgcEnabledCheck_, settings.agcEnabled);
     setCheck(microphoneHighPassEnabledCheck_, settings.highPassEnabled);
     setCheck(
         microphoneCompressorEnabledCheck_,
@@ -4932,6 +4990,10 @@ void ControlWindow::PopulateMicrophoneProcessingControls()
         0
     );
 
+    SetControlText(
+        microphoneAgcTargetEdit_,
+        formatValue(settings.agcTargetDbfs)
+    );
     SetControlText(
         microphoneHighPassHzEdit_,
         formatValue(settings.highPassHz)
@@ -5276,6 +5338,16 @@ void ControlWindow::UpdateLevelMeters()
             status += L"%";
         }
 
+        if (snapshot.microphoneAgcActive)
+        {
+            std::wostringstream gainStream;
+            gainStream << std::showpos << std::fixed << std::setprecision(1)
+                << snapshot.microphoneAgcGainDb;
+            status += L" • AGC: ";
+            status += gainStream.str();
+            status += L" dB";
+        }
+
         if (snapshot.microphoneTestMonitorActive)
         {
             status += Localization::Text(
@@ -5439,6 +5511,7 @@ bool ControlWindow::SavePendingSettings()
         currentConfig_.GetMicrophoneProcessingSettings();
 
     float highPassHz = 0.0f;
+    float agcTargetDbfs = 0.0f;
     float compressorThresholdDb = 0.0f;
     float compressorRatio = 0.0f;
     float compressorAttackMs = 0.0f;
@@ -5448,6 +5521,7 @@ bool ControlWindow::SavePendingSettings()
 
     const bool processingFieldsValid =
         ParseFloatControl(microphoneHighPassHzEdit_, highPassHz) &&
+        ParseFloatControl(microphoneAgcTargetEdit_, agcTargetDbfs) &&
         ParseFloatControl(
             microphoneCompressorThresholdEdit_,
             compressorThresholdDb
@@ -5567,6 +5641,13 @@ bool ControlWindow::SavePendingSettings()
         ) == BST_CHECKED;
         processingSettings.noiseSuppressionLevel =
             *selectedNoiseSuppressionLevel;
+        processingSettings.agcEnabled = SendMessageW(
+            microphoneAgcEnabledCheck_,
+            BM_GETCHECK,
+            0,
+            0
+        ) == BST_CHECKED;
+        processingSettings.agcTargetDbfs = agcTargetDbfs;
         processingSettings.highPassEnabled = SendMessageW(
             microphoneHighPassEnabledCheck_,
             BM_GETCHECK,

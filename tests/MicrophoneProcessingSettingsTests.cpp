@@ -37,7 +37,7 @@ namespace
         );
         Expect(
             !settings.agcEnabled,
-            "unimplemented AGC defaults to disabled"
+            "AGC defaults to disabled"
         );
         Expect(
             IsValidMicrophoneProcessingSettings(settings),
@@ -125,6 +125,8 @@ namespace
             MicrophoneProcessingPreset preset;
             MicrophoneNoiseSuppressionLevel noiseSuppressionLevel;
             float highPassHz;
+            bool agcEnabled;
+            float agcTargetDbfs;
             float thresholdDb;
             float ratio;
             float attackMs;
@@ -136,16 +138,20 @@ namespace
         constexpr std::array cases{
             PresetCase{MicrophoneProcessingPreset::Natural,
                 MicrophoneNoiseSuppressionLevel::Light,
-                80.0f, -24.0f, 3.0f, 10.0f, 120.0f, 0.0f, -1.0f},
+                80.0f, false, -18.0f,
+                -24.0f, 3.0f, 10.0f, 120.0f, 0.0f, -1.0f},
             PresetCase{MicrophoneProcessingPreset::Clean,
                 MicrophoneNoiseSuppressionLevel::Balanced,
-                90.0f, -27.0f, 3.5f, 8.0f, 140.0f, 2.0f, -1.0f},
+                90.0f, true, -18.0f,
+                -27.0f, 3.5f, 8.0f, 140.0f, 2.0f, -1.0f},
             PresetCase{MicrophoneProcessingPreset::Strong,
                 MicrophoneNoiseSuppressionLevel::Strong,
-                100.0f, -30.0f, 4.5f, 6.0f, 170.0f, 4.0f, -1.0f},
+                100.0f, true, -17.0f,
+                -30.0f, 4.5f, 6.0f, 170.0f, 4.0f, -1.0f},
             PresetCase{MicrophoneProcessingPreset::Aggressive,
                 MicrophoneNoiseSuppressionLevel::Strong,
-                120.0f, -34.0f, 6.0f, 4.0f, 200.0f, 6.0f, -1.5f}
+                120.0f, true, -16.0f,
+                -34.0f, 6.0f, 4.0f, 200.0f, 6.0f, -1.5f}
         };
 
         for (const PresetCase& testCase : cases)
@@ -173,8 +179,10 @@ namespace
                     testCase.noiseSuppressionLevel,
                 "preset noise-suppression level is stable"
             );
-            Expect(!settings->agcEnabled,
-                "preset does not claim unavailable AGC");
+            Expect(settings->agcEnabled == testCase.agcEnabled,
+                "preset AGC state is stable");
+            Expect(settings->agcTargetDbfs == testCase.agcTargetDbfs,
+                "preset AGC target is stable");
             Expect(settings->highPassHz == testCase.highPassHz,
                 "preset high-pass is stable");
             Expect(settings->compressorThresholdDb == testCase.thresholdDb,
@@ -197,7 +205,7 @@ namespace
             ), "preset snapshot matches itself");
 
             MicrophoneProcessingSettings changed = *settings;
-            changed.compressorRatio += 0.5f;
+            changed.agcTargetDbfs -= 1.0f;
             Expect(!MicrophoneProcessingSettingsMatchPreset(
                 changed,
                 testCase.preset
