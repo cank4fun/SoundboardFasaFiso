@@ -15,7 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 release candidate:** `2.0.0-rc.2` is feature-complete and undergoing final regression and clean-machine testing before the stable `2.0.0` release.
+**Stable release:** `2.0.0` is the first stable v2 release. It includes the native control panel, independent main and monitor routing, microphone mixing, resilient live configuration, device recovery and portable Windows packaging.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
@@ -235,7 +235,7 @@ cmake --build out/build/x64-Release --target PortableRelease
 The distributable archive is created at:
 
 ```text
-out/build/x64-Release/SoundBoardFasaFiso-v2.0.0-rc.2-windows-x64-portable.zip
+out/build/x64-Release/SoundBoardFasaFiso-v2.0.0-windows-x64-portable.zip
 ```
 
 ## Repository layout
@@ -269,6 +269,6 @@ Released under the [MIT License](LICENSE).
 
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+Official GitHub release artifacts are currently unsigned. The project does not currently use a SignPath Foundation certificate or another public code-signing certificate.
 
-Project roles, privacy rules and the release-signing process are documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
+Build provenance, privacy rules, checksum verification and the requirements for any future signed release are documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).

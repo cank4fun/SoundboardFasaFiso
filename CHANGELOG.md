@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0
+
+- Published the first stable v2 release after the `2.0.0-rc.2` validation cycle.
+- Added the native single-window control panel with light/dark themes, live meters, device selection, hotkey capture and sound-binding editing.
+- Added independent main and monitor outputs, physical microphone routing, automatic audio-device recovery and safe live configuration rollback.
+- Added optional startup update checks, per-user Windows startup registration, persistent session logs and console-free launch.
+- Added versioned portable Windows archives, package validation and attached SHA-256 checksum files.
+- Documented that official GitHub artifacts are currently unsigned and may trigger SmartScreen or Smart App Control.
+- Kept the application portable, dependency-free at runtime and compatible with existing v1 configuration keys.
+
 ## 2.0.0-rc.2
 
 - Allow startup when no usable sound or hotkey binding exists.
