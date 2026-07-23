@@ -404,6 +404,57 @@ if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
         )
     endif()
 
+    add_executable(
+        SoundBoardFasaFisoAecRenderReferenceMixerTests
+        tests/AecRenderReferenceMixerTests.cpp
+        src/audio/AecRenderReferenceMixer.cpp
+        $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoAecRenderReferenceMixerTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoAecRenderReferenceMixerTests
+        SYSTEM PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoAecRenderReferenceMixerTests
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoAecRenderReferenceMixerTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoAecRenderReferenceMixerTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoAecRenderReferenceMixerTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
     if(BUILD_TESTING)
         add_test(
             NAME WebRtcAec3BuildSmoke
@@ -413,6 +464,11 @@ if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
         add_test(
             NAME WebRtcAec3Processor
             COMMAND SoundBoardFasaFisoWebRtcAec3ProcessorTests
+        )
+
+        add_test(
+            NAME AecRenderReferenceMixer
+            COMMAND SoundBoardFasaFisoAecRenderReferenceMixerTests
         )
     endif()
 endif()
