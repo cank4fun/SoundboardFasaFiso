@@ -99,10 +99,19 @@ set(
     "${SOUNDBOARD_RNNOISE_ROOT}/src/rnnoise_tables.c"
 )
 
-foreach(rnnoise_source IN LISTS SOUNDBOARD_RNNOISE_SOURCES)
-    if(NOT EXISTS "${rnnoise_source}")
+set(
+    SOUNDBOARD_RNNOISE_REQUIRED_FILES
+    ${SOUNDBOARD_RNNOISE_SOURCES}
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/cpu_support.h"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/os_support.h"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/vec.h"
+    "${SOUNDBOARD_RNNOISE_ROOT}/src/x86/x86_arch_macros.h"
+)
+
+foreach(rnnoise_file IN LISTS SOUNDBOARD_RNNOISE_REQUIRED_FILES)
+    if(NOT EXISTS "${rnnoise_file}")
         message(FATAL_ERROR
-            "RNNoise source is missing: ${rnnoise_source}. "
+            "RNNoise source is missing: ${rnnoise_file}. "
             "Run tools/Import-RnNoiseV02.ps1 before configuring."
         )
     endif()
