@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(SOUNDBOARD_VERSION "2.0.0-rc.2")
+set(SOUNDBOARD_VERSION "2.1.0-rc.1")
 
-project(SoundBoardFasaFiso VERSION 2.0.0 LANGUAGES C CXX)
+project(SoundBoardFasaFiso VERSION 2.1.0 LANGUAGES C CXX)
 
 if(SOUNDBOARD_VERSION MATCHES "-")
     set(SOUNDBOARD_VERSION_FILE_FLAGS "VS_FF_PRERELEASE")

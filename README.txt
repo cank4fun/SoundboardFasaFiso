@@ -3,6 +3,10 @@ SoundBoardFasaFiso
 
 Windows 10/11 için kurulumsuz, portable soundboard.
 
+SÜRÜM / VERSION
+---------------
+2.1.0-rc.1
+
 DİL / LANGUAGE
 --------------
 language=tr : Türkçe
@@ -34,6 +38,7 @@ sounds\
 README.txt
 LICENSE
 THIRD_PARTY_NOTICES.txt
+WEBRTC_THIRD_PARTY_NOTICES.txt (AEC build)
 
 DESTEKLENEN FORMATLAR
 --------------------
@@ -150,9 +155,13 @@ yeni ve imzasız EXE'yi tek uygulamalık izin seçeneği sunmadan engelleyebilir
 bu durum yerelde derlenen imzasız Release EXE'ler için de geçerlidir.
 
 ZIP dosyasını yalnızca resmi GitHub Release sayfasından indir ve yanında
-yayınlanan .sha256 dosyasıyla karşılaştır. Eşleşen SHA-256, arşivin Release
-dosyasıyla aynı olduğunu doğrular; kod imzasının yerini tutmaz. Programı
-çalıştırmak için Windows güvenliğini kalıcı olarak zayıflatma.
+yayınlanan .sha256 dosyasıyla karşılaştır. PowerShell örneği:
+
+Get-FileHash .\SoundBoardFasaFiso-v*-windows-x64-portable.zip -Algorithm SHA256
+
+Eşleşen SHA-256, arşivin Release dosyasıyla aynı olduğunu doğrular; kod
+imzasının yerini tutmaz. Programı çalıştırmak için Windows güvenliğini
+kalıcı olarak zayıflatma.
 
 NOTLAR
 ------

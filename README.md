@@ -15,7 +15,9 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**v2 release candidate:** `2.0.0-rc.2` is feature-complete and undergoing final regression and clean-machine testing before the stable `2.0.0` release.
+**Development version:** `2.1.0-rc.1` adds the opt-in microphone-processing pipeline, RNNoise, AGC and optional WebRTC AEC3 integration.
+
+**Latest stable release:** `2.0.0` is the first stable v2 release. It includes the native control panel, independent main and monitor routing, microphone mixing, resilient live configuration, device recovery and portable Windows packaging.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
@@ -250,7 +252,7 @@ cmake --build out/build/x64-Release --target PortableRelease
 The distributable archive is created at:
 
 ```text
-out/build/x64-Release/SoundBoardFasaFiso-v2.0.0-rc.2-windows-x64-portable.zip
+out/build/x64-Release/SoundBoardFasaFiso-v2.1.0-rc.1-windows-x64-portable.zip
 ```
 
 ## Repository layout
@@ -285,6 +287,6 @@ Released under the [MIT License](LICENSE).
 
 ## Code signing policy
 
-Official GitHub portable builds are currently unsigned. The SignPath Foundation application is on hold until the project has broader public adoption, so signing is not a release blocker. Release artifacts are built by GitHub Actions and published with SHA-256 checksums.
+Official GitHub release artifacts are currently unsigned. The project does not currently use a SignPath Foundation certificate or another public code-signing certificate. Signing is not a release blocker; official artifacts are built by GitHub Actions and published with SHA-256 checksums.
 
-Project roles, privacy rules, verification guidance and the future signing process are documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
+Build provenance, project roles, privacy rules, checksum verification and the requirements for any future signed release are documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
