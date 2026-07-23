@@ -379,6 +379,8 @@ bool ControlWindow::Initialize(
 
 void ControlWindow::Shutdown()
 {
+    StopMicrophoneTestMonitor();
+
     if (updateCheckThread_.joinable())
     {
         updateCheckThread_.join();
@@ -482,6 +484,7 @@ void ControlWindow::Shutdown()
     microphoneProcessingPresetCombo_ = nullptr;
     microphoneProcessingStatusCaption_ = nullptr;
     microphoneProcessingStatusValue_ = nullptr;
+    microphoneTestMonitorButton_ = nullptr;
     microphoneRawMeterCaption_ = nullptr;
     microphoneRawLevelMeter_ = nullptr;
     microphoneProcessedMeterCaption_ = nullptr;
@@ -571,6 +574,8 @@ void ControlWindow::Show()
 
 void ControlWindow::Hide()
 {
+    StopMicrophoneTestMonitor();
+
     if (window_ == nullptr || IsWindowVisible(window_) == FALSE)
     {
         return;
@@ -1090,6 +1095,10 @@ LRESULT ControlWindow::HandleWindowMessage(
                     SetActivePage(ControlPage::MicrophoneProcessing);
                     return 0;
 
+                case IdMicrophoneTestMonitor:
+                    ToggleMicrophoneTestMonitor();
+                    return 0;
+
                 case IdHotkeysTab:
                     SetActivePage(ControlPage::Hotkeys);
                     return 0;
@@ -1601,6 +1610,10 @@ bool ControlWindow::CreateControls()
     microphoneProcessingStatusValue_ = createControl(
         L"STATIC", L"", SS_LEFT, 0
     );
+    microphoneTestMonitorButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
+        IdMicrophoneTestMonitor
+    );
     microphoneRawMeterCaption_ = createControl(
         L"STATIC", L"", SS_LEFT, 0
     );
@@ -1825,7 +1838,8 @@ bool ControlWindow::CreateControls()
         microphoneProcessingPresetCaption_,
         microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
-        microphoneProcessingStatusValue_, microphoneRawMeterCaption_,
+        microphoneProcessingStatusValue_, microphoneTestMonitorButton_,
+        microphoneRawMeterCaption_,
         microphoneRawLevelMeter_, microphoneProcessedMeterCaption_,
         microphoneProcessedLevelMeter_,
         microphoneHighPassEnabledCheck_, microphoneHighPassHzCaption_,
@@ -2538,6 +2552,10 @@ void ControlWindow::LayoutControls(
             innerX + 94, rowY,
             std::max(180, columnWidth - 94), 220, TRUE
         );
+        moveWindow(
+            microphoneTestMonitorButton_,
+            rightX, rowY, columnWidth, ButtonHeight, TRUE
+        );
         rowY += 34;
 
         const int meterGap = 24;
@@ -2881,7 +2899,8 @@ void ControlWindow::UpdatePageVisibility()
         microphoneProcessingPresetCaption_,
         microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
-        microphoneProcessingStatusValue_, microphoneRawMeterCaption_,
+        microphoneProcessingStatusValue_, microphoneTestMonitorButton_,
+        microphoneRawMeterCaption_,
         microphoneRawLevelMeter_, microphoneProcessedMeterCaption_,
         microphoneProcessedLevelMeter_, microphoneHighPassEnabledCheck_,
         microphoneHighPassHzCaption_, microphoneHighPassHzEdit_,
@@ -3154,6 +3173,7 @@ void ControlWindow::ApplyFonts()
         themeToggleButton_, mainTabButton_, settingsTabButton_,
         microphoneProcessingTabButton_, hotkeysTabButton_,
         refreshDevicesButton_, applySettingsButton_,
+        microphoneTestMonitorButton_,
         captureHotkeyButton_, browseSoundButton_, addBindingButton_,
         updateBindingButton_, removeBindingButton_, clearBindingButton_,
         reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_,
@@ -4113,6 +4133,18 @@ void ControlWindow::RefreshLocalizedText()
         Localization::Text(L"Canlı durum:", L"Live status:")
     );
     SetControlText(
+        microphoneTestMonitorButton_,
+        audio_ != nullptr && audio_->IsMicrophoneTestMonitorEnabled()
+            ? Localization::Text(
+                L"Mikrofon testini durdur",
+                L"Stop microphone test"
+            )
+            : Localization::Text(
+                L"Mikrofonu monitörde test et",
+                L"Test microphone in monitor"
+            )
+    );
+    SetControlText(
         microphoneRawMeterCaption_,
         Localization::Text(L"Ham mikrofon seviyesi", L"Raw microphone level")
     );
@@ -4190,8 +4222,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         microphoneUnavailableFeaturesCaption_,
         Localization::Text(
-            L"Noise suppression config.txt üzerinden kullanılabilir. GUI kontrolü ve AGC sonraki aşamada eklenecek.",
-            L"Noise suppression is available through config.txt. Its GUI control and AGC will be added later."
+            L"Test düğmesi işlenmiş mikrofonu geçici olarak monitöre gönderir. Pencere kapanınca test durur. AGC sonraki aşamada eklenecek.",
+            L"The test button temporarily sends the processed microphone to the monitor. The test stops when the window closes. AGC will be added later."
         )
     );
 
@@ -4895,6 +4927,48 @@ void ControlWindow::UpdateLevelMeters()
     microphoneMeterAvailable_ = snapshot.microphoneAvailable;
     microphoneProcessingMeterAvailable_ = snapshot.microphoneAvailable;
 
+    const bool microphonePermanentlyMonitored =
+        currentConfig_.GetMicrophoneToMonitor();
+    const bool microphoneTestMonitorAvailable =
+        snapshot.microphoneAvailable &&
+        snapshot.monitorAvailable &&
+        !microphonePermanentlyMonitored;
+
+    if (microphoneTestMonitorButton_ != nullptr)
+    {
+        EnableWindow(
+            microphoneTestMonitorButton_,
+            snapshot.microphoneTestMonitorActive ||
+                microphoneTestMonitorAvailable
+        );
+
+        if (microphonePermanentlyMonitored)
+        {
+            SetControlText(
+                microphoneTestMonitorButton_,
+                Localization::Text(
+                    L"Mikrofon zaten monitörde",
+                    L"Microphone already monitored"
+                )
+            );
+        }
+        else
+        {
+            SetControlText(
+                microphoneTestMonitorButton_,
+                snapshot.microphoneTestMonitorActive
+                    ? Localization::Text(
+                        L"Mikrofon testini durdur",
+                        L"Stop microphone test"
+                    )
+                    : Localization::Text(
+                        L"Mikrofonu monitörde test et",
+                        L"Test microphone in monitor"
+                    )
+            );
+        }
+    }
+
     const auto formatDbfs = [](const float linearLevel)
     {
         if (!std::isfinite(linearLevel) || linearLevel <= 0.000001f)
@@ -5020,6 +5094,14 @@ void ControlWindow::UpdateLevelMeters()
             status += L"%";
         }
 
+        if (snapshot.microphoneTestMonitorActive)
+        {
+            status += Localization::Text(
+                L" • test monitörü açık",
+                L" • test monitor active"
+            );
+        }
+
         if (snapshot.microphoneDroppedInputFrames != 0)
         {
             status += Localization::Text(
@@ -5061,6 +5143,72 @@ void ControlWindow::UpdateLevelMeters()
     {
         InvalidateRect(microphoneRawLevelMeter_, nullptr, FALSE);
         InvalidateRect(microphoneProcessedLevelMeter_, nullptr, FALSE);
+    }
+}
+
+void ControlWindow::ToggleMicrophoneTestMonitor()
+{
+    if (audio_ == nullptr)
+    {
+        SetStatus(Localization::Text(
+            L"Mikrofon test monitörü kullanılamıyor.",
+            L"The microphone test monitor is unavailable."
+        ));
+        return;
+    }
+
+    const bool enable = !audio_->IsMicrophoneTestMonitorEnabled();
+    const MicrophoneTestMonitorResult result =
+        audio_->SetMicrophoneTestMonitorEnabled(enable);
+
+    switch (result)
+    {
+        case MicrophoneTestMonitorResult::Enabled:
+            SetStatus(Localization::Text(
+                L"Mikrofon geçici olarak monitöre gönderiliyor. Kontrol penceresi kapanınca test duracak.",
+                L"The microphone is temporarily being sent to the monitor. Closing the control window will stop the test."
+            ));
+            break;
+
+        case MicrophoneTestMonitorResult::Disabled:
+            SetStatus(Localization::Text(
+                L"Mikrofon test monitörü durduruldu.",
+                L"The microphone test monitor was stopped."
+            ));
+            break;
+
+        case MicrophoneTestMonitorResult::AlreadyRouted:
+            SetStatus(Localization::Text(
+                L"Mikrofon ayarlardan zaten monitöre yönlendiriliyor.",
+                L"The microphone is already routed to the monitor by the active settings."
+            ));
+            break;
+
+        case MicrophoneTestMonitorResult::Unavailable:
+            SetStatus(Localization::Text(
+                L"Test için etkin bir mikrofon ve monitör çıkışı gerekiyor.",
+                L"An active microphone and monitor output are required for the test."
+            ));
+            break;
+
+        case MicrophoneTestMonitorResult::Failed:
+            SetStatus(Localization::Text(
+                L"Mikrofon test monitörü başlatılamadı; normal ses rotaları değişmedi.",
+                L"The microphone test monitor could not start; the normal audio routes were not changed."
+            ));
+            break;
+    }
+
+    UpdateLevelMeters();
+}
+
+void ControlWindow::StopMicrophoneTestMonitor()
+{
+    if (audio_ != nullptr && audio_->IsMicrophoneTestMonitorEnabled())
+    {
+        static_cast<void>(
+            audio_->SetMicrophoneTestMonitorEnabled(false)
+        );
     }
 }
 

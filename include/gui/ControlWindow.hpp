@@ -116,6 +116,7 @@ private:
     static constexpr int IdCancelHotkeyCapture = 1027;
     static constexpr int IdMicrophoneProcessingTab = 1028;
     static constexpr int IdMicrophoneProcessingPreset = 1029;
+    static constexpr int IdMicrophoneTestMonitor = 1030;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -175,6 +176,8 @@ private:
     void UpdateVolumeLabels();
     void UpdateBindingVolumeLabel();
     void UpdateLevelMeters();
+    void ToggleMicrophoneTestMonitor();
+    void StopMicrophoneTestMonitor();
     void HandleUpdateCheckCompleted();
     bool SavePendingSettings();
 
@@ -283,6 +286,7 @@ private:
     HWND microphoneProcessingPresetCombo_ = nullptr;
     HWND microphoneProcessingStatusCaption_ = nullptr;
     HWND microphoneProcessingStatusValue_ = nullptr;
+    HWND microphoneTestMonitorButton_ = nullptr;
     HWND microphoneRawMeterCaption_ = nullptr;
     HWND microphoneRawLevelMeter_ = nullptr;
     HWND microphoneProcessedMeterCaption_ = nullptr;

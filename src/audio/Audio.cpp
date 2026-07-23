@@ -551,6 +551,17 @@ void Audio::MicrophoneDataCallback(
             frameCount
         );
     }
+
+    if (instance->microphoneTestMonitorEnabled_.load(
+            std::memory_order_acquire
+        ))
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneTestMonitorRoute_,
+            inputFrames,
+            frameCount
+        );
+    }
 }
 
 void Audio::ProcessedMicrophoneOutputCallback(
@@ -580,6 +591,17 @@ void Audio::ProcessedMicrophoneOutputCallback(
     {
         WriteMicrophoneFrames(
             instance->microphoneMonitorRoute_,
+            interleavedStereoFrames,
+            frameCount
+        );
+    }
+
+    if (instance->microphoneTestMonitorEnabled_.load(
+            std::memory_order_acquire
+        ))
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneTestMonitorRoute_,
             interleavedStereoFrames,
             frameCount
         );
@@ -1051,6 +1073,24 @@ bool Audio::InitializeMicrophone(
         {
             return false;
         }
+    }
+
+    microphoneTestMonitorEnabled_.store(
+        false,
+        std::memory_order_release
+    );
+
+    if (!microphoneToMonitor_ && monitorEngine_.initialized &&
+        !InitializeMicrophoneRoute(
+            monitorEngine_,
+            captureSampleRate,
+            microphoneTestMonitorRoute_
+        ))
+    {
+        std::cerr << Localization::Text(
+            "Uyarı: Geçici mikrofon test monitörü hazırlanamadı. Ana mikrofon rotası çalışmaya devam edecek.\n",
+            "Warning: The temporary microphone test monitor could not be prepared. The main microphone route will continue to work.\n"
+        );
     }
 
     microphoneProcessingActive_.store(
@@ -2164,6 +2204,62 @@ MuteToggleResult Audio::ToggleMonitorMute()
     );
 }
 
+MicrophoneTestMonitorResult Audio::SetMicrophoneTestMonitorEnabled(
+    const bool enabled
+)
+{
+    if (!enabled)
+    {
+        microphoneTestMonitorEnabled_.store(
+            false,
+            std::memory_order_release
+        );
+        return MicrophoneTestMonitorResult::Disabled;
+    }
+
+    if (microphoneToMonitor_)
+    {
+        microphoneTestMonitorEnabled_.store(
+            false,
+            std::memory_order_release
+        );
+        return MicrophoneTestMonitorResult::AlreadyRouted;
+    }
+
+    if (!microphoneEnabled_ || !microphoneCapture_.initialized ||
+        !monitorEngine_.initialized)
+    {
+        microphoneTestMonitorEnabled_.store(
+            false,
+            std::memory_order_release
+        );
+        return MicrophoneTestMonitorResult::Unavailable;
+    }
+
+    if (!microphoneTestMonitorRoute_.ringBufferInitialized ||
+        !microphoneTestMonitorRoute_.soundInitialized)
+    {
+        microphoneTestMonitorEnabled_.store(
+            false,
+            std::memory_order_release
+        );
+        return MicrophoneTestMonitorResult::Failed;
+    }
+
+    microphoneTestMonitorEnabled_.store(
+        true,
+        std::memory_order_release
+    );
+    return MicrophoneTestMonitorResult::Enabled;
+}
+
+bool Audio::IsMicrophoneTestMonitorEnabled() const noexcept
+{
+    return microphoneTestMonitorEnabled_.load(
+        std::memory_order_acquire
+    );
+}
+
 bool Audio::IsEngineRunning(EngineState& state) const
 {
     if (!state.initialized)
@@ -2334,6 +2430,12 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
         );
 
     snapshot.microphoneProcessingActive = processingActive;
+    snapshot.microphoneTestMonitorActive =
+        snapshot.microphoneAvailable &&
+        snapshot.monitorAvailable &&
+        microphoneTestMonitorEnabled_.load(
+            std::memory_order_acquire
+        );
 
     float microphoneRawPeak = snapshot.microphoneAvailable
         ? std::clamp(
@@ -2408,7 +2510,8 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
         );
     }
 
-    if (microphoneToMonitor_ && snapshot.microphoneAvailable)
+    if ((microphoneToMonitor_ || snapshot.microphoneTestMonitorActive) &&
+        snapshot.microphoneAvailable)
     {
         activeMonitorSoundLevel = std::max(
             activeMonitorSoundLevel,
@@ -2438,6 +2541,10 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
 void Audio::DestroyRuntime()
 {
     microphonePeak_.store(0.0f, std::memory_order_relaxed);
+    microphoneTestMonitorEnabled_.store(
+        false,
+        std::memory_order_release
+    );
 
     if (microphoneCapture_.initialized)
     {
@@ -2460,6 +2567,7 @@ void Audio::DestroyRuntime()
 
     DestroyMicrophoneRoute(microphoneOutputRoute_);
     DestroyMicrophoneRoute(microphoneMonitorRoute_);
+    DestroyMicrophoneRoute(microphoneTestMonitorRoute_);
 
     for (auto& [soundId, loadedSound] : loadedSounds_)
     {

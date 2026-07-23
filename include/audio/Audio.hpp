@@ -36,6 +36,15 @@ enum class MuteToggleResult
     Failed
 };
 
+enum class MicrophoneTestMonitorResult
+{
+    Enabled,
+    Disabled,
+    AlreadyRouted,
+    Unavailable,
+    Failed
+};
+
 struct AudioLevelSnapshot
 {
     float output = 0.0f;
@@ -51,6 +60,7 @@ struct AudioLevelSnapshot
     bool monitorAvailable = false;
     bool microphoneAvailable = false;
     bool microphoneProcessingActive = false;
+    bool microphoneTestMonitorActive = false;
     bool microphoneNoiseSuppressionActive = false;
     bool microphoneNoiseSuppressionFailed = false;
     bool microphoneInputClipped = false;
@@ -101,6 +111,11 @@ public:
 
     MuteToggleResult ToggleOutputMute();
     MuteToggleResult ToggleMonitorMute();
+
+    MicrophoneTestMonitorResult SetMicrophoneTestMonitorEnabled(
+        bool enabled
+    );
+    bool IsMicrophoneTestMonitorEnabled() const noexcept;
 
     AudioRecoveryResult MaintainDeviceConnection();
     AudioLevelSnapshot GetLevelSnapshot() const;
@@ -259,6 +274,7 @@ private:
     CaptureState microphoneCapture_;
     MicrophoneRoute microphoneOutputRoute_;
     MicrophoneRoute microphoneMonitorRoute_;
+    MicrophoneRoute microphoneTestMonitorRoute_;
     MicrophoneProcessingRuntime microphoneProcessingRuntime_;
 
     std::unordered_map<std::string, LoadedSound> loadedSounds_;
@@ -287,6 +303,7 @@ private:
     std::atomic_bool ignoreDeviceNotifications_{false};
     std::atomic<float> microphonePeak_{0.0f};
     std::atomic_bool microphoneProcessingActive_{false};
+    std::atomic_bool microphoneTestMonitorEnabled_{false};
 
     bool contextInitialized_ = false;
     bool desiredConfigurationSet_ = false;
