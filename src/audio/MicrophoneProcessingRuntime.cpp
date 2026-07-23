@@ -38,12 +38,7 @@ bool MicrophoneProcessingRuntime::Initialize(
         return false;
     }
 
-    if (!processor_.Initialize(
-            settings
-#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
-            , renderReferenceCallback != nullptr
-#endif
-        ))
+    if (!processor_.Initialize(settings))
     {
         return false;
     }
@@ -79,6 +74,10 @@ bool MicrophoneProcessingRuntime::Initialize(
 #endif
     stopRequested_.store(false, std::memory_order_relaxed);
     droppedInputFrames_.store(0, std::memory_order_relaxed);
+    echoCancellationReferenceUnderruns_.store(
+        0,
+        std::memory_order_relaxed
+    );
     acceptingInput_.store(true, std::memory_order_release);
 
     try
@@ -186,7 +185,12 @@ ma_uint32 MicrophoneProcessingRuntime::PushInputFrames(
 MicrophoneProcessingSnapshot
 MicrophoneProcessingRuntime::GetSnapshot() const
 {
-    return processor_.GetSnapshot();
+    MicrophoneProcessingSnapshot snapshot = processor_.GetSnapshot();
+    snapshot.echoCancellationReferenceUnderrunCount =
+        echoCancellationReferenceUnderruns_.load(
+            std::memory_order_relaxed
+        );
+    return snapshot;
 }
 
 std::uint64_t
@@ -231,6 +235,10 @@ void MicrophoneProcessingRuntime::Shutdown()
     streamDelayMilliseconds_ = 20;
 #endif
     settings_ = {};
+    echoCancellationReferenceUnderruns_.store(
+        0,
+        std::memory_order_relaxed
+    );
     processor_.Reset();
     std::memset(
         &inputRingBuffer_,
@@ -329,14 +337,27 @@ void MicrophoneProcessingRuntime::ProcessAndDispatchBlock(
         renderReference{};
     std::span<const float> renderReferenceView;
 
-    if (renderReferenceCallback_ != nullptr &&
-        renderReferenceCallback_(
-            renderReferenceContext_,
-            renderReference.data(),
-            static_cast<ma_uint32>(renderReference.size())
-        ))
+    if (settings_.echoCancellationEnabled)
     {
-        renderReferenceView = renderReference;
+        const bool referenceAvailable =
+            renderReferenceCallback_ != nullptr &&
+            renderReferenceCallback_(
+                renderReferenceContext_,
+                renderReference.data(),
+                static_cast<ma_uint32>(renderReference.size())
+            );
+
+        if (referenceAvailable)
+        {
+            renderReferenceView = renderReference;
+        }
+        else
+        {
+            echoCancellationReferenceUnderruns_.fetch_add(
+                1,
+                std::memory_order_relaxed
+            );
+        }
     }
 
     if (!processor_.ProcessBlock(

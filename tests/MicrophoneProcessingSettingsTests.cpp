@@ -32,6 +32,10 @@ namespace
             "the default preset is natural"
         );
         Expect(
+            !settings.echoCancellationEnabled,
+            "echo cancellation defaults to disabled"
+        );
+        Expect(
             !settings.noiseSuppressionEnabled,
             "noise suppression defaults to disabled"
         );
@@ -169,6 +173,10 @@ namespace
 
             Expect(settings->enabled, "preset preserves requested enabled state");
             Expect(settings->preset == testCase.preset, "preset identity is stored");
+            Expect(
+                !settings->echoCancellationEnabled,
+                "preset does not force echo cancellation"
+            );
             Expect(settings->highPassEnabled, "preset enables high-pass");
             Expect(settings->compressorEnabled, "preset enables compressor");
             Expect(settings->limiterEnabled, "preset enables limiter");
@@ -203,6 +211,13 @@ namespace
                 *settings,
                 testCase.preset
             ), "preset snapshot matches itself");
+
+            MicrophoneProcessingSettings echoChanged = *settings;
+            echoChanged.echoCancellationEnabled = true;
+            Expect(MicrophoneProcessingSettingsMatchPreset(
+                echoChanged,
+                testCase.preset
+            ), "echo cancellation remains independent of presets");
 
             MicrophoneProcessingSettings changed = *settings;
             changed.agcTargetDbfs -= 1.0f;

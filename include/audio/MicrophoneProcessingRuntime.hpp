@@ -101,5 +101,6 @@ private:
     std::atomic_bool acceptingInput_{false};
     std::atomic_uint32_t activePushCount_{0};
     std::atomic<std::uint64_t> droppedInputFrames_{0};
+    std::atomic<std::uint64_t> echoCancellationReferenceUnderruns_{0};
     bool initialized_ = false;
 };

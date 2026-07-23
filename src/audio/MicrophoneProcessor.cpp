@@ -11,6 +11,7 @@ namespace
     constexpr float AgcGainIncreaseMilliseconds = 500.0f;
     constexpr float AgcSilenceReturnMilliseconds = 200.0f;
     constexpr float AgcDeadbandDb = 0.5f;
+    constexpr int EchoCancellationUnavailableError = -5;
 
     float DecibelsToLinear(const float decibels)
     {
@@ -48,8 +49,7 @@ namespace
 }
 
 bool MicrophoneProcessor::Initialize(
-    const MicrophoneProcessingSettings& settings,
-    const bool echoCancellationRequested
+    const MicrophoneProcessingSettings& settings
 )
 {
     Reset();
@@ -67,7 +67,7 @@ bool MicrophoneProcessor::Initialize(
 
     settings_ = settings;
     configurationValid_ = true;
-    echoCancellationRequested_ = echoCancellationRequested;
+    echoCancellationRequested_ = settings_.echoCancellationEnabled;
 
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
     if (echoCancellationRequested_)
@@ -77,6 +77,18 @@ bool MicrophoneProcessor::Initialize(
         echoCancellationError_ = echoCancellationAvailable_
             ? 0
             : echoCanceller_.LastError();
+
+        if (echoCancellationFailed_)
+        {
+            ++echoCancellationFailureCount_;
+        }
+    }
+#else
+    if (echoCancellationRequested_)
+    {
+        echoCancellationFailed_ = true;
+        echoCancellationError_ = EchoCancellationUnavailableError;
+        ++echoCancellationFailureCount_;
     }
 #endif
 
@@ -84,8 +96,11 @@ bool MicrophoneProcessor::Initialize(
 
     MicrophoneProcessingSnapshot snapshot;
     snapshot.echoCancellationRequested = echoCancellationRequested_;
+    snapshot.echoCancellationReady = echoCancellationAvailable_;
     snapshot.echoCancellationFailed = echoCancellationFailed_;
     snapshot.echoCancellationError = echoCancellationError_;
+    snapshot.echoCancellationFailureCount =
+        echoCancellationFailureCount_;
     snapshot.configurationValid = configurationValid_;
     PublishSnapshot(snapshot);
     return true;
@@ -153,6 +168,7 @@ bool MicrophoneProcessor::ProcessBlock(
         inputClipped = inputClipped || rawMagnitude > 1.0f;
     }
 
+    bool echoCancellationReferenceAvailable = false;
     bool echoCancellationActive = false;
     const std::array<float, SamplesPerBlock>* stageInput =
         &sanitizedInputBuffer_;
@@ -162,29 +178,32 @@ bool MicrophoneProcessor::ProcessBlock(
     {
         const bool referenceIsValid =
             renderReference.size() == SamplesPerBlock &&
-            streamDelayMilliseconds >= 0;
-        const bool processed = referenceIsValid &&
-            echoCanceller_.ProcessBlock(
-                renderReference,
-                sanitizedInputBuffer_,
-                echoCancelledBuffer_,
-                streamDelayMilliseconds
-            );
+            streamDelayMilliseconds >= 0 &&
+            streamDelayMilliseconds <= 500;
 
-        if (processed)
+        if (referenceIsValid)
         {
-            stageInput = &echoCancelledBuffer_;
-            echoCancellationActive = true;
-            echoCancellationError_ = 0;
-        }
-        else
-        {
-            echoCancellationAvailable_ = false;
-            echoCancellationFailed_ = true;
-            echoCancellationError_ = referenceIsValid
-                ? echoCanceller_.LastError()
-                : -4;
-            echoCanceller_.Reset();
+            echoCancellationReferenceAvailable = true;
+
+            if (echoCanceller_.ProcessBlock(
+                    renderReference,
+                    sanitizedInputBuffer_,
+                    echoCancelledBuffer_,
+                    streamDelayMilliseconds
+                ))
+            {
+                stageInput = &echoCancelledBuffer_;
+                echoCancellationActive = true;
+                echoCancellationError_ = 0;
+            }
+            else
+            {
+                echoCancellationAvailable_ = false;
+                echoCancellationFailed_ = true;
+                echoCancellationError_ = echoCanceller_.LastError();
+                ++echoCancellationFailureCount_;
+                echoCanceller_.Reset();
+            }
         }
     }
 #endif
@@ -322,9 +341,14 @@ bool MicrophoneProcessor::ProcessBlock(
     snapshot.noiseSuppressionActive = noiseSuppressionActive;
     snapshot.noiseSuppressionFailed = noiseSuppressionFailed_;
     snapshot.echoCancellationRequested = echoCancellationRequested_;
+    snapshot.echoCancellationReady = echoCancellationAvailable_;
+    snapshot.echoCancellationReferenceAvailable =
+        echoCancellationReferenceAvailable;
     snapshot.echoCancellationActive = echoCancellationActive;
     snapshot.echoCancellationFailed = echoCancellationFailed_;
     snapshot.echoCancellationError = echoCancellationError_;
+    snapshot.echoCancellationFailureCount =
+        echoCancellationFailureCount_;
     snapshot.agcActive = agcActive;
     snapshot.bypassed = !processingStageApplied;
     snapshot.configurationValid = configurationValid_;
@@ -373,6 +397,14 @@ MicrophoneProcessingSnapshot MicrophoneProcessor::GetSnapshot() const
             echoCancellationRequestedSnapshot_.load(
                 std::memory_order_relaxed
             );
+        snapshot.echoCancellationReady =
+            echoCancellationReadySnapshot_.load(
+                std::memory_order_relaxed
+            );
+        snapshot.echoCancellationReferenceAvailable =
+            echoCancellationReferenceAvailableSnapshot_.load(
+                std::memory_order_relaxed
+            );
         snapshot.echoCancellationActive =
             echoCancellationActive_.load(std::memory_order_relaxed);
         snapshot.echoCancellationFailed =
@@ -381,6 +413,10 @@ MicrophoneProcessingSnapshot MicrophoneProcessor::GetSnapshot() const
             );
         snapshot.echoCancellationError =
             echoCancellationErrorSnapshot_.load(
+                std::memory_order_relaxed
+            );
+        snapshot.echoCancellationFailureCount =
+            echoCancellationFailureCountSnapshot_.load(
                 std::memory_order_relaxed
             );
         snapshot.agcActive =
@@ -420,6 +456,7 @@ void MicrophoneProcessor::Reset()
     echoCancellationAvailable_ = false;
     echoCancellationFailed_ = false;
     echoCancellationError_ = 0;
+    echoCancellationFailureCount_ = 0;
     sanitizedInputBuffer_.fill(0.0f);
     echoCancelledBuffer_.fill(0.0f);
     noiseSuppressor_.Reset();
@@ -621,6 +658,14 @@ void MicrophoneProcessor::PublishSnapshot(
         snapshot.echoCancellationRequested,
         std::memory_order_relaxed
     );
+    echoCancellationReadySnapshot_.store(
+        snapshot.echoCancellationReady,
+        std::memory_order_relaxed
+    );
+    echoCancellationReferenceAvailableSnapshot_.store(
+        snapshot.echoCancellationReferenceAvailable,
+        std::memory_order_relaxed
+    );
     echoCancellationActive_.store(
         snapshot.echoCancellationActive,
         std::memory_order_relaxed
@@ -631,6 +676,10 @@ void MicrophoneProcessor::PublishSnapshot(
     );
     echoCancellationErrorSnapshot_.store(
         snapshot.echoCancellationError,
+        std::memory_order_relaxed
+    );
+    echoCancellationFailureCountSnapshot_.store(
+        snapshot.echoCancellationFailureCount,
         std::memory_order_relaxed
     );
     agcActive_.store(snapshot.agcActive, std::memory_order_relaxed);

@@ -1666,6 +1666,9 @@ bool ControlWindow::CreateControls()
     microphoneProcessingStatusValue_ = createControl(
         L"STATIC", L"", SS_LEFT, 0
     );
+    microphoneEchoCancellationEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
     microphoneTestMonitorButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
         IdMicrophoneTestMonitor
@@ -1916,7 +1919,9 @@ bool ControlWindow::CreateControls()
         microphoneProcessingPresetCaption_,
         microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
-        microphoneProcessingStatusValue_, microphoneTestMonitorButton_,
+        microphoneProcessingStatusValue_,
+        microphoneEchoCancellationEnabledCheck_,
+        microphoneTestMonitorButton_,
         microphoneNoiseSuppressionEnabledCheck_,
         microphoneNoiseSuppressionLevelCaption_,
         microphoneNoiseSuppressionLevelCombo_, microphoneAgcEnabledCheck_,
@@ -2634,9 +2639,20 @@ void ControlWindow::LayoutControls(
             innerX + 94, rowY,
             std::max(180, columnWidth - 94), 220, TRUE
         );
+        const int aecControlGap = 10;
+        const int aecControlWidth =
+            std::max(140, (columnWidth - aecControlGap) / 2);
+        moveWindow(
+            microphoneEchoCancellationEnabledCheck_,
+            rightX, rowY + 4, aecControlWidth, 22, TRUE
+        );
         moveWindow(
             microphoneTestMonitorButton_,
-            rightX, rowY, columnWidth, ButtonHeight, TRUE
+            rightX + aecControlWidth + aecControlGap,
+            rowY,
+            columnWidth - aecControlWidth - aecControlGap,
+            ButtonHeight,
+            TRUE
         );
         rowY += 34;
 
@@ -3010,7 +3026,9 @@ void ControlWindow::UpdatePageVisibility()
         microphoneProcessingPresetCaption_,
         microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
-        microphoneProcessingStatusValue_, microphoneTestMonitorButton_,
+        microphoneProcessingStatusValue_,
+        microphoneEchoCancellationEnabledCheck_,
+        microphoneTestMonitorButton_,
         microphoneNoiseSuppressionEnabledCheck_,
         microphoneNoiseSuppressionLevelCaption_,
         microphoneNoiseSuppressionLevelCombo_, microphoneAgcEnabledCheck_,
@@ -3161,10 +3179,11 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 11> checkBoxes{
+    const std::array<HWND, 12> checkBoxes{
         microphoneEnabledCheck_, microphoneToOutputCheck_,
         microphoneToMonitorCheck_, startWithWindowsCheck_,
         checkUpdatesOnStartCheck_, microphoneProcessingEnabledCheck_,
+        microphoneEchoCancellationEnabledCheck_,
         microphoneNoiseSuppressionEnabledCheck_,
         microphoneAgcEnabledCheck_, microphoneHighPassEnabledCheck_,
         microphoneCompressorEnabledCheck_, microphoneLimiterEnabledCheck_
@@ -3250,6 +3269,7 @@ void ControlWindow::ApplyFonts()
         microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
         microphoneProcessingStatusValue_,
+        microphoneEchoCancellationEnabledCheck_,
         microphoneNoiseSuppressionEnabledCheck_,
         microphoneNoiseSuppressionLevelCaption_,
         microphoneNoiseSuppressionLevelCombo_, microphoneAgcEnabledCheck_,
@@ -4255,6 +4275,20 @@ void ControlWindow::RefreshLocalizedText()
         Localization::Text(L"Canlı durum:", L"Live status:")
     );
     SetControlText(
+        microphoneEchoCancellationEnabledCheck_,
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        Localization::Text(
+            L"Yankı engellemeyi etkinleştir",
+            L"Enable echo cancellation"
+        )
+#else
+        Localization::Text(
+            L"Yankı engelleme bu build'de yok",
+            L"Echo cancellation unavailable in this build"
+        )
+#endif
+    );
+    SetControlText(
         microphoneTestMonitorButton_,
         audio_ != nullptr && audio_->IsMicrophoneTestMonitorEnabled()
             ? Localization::Text(
@@ -4369,8 +4403,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         microphoneUnavailableFeaturesCaption_,
         Localization::Text(
-            L"RNNoise seviyesi wet mix miktarını belirler. AGC sessizlikte gain yükseltmez ve uyguladığı gain canlı durumda gösterilir. Test düğmesi işlenmiş mikrofonu geçici olarak monitöre gönderir.",
-            L"The RNNoise level controls the wet mix. AGC does not raise gain during silence, and its applied gain is shown in the live status. The test button temporarily sends the processed microphone to the monitor."
+            L"Yankı engelleme monitör çıkışındaki soundboard sesini referans alır. Referans yoksa mikrofon güvenli biçimde bypass edilir. RNNoise, AGC ve test monitörü bağımsız çalışır.",
+            L"Echo cancellation uses soundboard audio sent to the monitor as its reference. Without a reference, the microphone safely bypasses AEC. RNNoise, AGC, and test monitoring remain independent."
         )
     );
 
@@ -4956,6 +4990,15 @@ void ControlWindow::PopulateMicrophoneProcessingControls()
 
     setCheck(microphoneProcessingEnabledCheck_, settings.enabled);
     setCheck(
+        microphoneEchoCancellationEnabledCheck_,
+        settings.echoCancellationEnabled
+    );
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    EnableWindow(microphoneEchoCancellationEnabledCheck_, TRUE);
+#else
+    EnableWindow(microphoneEchoCancellationEnabledCheck_, FALSE);
+#endif
+    setCheck(
         microphoneNoiseSuppressionEnabledCheck_,
         settings.noiseSuppressionEnabled
     );
@@ -5348,6 +5391,73 @@ void ControlWindow::UpdateLevelMeters()
             status += L" dB";
         }
 
+        status += L" • AEC: ";
+
+        if (!snapshot.microphoneEchoCancellationRequested)
+        {
+            status += Localization::Text(L"kapalı", L"inactive");
+        }
+        else if (snapshot.microphoneEchoCancellationFailed)
+        {
+            status += Localization::Text(L"başarısız", L"failed");
+
+            if (snapshot.microphoneEchoCancellationError != 0)
+            {
+                status += L" (";
+                status += std::to_wstring(
+                    snapshot.microphoneEchoCancellationError
+                );
+                status += L")";
+            }
+        }
+        else if (snapshot.microphoneEchoCancellationActive)
+        {
+            status += Localization::Text(L"aktif", L"active");
+        }
+        else if (
+            snapshot.microphoneEchoCancellationReferenceUnderruns != 0 &&
+            !snapshot.microphoneEchoCancellationReferenceAvailable
+        )
+        {
+            status += Localization::Text(
+                L"referans yok",
+                L"no reference"
+            );
+        }
+        else if (snapshot.microphoneEchoCancellationReady)
+        {
+            status += Localization::Text(L"hazır", L"armed");
+        }
+        else
+        {
+            status += Localization::Text(
+                L"referans yok",
+                L"no reference"
+            );
+        }
+
+        if (snapshot.microphoneEchoCancellationReferenceUnderruns != 0)
+        {
+            status += Localization::Text(
+                L" • ref kaçırma: ",
+                L" • ref misses: "
+            );
+            status += std::to_wstring(
+                snapshot.microphoneEchoCancellationReferenceUnderruns
+            );
+        }
+
+        if (snapshot.microphoneEchoCancellationFailures != 0)
+        {
+            status += Localization::Text(
+                L" • AEC hata: ",
+                L" • AEC failures: "
+            );
+            status += std::to_wstring(
+                snapshot.microphoneEchoCancellationFailures
+            );
+        }
+
         if (snapshot.microphoneTestMonitorActive)
         {
             status += Localization::Text(
@@ -5614,6 +5724,17 @@ bool ControlWindow::SavePendingSettings()
         0,
         0
     ) == BST_CHECKED;
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    const bool echoCancellationEnabled = SendMessageW(
+        microphoneEchoCancellationEnabledCheck_,
+        BM_GETCHECK,
+        0,
+        0
+    ) == BST_CHECKED;
+#else
+    const bool echoCancellationEnabled =
+        processingSettings.echoCancellationEnabled;
+#endif
 
     if (*selectedPreset != MicrophoneProcessingPreset::Custom)
     {
@@ -5628,11 +5749,15 @@ bool ControlWindow::SavePendingSettings()
         }
 
         processingSettings = *presetSettings;
+        processingSettings.echoCancellationEnabled =
+            echoCancellationEnabled;
     }
     else
     {
         processingSettings.enabled = processingEnabled;
         processingSettings.preset = MicrophoneProcessingPreset::Custom;
+        processingSettings.echoCancellationEnabled =
+            echoCancellationEnabled;
         processingSettings.noiseSuppressionEnabled = SendMessageW(
             microphoneNoiseSuppressionEnabledCheck_,
             BM_GETCHECK,

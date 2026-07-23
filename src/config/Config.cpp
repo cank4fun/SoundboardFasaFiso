@@ -92,6 +92,11 @@ namespace
             "microphone_processing_enabled=false"
         },
         ProcessingBooleanSetting{
+            "MICROPHONE_ECHO_CANCELLATION_ENABLED",
+            &MicrophoneProcessingSettings::echoCancellationEnabled,
+            "microphone_echo_cancellation_enabled=false"
+        },
+        ProcessingBooleanSetting{
             "MICROPHONE_HIGH_PASS_ENABLED",
             &MicrophoneProcessingSettings::highPassEnabled,
             "microphone_high_pass_enabled=true"
@@ -2188,6 +2193,9 @@ bool Config::Save(const std::filesystem::path& filePath) const
         << MicrophoneProcessingPresetName(
             microphoneProcessingSettings_.preset
         ) << '\n'
+        << "microphone_echo_cancellation_enabled="
+        << (microphoneProcessingSettings_.echoCancellationEnabled
+            ? "true" : "false") << '\n'
         << "microphone_high_pass_enabled="
         << (microphoneProcessingSettings_.highPassEnabled
             ? "true" : "false") << '\n'

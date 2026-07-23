@@ -26,6 +26,8 @@ struct MicrophoneProcessingSnapshot
     bool noiseSuppressionActive = false;
     bool noiseSuppressionFailed = false;
     bool echoCancellationRequested = false;
+    bool echoCancellationReady = false;
+    bool echoCancellationReferenceAvailable = false;
     bool echoCancellationActive = false;
     bool echoCancellationFailed = false;
     bool agcActive = false;
@@ -35,6 +37,8 @@ struct MicrophoneProcessingSnapshot
     float voiceActivityProbability = 0.0f;
     float agcGainDb = 0.0f;
     int echoCancellationError = 0;
+    std::uint64_t echoCancellationReferenceUnderrunCount = 0;
+    std::uint64_t echoCancellationFailureCount = 0;
 };
 
 class MicrophoneProcessor
@@ -55,8 +59,7 @@ public:
     MicrophoneProcessor& operator=(MicrophoneProcessor&&) = delete;
 
     bool Initialize(
-        const MicrophoneProcessingSettings& settings,
-        bool echoCancellationRequested = false
+        const MicrophoneProcessingSettings& settings
     );
     bool UpdateSettings(const MicrophoneProcessingSettings& settings);
 
@@ -119,6 +122,7 @@ private:
     bool echoCancellationAvailable_ = false;
     bool echoCancellationFailed_ = false;
     int echoCancellationError_ = 0;
+    std::uint64_t echoCancellationFailureCount_ = 0;
     std::array<float, SamplesPerBlock> sanitizedInputBuffer_{};
     std::array<float, SamplesPerBlock> echoCancelledBuffer_{};
 
@@ -139,9 +143,12 @@ private:
     std::atomic_bool noiseSuppressionActive_{false};
     std::atomic_bool noiseSuppressionFailedSnapshot_{false};
     std::atomic_bool echoCancellationRequestedSnapshot_{false};
+    std::atomic_bool echoCancellationReadySnapshot_{false};
+    std::atomic_bool echoCancellationReferenceAvailableSnapshot_{false};
     std::atomic_bool echoCancellationActive_{false};
     std::atomic_bool echoCancellationFailedSnapshot_{false};
     std::atomic<int> echoCancellationErrorSnapshot_{0};
+    std::atomic<std::uint64_t> echoCancellationFailureCountSnapshot_{0};
     std::atomic_bool agcActive_{false};
     std::atomic_bool bypassed_{true};
     std::atomic_bool snapshotConfigurationValid_{true};

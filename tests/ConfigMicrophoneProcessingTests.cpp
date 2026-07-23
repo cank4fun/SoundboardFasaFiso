@@ -91,6 +91,8 @@ namespace
     {
         return left.enabled == right.enabled &&
             left.preset == right.preset &&
+            left.echoCancellationEnabled ==
+                right.echoCancellationEnabled &&
             left.highPassEnabled == right.highPassEnabled &&
             NearlyEqual(left.highPassHz, right.highPassHz) &&
             left.noiseSuppressionEnabled ==
@@ -135,6 +137,10 @@ namespace
         const auto& settings = config.GetMicrophoneProcessingSettings();
         Expect(!settings.enabled, "old config keeps processing disabled");
         Expect(
+            !settings.echoCancellationEnabled,
+            "old config keeps echo cancellation disabled"
+        );
+        Expect(
             settings.highPassEnabled,
             "native high-pass default remains available"
         );
@@ -159,6 +165,7 @@ namespace
             "language=en\n"
             "microphone_processing_enabled=on\n"
             "microphone_processing_preset=STRONG\n"
+            "microphone_echo_cancellation_enabled=true\n"
             "microphone_high_pass_enabled=false\n"
             "microphone_high_pass_hz=140,5\n"
             "microphone_noise_suppression_enabled=true\n"
@@ -184,6 +191,10 @@ namespace
         Expect(
             settings.preset == MicrophoneProcessingPreset::Strong,
             "preset parses case-insensitively"
+        );
+        Expect(
+            settings.echoCancellationEnabled,
+            "echo-cancellation enabled parses"
         );
         Expect(!settings.highPassEnabled, "high-pass enabled parses");
         Expect(NearlyEqual(settings.highPassHz, 140.5f), "comma float parses");
@@ -228,6 +239,7 @@ namespace
         MicrophoneProcessingSettings expected;
         expected.enabled = true;
         expected.preset = MicrophoneProcessingPreset::Custom;
+        expected.echoCancellationEnabled = true;
         expected.highPassEnabled = true;
         expected.highPassHz = 95.125f;
         expected.noiseSuppressionEnabled = false;
@@ -264,6 +276,11 @@ namespace
                 std::string::npos,
             "preset is serialized with a stable name"
         );
+        Expect(
+            saved.find("microphone_echo_cancellation_enabled=true") !=
+                std::string::npos,
+            "echo-cancellation switch is serialized"
+        );
 
         Config loaded;
         Expect(loaded.Load(path), "saved processing config reloads");
@@ -286,6 +303,10 @@ namespace
 
         constexpr InvalidCase cases[]{
             {"microphone_processing_enabled=maybe\n", "invalid boolean"},
+            {
+                "microphone_echo_cancellation_enabled=maybe\n",
+                "invalid echo-cancellation boolean"
+            },
             {"microphone_processing_preset=studio\n", "invalid preset"},
             {"microphone_high_pass_hz=301\n", "out-of-range high-pass"},
             {"microphone_compressor_ratio=nan\n", "non-finite ratio"},
@@ -341,6 +362,11 @@ namespace
             saved.find("microphone_processing_enabled=false") !=
                 std::string::npos,
             "saved default keeps processing disabled"
+        );
+        Expect(
+            saved.find("microphone_echo_cancellation_enabled=false") !=
+                std::string::npos,
+            "saved default keeps echo cancellation disabled"
         );
         Expect(
             saved.find("microphone_noise_suppression_enabled=false") !=

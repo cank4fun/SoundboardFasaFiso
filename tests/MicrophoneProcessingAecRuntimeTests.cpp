@@ -116,11 +116,72 @@ namespace
         return input;
     }
 
+    bool PushOneBlock(
+        MicrophoneProcessingRuntime& runtime,
+        TestSink& sink,
+        const std::array<float, StereoSampleCount>& input,
+        const ma_uint32 expectedBlockCount
+    )
+    {
+        return runtime.PushInputFrames(
+            input.data(),
+            static_cast<ma_uint32>(MicrophoneProcessor::SamplesPerBlock)
+        ) == MicrophoneProcessor::SamplesPerBlock &&
+            WaitForBlockCount(sink, expectedBlockCount);
+    }
+
+    bool TestDisabledAecDoesNotConsumeReference()
+    {
+        MicrophoneProcessingRuntime runtime;
+        MicrophoneProcessingSettings settings;
+        settings.enabled = false;
+        settings.echoCancellationEnabled = false;
+        TestSink sink;
+        RenderSource source;
+        const auto input = MakeStereoTone();
+
+        if (!runtime.Initialize(
+                MicrophoneProcessingRuntime::RequiredSampleRate,
+                MicrophoneProcessingRuntime::RequiredInputChannels,
+                settings,
+                &CaptureOutput,
+                &sink,
+                &SupplyRenderReference,
+                &source,
+                20
+            ))
+        {
+            return false;
+        }
+
+        const bool received = PushOneBlock(runtime, sink, input, 1);
+        const MicrophoneProcessingSnapshot snapshot = runtime.GetSnapshot();
+        const bool identical = received && std::equal(
+            input.begin(),
+            input.end(),
+            sink.samples.begin()
+        );
+        runtime.Shutdown();
+
+        return received &&
+            source.callCount.load(std::memory_order_relaxed) == 0 &&
+            !snapshot.echoCancellationRequested &&
+            !snapshot.echoCancellationReady &&
+            !snapshot.echoCancellationReferenceAvailable &&
+            !snapshot.echoCancellationActive &&
+            !snapshot.echoCancellationFailed &&
+            snapshot.echoCancellationReferenceUnderrunCount == 0 &&
+            snapshot.echoCancellationFailureCount == 0 &&
+            snapshot.bypassed &&
+            identical;
+    }
+
     bool TestLiveAecPathConsumesReference()
     {
         MicrophoneProcessingRuntime runtime;
         MicrophoneProcessingSettings settings;
         settings.enabled = false;
+        settings.echoCancellationEnabled = true;
         TestSink sink;
         RenderSource source;
         const auto input = MakeStereoTone();
@@ -150,18 +211,7 @@ namespace
 
         for (ma_uint32 block = 0; block < BlockCount; ++block)
         {
-            if (runtime.PushInputFrames(
-                    input.data(),
-                    static_cast<ma_uint32>(
-                        MicrophoneProcessor::SamplesPerBlock
-                    )
-                ) != MicrophoneProcessor::SamplesPerBlock)
-            {
-                runtime.Shutdown();
-                return false;
-            }
-
-            if (!WaitForBlockCount(sink, block + 1))
+            if (!PushOneBlock(runtime, sink, input, block + 1))
             {
                 runtime.Shutdown();
                 return false;
@@ -178,22 +228,34 @@ namespace
 
         return source.callCount.load(std::memory_order_relaxed) >= BlockCount &&
             snapshot.echoCancellationRequested &&
+            snapshot.echoCancellationReady &&
+            snapshot.echoCancellationReferenceAvailable &&
             snapshot.echoCancellationActive &&
             !snapshot.echoCancellationFailed &&
             snapshot.echoCancellationError == 0 &&
+            snapshot.echoCancellationReferenceUnderrunCount == 0 &&
+            snapshot.echoCancellationFailureCount == 0 &&
             !snapshot.bypassed &&
             outputFinite;
     }
 
-    bool TestReferenceFailureFallsBackToStereoBypass()
+    bool TestReferenceUnderrunSafelyBypassesAndRecovers()
     {
         MicrophoneProcessingRuntime runtime;
         MicrophoneProcessingSettings settings;
         settings.enabled = false;
+        settings.echoCancellationEnabled = true;
         TestSink sink;
         RenderSource source;
         source.fail = true;
         const auto input = MakeStereoTone();
+
+        for (std::size_t frame = 0;
+            frame < MicrophoneProcessor::SamplesPerBlock;
+            ++frame)
+        {
+            source.samples[frame] = input[frame * 2];
+        }
 
         if (!runtime.Initialize(
                 MicrophoneProcessingRuntime::RequiredSampleRate,
@@ -209,46 +271,68 @@ namespace
             return false;
         }
 
-        const ma_uint32 written = runtime.PushInputFrames(
-            input.data(),
-            static_cast<ma_uint32>(MicrophoneProcessor::SamplesPerBlock)
-        );
-        const bool received = WaitForBlockCount(sink, 1);
-        const MicrophoneProcessingSnapshot snapshot = runtime.GetSnapshot();
-        const bool identical = received && std::equal(
+        const bool firstReceived = PushOneBlock(runtime, sink, input, 1);
+        const MicrophoneProcessingSnapshot missingSnapshot =
+            runtime.GetSnapshot();
+        const bool firstIdentical = firstReceived && std::equal(
             input.begin(),
             input.end(),
             sink.samples.begin()
         );
+
+        source.fail = false;
+        const bool secondReceived = PushOneBlock(runtime, sink, input, 2);
+        const MicrophoneProcessingSnapshot recoveredSnapshot =
+            runtime.GetSnapshot();
         runtime.Shutdown();
 
-        return written == MicrophoneProcessor::SamplesPerBlock &&
-            source.callCount.load(std::memory_order_relaxed) == 1 &&
-            snapshot.echoCancellationRequested &&
-            !snapshot.echoCancellationActive &&
-            snapshot.echoCancellationFailed &&
-            snapshot.echoCancellationError != 0 &&
-            snapshot.bypassed &&
-            identical;
+        return firstReceived &&
+            firstIdentical &&
+            missingSnapshot.echoCancellationRequested &&
+            missingSnapshot.echoCancellationReady &&
+            !missingSnapshot.echoCancellationReferenceAvailable &&
+            !missingSnapshot.echoCancellationActive &&
+            !missingSnapshot.echoCancellationFailed &&
+            missingSnapshot.echoCancellationError == 0 &&
+            missingSnapshot.echoCancellationReferenceUnderrunCount == 1 &&
+            missingSnapshot.echoCancellationFailureCount == 0 &&
+            missingSnapshot.bypassed &&
+            secondReceived &&
+            recoveredSnapshot.echoCancellationRequested &&
+            recoveredSnapshot.echoCancellationReady &&
+            recoveredSnapshot.echoCancellationReferenceAvailable &&
+            recoveredSnapshot.echoCancellationActive &&
+            !recoveredSnapshot.echoCancellationFailed &&
+            recoveredSnapshot.echoCancellationReferenceUnderrunCount == 1 &&
+            recoveredSnapshot.echoCancellationFailureCount == 0 &&
+            !recoveredSnapshot.bypassed;
     }
 }
 
 int main()
 {
+    if (!TestDisabledAecDoesNotConsumeReference())
+    {
+        std::cerr << "FAILED: disabled AEC still consumed render reference\n";
+        return 1;
+    }
+
     if (!TestLiveAecPathConsumesReference())
     {
         std::cerr << "FAILED: live AEC path did not consume render reference\n";
         return 1;
     }
 
-    if (!TestReferenceFailureFallsBackToStereoBypass())
+    if (!TestReferenceUnderrunSafelyBypassesAndRecovers())
     {
-        std::cerr << "FAILED: AEC reference failure did not safely bypass\n";
+        std::cerr
+            << "FAILED: AEC reference underrun did not safely bypass and "
+               "recover\n";
         return 1;
     }
 
     std::cout
-        << "Microphone AEC runtime tests passed: live reference and safe "
-           "fallback.\n";
+        << "Microphone AEC runtime tests passed: disabled, active, "
+           "no-reference, and recovery paths.\n";
     return 0;
 }

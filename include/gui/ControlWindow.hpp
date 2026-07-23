@@ -288,6 +288,7 @@ private:
     HWND microphoneProcessingPresetCombo_ = nullptr;
     HWND microphoneProcessingStatusCaption_ = nullptr;
     HWND microphoneProcessingStatusValue_ = nullptr;
+    HWND microphoneEchoCancellationEnabledCheck_ = nullptr;
     HWND microphoneTestMonitorButton_ = nullptr;
     HWND microphoneNoiseSuppressionEnabledCheck_ = nullptr;
     HWND microphoneNoiseSuppressionLevelCaption_ = nullptr;

@@ -1139,12 +1139,8 @@ bool Audio::InitializeMicrophone(
         std::memory_order_release
     );
 
-#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
     const bool echoCancellationRequested =
-        aecRenderReferenceMixer_.IsInitialized();
-#else
-    constexpr bool echoCancellationRequested = false;
-#endif
+        microphoneProcessingSettings_.echoCancellationEnabled;
 
     const bool nativeProcessingRequested =
         microphoneProcessingSettings_.enabled &&
@@ -1179,7 +1175,8 @@ bool Audio::InitializeMicrophone(
                     this
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
                     ,
-                    echoCancellationRequested
+                    echoCancellationRequested &&
+                            aecRenderReferenceMixer_.IsInitialized()
                         ? &Audio::ReadAecRenderReferenceCallback
                         : nullptr,
                     this,
@@ -1377,25 +1374,29 @@ bool Audio::InitializeRuntime()
         }
 
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
-        const float referenceVolume =
-            monitorMuted_ ? 0.0f : monitorVolume_;
+        if (microphoneEnabled_ &&
+            microphoneProcessingSettings_.echoCancellationEnabled)
+        {
+            const float referenceVolume =
+                monitorMuted_ ? 0.0f : monitorVolume_;
 
-        if (!aecRenderReferenceMixer_.Initialize(referenceVolume))
-        {
-            std::cerr
-                << Localization::Text(
-                    "Uyarı: AEC render referans mikseri başlatılamadı. Echo cancellation güvenli biçimde bypass edilecek. Hata: ",
-                    "Warning: The AEC render-reference mixer could not be initialized. Echo cancellation will be safely bypassed. Error: "
-                )
-                << aecRenderReferenceMixer_.LastError()
-                << '\n';
-        }
-        else
-        {
-            std::cout << Localization::Text(
-                "AEC render referansı: Hazır\n",
-                "AEC render reference: Ready\n"
-            );
+            if (!aecRenderReferenceMixer_.Initialize(referenceVolume))
+            {
+                std::cerr
+                    << Localization::Text(
+                        "Uyarı: AEC render referans mikseri başlatılamadı. Echo cancellation referans bekleme durumunda kalacak. Hata: ",
+                        "Warning: The AEC render-reference mixer could not be initialized. Echo cancellation will remain in the no-reference state. Error: "
+                    )
+                    << aecRenderReferenceMixer_.LastError()
+                    << '\n';
+            }
+            else
+            {
+                std::cout << Localization::Text(
+                    "AEC render referansı: Hazır\n",
+                    "AEC render reference: Ready\n"
+                );
+            }
         }
 #endif
 
@@ -2685,6 +2686,8 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
         );
 
     snapshot.microphoneProcessingActive = processingActive;
+    snapshot.microphoneEchoCancellationRequested =
+        microphoneProcessingSettings_.echoCancellationEnabled;
     snapshot.microphoneTestMonitorActive =
         snapshot.microphoneAvailable &&
         snapshot.monitorAvailable &&
@@ -2741,12 +2744,20 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
             processingSnapshot.noiseSuppressionFailed;
         snapshot.microphoneEchoCancellationRequested =
             processingSnapshot.echoCancellationRequested;
+        snapshot.microphoneEchoCancellationReady =
+            processingSnapshot.echoCancellationReady;
+        snapshot.microphoneEchoCancellationReferenceAvailable =
+            processingSnapshot.echoCancellationReferenceAvailable;
         snapshot.microphoneEchoCancellationActive =
             processingSnapshot.echoCancellationActive;
         snapshot.microphoneEchoCancellationFailed =
             processingSnapshot.echoCancellationFailed;
         snapshot.microphoneEchoCancellationError =
             processingSnapshot.echoCancellationError;
+        snapshot.microphoneEchoCancellationReferenceUnderruns =
+            processingSnapshot.echoCancellationReferenceUnderrunCount;
+        snapshot.microphoneEchoCancellationFailures =
+            processingSnapshot.echoCancellationFailureCount;
         snapshot.microphoneAgcActive = processingSnapshot.agcActive;
         snapshot.microphoneAgcGainDb = processingSnapshot.agcGainDb;
         snapshot.microphoneInputClipped =

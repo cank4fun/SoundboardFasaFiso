@@ -70,6 +70,8 @@ struct AudioLevelSnapshot
     bool microphoneNoiseSuppressionActive = false;
     bool microphoneNoiseSuppressionFailed = false;
     bool microphoneEchoCancellationRequested = false;
+    bool microphoneEchoCancellationReady = false;
+    bool microphoneEchoCancellationReferenceAvailable = false;
     bool microphoneEchoCancellationActive = false;
     bool microphoneEchoCancellationFailed = false;
     bool microphoneAgcActive = false;
@@ -77,6 +79,8 @@ struct AudioLevelSnapshot
     bool microphoneInvalidSampleDetected = false;
 
     std::uint64_t microphoneDroppedInputFrames = 0;
+    std::uint64_t microphoneEchoCancellationReferenceUnderruns = 0;
+    std::uint64_t microphoneEchoCancellationFailures = 0;
 };
 
 class Audio

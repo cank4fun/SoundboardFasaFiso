@@ -48,6 +48,9 @@ struct MicrophoneProcessingSettings
     MicrophoneProcessingPreset preset =
         MicrophoneProcessingPreset::Natural;
 
+    // Echo cancellation is independent of the native processing presets.
+    bool echoCancellationEnabled = false;
+
     bool highPassEnabled = true;
     float highPassHz = 80.0f;
 
