@@ -26,7 +26,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 180
     env:
-      VCPKG_ROOT: ${{ github.workspace }}\_vcpkg
+      SOUNDBOARD_VCPKG_ROOT: ${{ github.workspace }}\_vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows-static
       VCPKG_DISABLE_METRICS: "1"
 
@@ -50,10 +50,12 @@ jobs:
       - name: Bootstrap pinned vcpkg
         shell: pwsh
         run: |
-          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
-          git -C $env:VCPKG_ROOT checkout cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
-          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
-          & "$env:VCPKG_ROOT\vcpkg.exe" version
+          $root = $env:SOUNDBOARD_VCPKG_ROOT
+          Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+          git clone https://github.com/microsoft/vcpkg.git $root
+          git -C $root checkout cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+          & "$root\bootstrap-vcpkg.bat" -disableMetrics
+          & "$root\vcpkg.exe" version
 
       - name: Show toolchain versions
         shell: pwsh
@@ -89,7 +91,7 @@ jobs:
           cmake -S . -B out/build/ci-release
           -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
+          -DCMAKE_TOOLCHAIN_FILE=${{ env.SOUNDBOARD_VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
           -DVCPKG_TARGET_TRIPLET=x64-windows-static
           -DVCPKG_MANIFEST_FEATURES=webrtc-aec3
           -DSOUNDBOARD_ENABLE_WEBRTC_AEC3=ON
