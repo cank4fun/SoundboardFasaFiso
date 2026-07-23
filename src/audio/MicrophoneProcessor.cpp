@@ -48,7 +48,8 @@ namespace
 }
 
 bool MicrophoneProcessor::Initialize(
-    const MicrophoneProcessingSettings& settings
+    const MicrophoneProcessingSettings& settings,
+    const bool echoCancellationRequested
 )
 {
     Reset();
@@ -66,7 +67,27 @@ bool MicrophoneProcessor::Initialize(
 
     settings_ = settings;
     configurationValid_ = true;
+    echoCancellationRequested_ = echoCancellationRequested;
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (echoCancellationRequested_)
+    {
+        echoCancellationAvailable_ = echoCanceller_.Initialize();
+        echoCancellationFailed_ = !echoCancellationAvailable_;
+        echoCancellationError_ = echoCancellationAvailable_
+            ? 0
+            : echoCanceller_.LastError();
+    }
+#endif
+
     ConfigureProcessingState();
+
+    MicrophoneProcessingSnapshot snapshot;
+    snapshot.echoCancellationRequested = echoCancellationRequested_;
+    snapshot.echoCancellationFailed = echoCancellationFailed_;
+    snapshot.echoCancellationError = echoCancellationError_;
+    snapshot.configurationValid = configurationValid_;
+    PublishSnapshot(snapshot);
     return true;
 }
 
@@ -88,6 +109,11 @@ bool MicrophoneProcessor::UpdateSettings(
 bool MicrophoneProcessor::ProcessBlock(
     const std::span<const float> input,
     const std::span<float> output
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    ,
+    const std::span<const float> renderReference,
+    const int streamDelayMilliseconds
+#endif
 )
 {
     if (!initialized_ ||
@@ -118,11 +144,54 @@ bool MicrophoneProcessor::ProcessBlock(
             invalidSampleDetected = true;
         }
 
+        sanitizedInputBuffer_[index] = sample;
+
         const float rawMagnitude = std::abs(sample);
         rawPeak = std::max(rawPeak, rawMagnitude);
         rawSquareSum += static_cast<double>(sample) *
             static_cast<double>(sample);
         inputClipped = inputClipped || rawMagnitude > 1.0f;
+    }
+
+    bool echoCancellationActive = false;
+    const std::array<float, SamplesPerBlock>* stageInput =
+        &sanitizedInputBuffer_;
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (echoCancellationRequested_ && echoCancellationAvailable_)
+    {
+        const bool referenceIsValid =
+            renderReference.size() == SamplesPerBlock &&
+            streamDelayMilliseconds >= 0;
+        const bool processed = referenceIsValid &&
+            echoCanceller_.ProcessBlock(
+                renderReference,
+                sanitizedInputBuffer_,
+                echoCancelledBuffer_,
+                streamDelayMilliseconds
+            );
+
+        if (processed)
+        {
+            stageInput = &echoCancelledBuffer_;
+            echoCancellationActive = true;
+            echoCancellationError_ = 0;
+        }
+        else
+        {
+            echoCancellationAvailable_ = false;
+            echoCancellationFailed_ = true;
+            echoCancellationError_ = referenceIsValid
+                ? echoCanceller_.LastError()
+                : -4;
+            echoCanceller_.Reset();
+        }
+    }
+#endif
+
+    for (std::size_t index = 0; index < SamplesPerBlock; ++index)
+    {
+        float sample = (*stageInput)[index];
 
         if (processingEnabled && settings_.highPassEnabled)
         {
@@ -233,12 +302,14 @@ bool MicrophoneProcessor::ProcessBlock(
         )
     );
 
-    const bool processingStageApplied = processingEnabled &&
+    const bool nativeProcessingStageApplied = processingEnabled &&
         (settings_.highPassEnabled ||
             noiseSuppressionActive ||
             settings_.agcEnabled ||
             settings_.compressorEnabled ||
             settings_.limiterEnabled);
+    const bool processingStageApplied = echoCancellationActive ||
+        nativeProcessingStageApplied;
 
     MicrophoneProcessingSnapshot snapshot;
     snapshot.rawPeak = rawPeak;
@@ -250,6 +321,10 @@ bool MicrophoneProcessor::ProcessBlock(
     snapshot.noiseSuppressionRequested = noiseSuppressionRequested;
     snapshot.noiseSuppressionActive = noiseSuppressionActive;
     snapshot.noiseSuppressionFailed = noiseSuppressionFailed_;
+    snapshot.echoCancellationRequested = echoCancellationRequested_;
+    snapshot.echoCancellationActive = echoCancellationActive;
+    snapshot.echoCancellationFailed = echoCancellationFailed_;
+    snapshot.echoCancellationError = echoCancellationError_;
     snapshot.agcActive = agcActive;
     snapshot.bypassed = !processingStageApplied;
     snapshot.configurationValid = configurationValid_;
@@ -294,6 +369,20 @@ MicrophoneProcessingSnapshot MicrophoneProcessor::GetSnapshot() const
             noiseSuppressionFailedSnapshot_.load(
                 std::memory_order_relaxed
             );
+        snapshot.echoCancellationRequested =
+            echoCancellationRequestedSnapshot_.load(
+                std::memory_order_relaxed
+            );
+        snapshot.echoCancellationActive =
+            echoCancellationActive_.load(std::memory_order_relaxed);
+        snapshot.echoCancellationFailed =
+            echoCancellationFailedSnapshot_.load(
+                std::memory_order_relaxed
+            );
+        snapshot.echoCancellationError =
+            echoCancellationErrorSnapshot_.load(
+                std::memory_order_relaxed
+            );
         snapshot.agcActive =
             agcActive_.load(std::memory_order_relaxed);
         snapshot.bypassed = bypassed_.load(std::memory_order_relaxed);
@@ -324,6 +413,15 @@ void MicrophoneProcessor::Reset()
     settings_ = {};
     initialized_ = false;
     configurationValid_ = true;
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    echoCanceller_.Reset();
+#endif
+    echoCancellationRequested_ = false;
+    echoCancellationAvailable_ = false;
+    echoCancellationFailed_ = false;
+    echoCancellationError_ = 0;
+    sanitizedInputBuffer_.fill(0.0f);
+    echoCancelledBuffer_.fill(0.0f);
     noiseSuppressor_.Reset();
     noiseSuppressionAvailable_ = false;
     noiseSuppressionFailed_ = false;
@@ -517,6 +615,22 @@ void MicrophoneProcessor::PublishSnapshot(
     );
     noiseSuppressionFailedSnapshot_.store(
         snapshot.noiseSuppressionFailed,
+        std::memory_order_relaxed
+    );
+    echoCancellationRequestedSnapshot_.store(
+        snapshot.echoCancellationRequested,
+        std::memory_order_relaxed
+    );
+    echoCancellationActive_.store(
+        snapshot.echoCancellationActive,
+        std::memory_order_relaxed
+    );
+    echoCancellationFailedSnapshot_.store(
+        snapshot.echoCancellationFailed,
+        std::memory_order_relaxed
+    );
+    echoCancellationErrorSnapshot_.store(
+        snapshot.echoCancellationError,
         std::memory_order_relaxed
     );
     agcActive_.store(snapshot.agcActive, std::memory_order_relaxed);

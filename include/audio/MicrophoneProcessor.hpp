@@ -3,6 +3,10 @@
 #include "audio/MicrophoneProcessingSettings.hpp"
 #include "audio/RnNoiseSuppressor.hpp"
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+#include "audio/WebRtcAec3Processor.hpp"
+#endif
+
 #include <array>
 #include <atomic>
 #include <cstddef>
@@ -21,12 +25,16 @@ struct MicrophoneProcessingSnapshot
     bool noiseSuppressionRequested = false;
     bool noiseSuppressionActive = false;
     bool noiseSuppressionFailed = false;
+    bool echoCancellationRequested = false;
+    bool echoCancellationActive = false;
+    bool echoCancellationFailed = false;
     bool agcActive = false;
     bool bypassed = true;
     bool configurationValid = true;
 
     float voiceActivityProbability = 0.0f;
     float agcGainDb = 0.0f;
+    int echoCancellationError = 0;
 };
 
 class MicrophoneProcessor
@@ -46,12 +54,20 @@ public:
     MicrophoneProcessor(MicrophoneProcessor&&) = delete;
     MicrophoneProcessor& operator=(MicrophoneProcessor&&) = delete;
 
-    bool Initialize(const MicrophoneProcessingSettings& settings);
+    bool Initialize(
+        const MicrophoneProcessingSettings& settings,
+        bool echoCancellationRequested = false
+    );
     bool UpdateSettings(const MicrophoneProcessingSettings& settings);
 
     bool ProcessBlock(
         std::span<const float> input,
         std::span<float> output
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        ,
+        std::span<const float> renderReference = {},
+        int streamDelayMilliseconds = 0
+#endif
     );
 
     [[nodiscard]] MicrophoneProcessingSnapshot GetSnapshot() const;
@@ -96,6 +112,16 @@ private:
 
     float limiterCeilingLinear_ = 1.0f;
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    WebRtcAec3Processor echoCanceller_;
+#endif
+    bool echoCancellationRequested_ = false;
+    bool echoCancellationAvailable_ = false;
+    bool echoCancellationFailed_ = false;
+    int echoCancellationError_ = 0;
+    std::array<float, SamplesPerBlock> sanitizedInputBuffer_{};
+    std::array<float, SamplesPerBlock> echoCancelledBuffer_{};
+
     RnNoiseSuppressor noiseSuppressor_;
     std::array<float, SamplesPerBlock> preNoiseSuppressionBuffer_{};
     std::array<float, SamplesPerBlock> noiseSuppressedBuffer_{};
@@ -112,6 +138,10 @@ private:
     std::atomic_bool noiseSuppressionRequested_{false};
     std::atomic_bool noiseSuppressionActive_{false};
     std::atomic_bool noiseSuppressionFailedSnapshot_{false};
+    std::atomic_bool echoCancellationRequestedSnapshot_{false};
+    std::atomic_bool echoCancellationActive_{false};
+    std::atomic_bool echoCancellationFailedSnapshot_{false};
+    std::atomic<int> echoCancellationErrorSnapshot_{0};
     std::atomic_bool agcActive_{false};
     std::atomic_bool bypassed_{true};
     std::atomic_bool snapshotConfigurationValid_{true};

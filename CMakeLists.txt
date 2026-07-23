@@ -323,6 +323,13 @@ if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
         SoundBoardFasaFiso
         PRIVATE
             src/audio/AecRenderReferenceMixer.cpp
+            src/audio/WebRtcAec3Processor.cpp
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFiso
+        PRIVATE
+            "${SOUNDBOARD_WEBRTC_TARGET}"
     )
 
     target_compile_definitions(
@@ -467,6 +474,70 @@ if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
         )
     endif()
 
+    add_executable(
+        SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+        tests/MicrophoneProcessingAecRuntimeTests.cpp
+        src/audio/MicrophoneProcessingRuntime.cpp
+        src/audio/MicrophoneProcessor.cpp
+        src/audio/MicrophoneProcessingSettings.cpp
+        src/audio/RnNoiseSuppressor.cpp
+        src/audio/WebRtcAec3Processor.cpp
+        $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+        SYSTEM PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+            "${SOUNDBOARD_RNNOISE_ROOT}/include"
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+        PRIVATE
+            SoundBoardFasaFisoRnNoise
+            "${SOUNDBOARD_WEBRTC_TARGET}"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+        PRIVATE
+            SOUNDBOARD_ENABLE_WEBRTC_AEC3=1
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
     if(BUILD_TESTING)
         add_test(
             NAME WebRtcAec3BuildSmoke
@@ -481,6 +552,11 @@ if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
         add_test(
             NAME AecRenderReferenceMixer
             COMMAND SoundBoardFasaFisoAecRenderReferenceMixerTests
+        )
+
+        add_test(
+            NAME MicrophoneProcessingAecRuntime
+            COMMAND SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
         )
     endif()
 endif()

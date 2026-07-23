@@ -608,6 +608,47 @@ void Audio::ProcessedMicrophoneOutputCallback(
     }
 }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+bool Audio::ReadAecRenderReferenceCallback(
+    void* const context,
+    float* const monoFrames,
+    const ma_uint32 frameCount
+) noexcept
+{
+    auto* const instance = static_cast<Audio*>(context);
+
+    if (monoFrames == nullptr ||
+        frameCount != AecRenderReferenceMixer::FramesPerBlock)
+    {
+        return false;
+    }
+
+    std::fill_n(monoFrames, frameCount, 0.0f);
+
+    if (instance == nullptr ||
+        !instance->aecRenderReferenceMixer_.IsInitialized())
+    {
+        return false;
+    }
+
+    return instance->aecRenderReferenceMixer_.ReadMonoBlock(
+        std::span<float>(monoFrames, frameCount)
+    );
+}
+
+int Audio::EstimateAecStreamDelayMilliseconds() const noexcept
+{
+    const ma_uint32 periodMilliseconds =
+        bufferMilliseconds_ == 0 ? 10U : bufferMilliseconds_;
+    const ma_uint32 estimatedDelay = 10U + periodMilliseconds * 2U;
+    return static_cast<int>(std::clamp<ma_uint32>(
+        estimatedDelay,
+        10U,
+        100U
+    ));
+}
+#endif
+
 bool Audio::InitializeEngine(
     const std::string& requestedDevice,
     const std::string& engineLabel,
@@ -1098,13 +1139,22 @@ bool Audio::InitializeMicrophone(
         std::memory_order_release
     );
 
-    const bool processingRequested =
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    const bool echoCancellationRequested =
+        aecRenderReferenceMixer_.IsInitialized();
+#else
+    constexpr bool echoCancellationRequested = false;
+#endif
+
+    const bool nativeProcessingRequested =
         microphoneProcessingSettings_.enabled &&
         (microphoneProcessingSettings_.highPassEnabled ||
             microphoneProcessingSettings_.noiseSuppressionEnabled ||
             microphoneProcessingSettings_.agcEnabled ||
             microphoneProcessingSettings_.compressorEnabled ||
             microphoneProcessingSettings_.limiterEnabled);
+    const bool processingRequested = nativeProcessingRequested ||
+        echoCancellationRequested;
 
     if (processingRequested)
     {
@@ -1127,6 +1177,14 @@ bool Audio::InitializeMicrophone(
                     microphoneProcessingSettings_,
                     &Audio::ProcessedMicrophoneOutputCallback,
                     this
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+                    ,
+                    echoCancellationRequested
+                        ? &Audio::ReadAecRenderReferenceCallback
+                        : nullptr,
+                    this,
+                    EstimateAecStreamDelayMilliseconds()
+#endif
                 ))
             {
                 microphoneProcessingActive_.store(
@@ -1191,6 +1249,12 @@ bool Audio::InitializeMicrophone(
             )
             ? Localization::Text("aktif", "active")
             : Localization::Text("bypass", "bypassed"))
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        << Localization::Text(" | AEC: ", " | AEC: ")
+        << (echoCancellationRequested
+            ? Localization::Text("hazır", "armed")
+            : Localization::Text("bypass", "bypassed"))
+#endif
         << '\n';
 
     return true;
@@ -2675,6 +2739,14 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
             processingSnapshot.noiseSuppressionActive;
         snapshot.microphoneNoiseSuppressionFailed =
             processingSnapshot.noiseSuppressionFailed;
+        snapshot.microphoneEchoCancellationRequested =
+            processingSnapshot.echoCancellationRequested;
+        snapshot.microphoneEchoCancellationActive =
+            processingSnapshot.echoCancellationActive;
+        snapshot.microphoneEchoCancellationFailed =
+            processingSnapshot.echoCancellationFailed;
+        snapshot.microphoneEchoCancellationError =
+            processingSnapshot.echoCancellationError;
         snapshot.microphoneAgcActive = processingSnapshot.agcActive;
         snapshot.microphoneAgcGainDb = processingSnapshot.agcGainDb;
         snapshot.microphoneInputClipped =

@@ -18,6 +18,14 @@ public:
         ma_uint32 frameCount
     ) noexcept;
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    using RenderReferenceCallback = bool (*)(
+        void* context,
+        float* monoFrames,
+        ma_uint32 frameCount
+    ) noexcept;
+#endif
+
     static constexpr ma_uint32 RequiredSampleRate =
         MicrophoneProcessor::ProcessingSampleRate;
     static constexpr ma_uint32 RequiredInputChannels = 2;
@@ -46,6 +54,12 @@ public:
         const MicrophoneProcessingSettings& settings,
         OutputCallback outputCallback,
         void* outputContext
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        ,
+        RenderReferenceCallback renderReferenceCallback = nullptr,
+        void* renderReferenceContext = nullptr,
+        int streamDelayMilliseconds = 20
+#endif
     );
 
     ma_uint32 PushInputFrames(
@@ -75,6 +89,12 @@ private:
 
     OutputCallback outputCallback_ = nullptr;
     void* outputContext_ = nullptr;
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    RenderReferenceCallback renderReferenceCallback_ = nullptr;
+    void* renderReferenceContext_ = nullptr;
+    int streamDelayMilliseconds_ = 20;
+#endif
 
     std::thread workerThread_;
     std::atomic_bool stopRequested_{false};

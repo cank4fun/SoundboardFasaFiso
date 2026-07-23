@@ -60,6 +60,7 @@ struct AudioLevelSnapshot
     float microphoneProcessedRms = 0.0f;
     float microphoneVoiceActivityProbability = 0.0f;
     float microphoneAgcGainDb = 0.0f;
+    int microphoneEchoCancellationError = 0;
 
     bool outputAvailable = false;
     bool monitorAvailable = false;
@@ -68,6 +69,9 @@ struct AudioLevelSnapshot
     bool microphoneTestMonitorActive = false;
     bool microphoneNoiseSuppressionActive = false;
     bool microphoneNoiseSuppressionFailed = false;
+    bool microphoneEchoCancellationRequested = false;
+    bool microphoneEchoCancellationActive = false;
+    bool microphoneEchoCancellationFailed = false;
     bool microphoneAgcActive = false;
     bool microphoneInputClipped = false;
     bool microphoneInvalidSampleDetected = false;
@@ -198,6 +202,16 @@ private:
         const float* interleavedStereoFrames,
         ma_uint32 frameCount
     ) noexcept;
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    static bool ReadAecRenderReferenceCallback(
+        void* context,
+        float* monoFrames,
+        ma_uint32 frameCount
+    ) noexcept;
+
+    [[nodiscard]] int EstimateAecStreamDelayMilliseconds() const noexcept;
+#endif
 
     bool InitializeRuntime();
 

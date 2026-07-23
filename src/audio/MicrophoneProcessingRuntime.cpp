@@ -16,18 +16,34 @@ bool MicrophoneProcessingRuntime::Initialize(
     const MicrophoneProcessingSettings& settings,
     const OutputCallback outputCallback,
     void* const outputContext
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    ,
+    const RenderReferenceCallback renderReferenceCallback,
+    void* const renderReferenceContext,
+    const int streamDelayMilliseconds
+#endif
 )
 {
     if (initialized_ ||
         inputSampleRate != RequiredSampleRate ||
         inputChannels != RequiredInputChannels ||
         outputCallback == nullptr ||
-        !IsValidMicrophoneProcessingSettings(settings))
+        !IsValidMicrophoneProcessingSettings(settings)
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        || streamDelayMilliseconds < 0 ||
+        streamDelayMilliseconds > 500
+#endif
+        )
     {
         return false;
     }
 
-    if (!processor_.Initialize(settings))
+    if (!processor_.Initialize(
+            settings
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+            , renderReferenceCallback != nullptr
+#endif
+        ))
     {
         return false;
     }
@@ -56,6 +72,11 @@ bool MicrophoneProcessingRuntime::Initialize(
     settings_ = settings;
     outputCallback_ = outputCallback;
     outputContext_ = outputContext;
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    renderReferenceCallback_ = renderReferenceCallback;
+    renderReferenceContext_ = renderReferenceContext;
+    streamDelayMilliseconds_ = streamDelayMilliseconds;
+#endif
     stopRequested_.store(false, std::memory_order_relaxed);
     droppedInputFrames_.store(0, std::memory_order_relaxed);
     acceptingInput_.store(true, std::memory_order_release);
@@ -75,6 +96,11 @@ bool MicrophoneProcessingRuntime::Initialize(
         processor_.Reset();
         outputCallback_ = nullptr;
         outputContext_ = nullptr;
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        renderReferenceCallback_ = nullptr;
+        renderReferenceContext_ = nullptr;
+        streamDelayMilliseconds_ = 20;
+#endif
         std::memset(
             &inputRingBuffer_,
             0,
@@ -199,6 +225,11 @@ void MicrophoneProcessingRuntime::Shutdown()
     initialized_ = false;
     outputCallback_ = nullptr;
     outputContext_ = nullptr;
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    renderReferenceCallback_ = nullptr;
+    renderReferenceContext_ = nullptr;
+    streamDelayMilliseconds_ = 20;
+#endif
     settings_ = {};
     processor_.Reset();
     std::memset(
@@ -293,7 +324,30 @@ void MicrophoneProcessingRuntime::ProcessAndDispatchBlock(
                 stereoInput[sampleIndex + 1]) * 0.5f;
     }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    std::array<float, MicrophoneProcessor::SamplesPerBlock>
+        renderReference{};
+    std::span<const float> renderReferenceView;
+
+    if (renderReferenceCallback_ != nullptr &&
+        renderReferenceCallback_(
+            renderReferenceContext_,
+            renderReference.data(),
+            static_cast<ma_uint32>(renderReference.size())
+        ))
+    {
+        renderReferenceView = renderReference;
+    }
+
+    if (!processor_.ProcessBlock(
+            monoInput,
+            monoOutput,
+            renderReferenceView,
+            streamDelayMilliseconds_
+        ))
+#else
     if (!processor_.ProcessBlock(monoInput, monoOutput))
+#endif
     {
         return;
     }
