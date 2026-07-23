@@ -26,6 +26,7 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 - Global hotkeys through Win32 `RegisterHotKey`
 - Separate main and monitor outputs with independent volume and mute controls
 - Physical microphone capture with device selection, gain and output/monitor routing
+- Local microphone processing with HPF, RNNoise, AGC, compression, limiting and optional WebRTC AEC3
 - Persistent session logs with one-click log-folder access
 - Manual and optional startup update checks through the public GitHub Releases API
 - Optional Windows startup registration and console-free launch
@@ -74,6 +75,7 @@ SoundBoardFasaFiso/
 ├── README.txt
 ├── LICENSE
 ├── THIRD_PARTY_NOTICES.txt
+├── WEBRTC_THIRD_PARTY_NOTICES.txt  # AEC-enabled official builds
 ├── logs/          # created automatically
 └── sounds/
 ```
@@ -98,6 +100,13 @@ microphone=default
 microphone_volume=1.00
 microphone_to_output=true
 microphone_to_monitor=false
+
+# MICROPHONE PROCESSING
+microphone_processing_enabled=false
+microphone_processing_preset=natural
+microphone_echo_cancellation_enabled=false
+microphone_noise_suppression_enabled=false
+microphone_agc_enabled=false
 
 # LOW-LATENCY AUDIO
 audio_sample_rate=48000
@@ -127,6 +136,8 @@ F4=example.wav|volume=1.00|mode=overlap
 `default` selects the current Windows default playback or capture device. `none` disables the monitor output. Device names also support unique partial matches.
 
 When `microphone_enabled=true`, the selected physical microphone is captured and mixed into every enabled route. `microphone_to_output=true` sends it to the main output; `microphone_to_monitor=true` also lets the user hear it through the monitor device. Enabling microphone monitoring can create feedback when speakers are used, so headphones are recommended.
+
+Microphone processing is opt-in. AEC-enabled builds can remove soundboard audio that returns through the physical monitor and microphone by using WebRTC AEC3. The render reference excludes microphone monitoring and the virtual main-output route. Builds made without WebRTC preserve the setting but show echo cancellation as unavailable.
 
 Sound paths are relative to the `sounds` folder. Subfolders are supported, but absolute paths and `..` traversal are rejected.
 
@@ -225,10 +236,14 @@ out/build/x64-Debug/SoundBoardFasaFiso.exe
 
 ### Portable Release build
 
-Open **x64 Native Tools Command Prompt for VS 2022** in the repository root:
+The official v2.1 release path enables WebRTC AEC3 through the pinned vcpkg manifest. Follow [Building with WebRTC AEC3](docs/BUILDING_WITH_WEBRTC_AEC3.md) for the one-time vcpkg setup and complete configure command.
+
+A smaller dependency-free build remains available when echo cancellation is not needed:
 
 ```cmd
-cmake -S . -B out/build/x64-Release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B out/build/x64-Release -G Ninja ^
+  -DCMAKE_BUILD_TYPE=Release ^
+  -DSOUNDBOARD_ENABLE_WEBRTC_AEC3=OFF
 cmake --build out/build/x64-Release --target PortableRelease
 ```
 
@@ -250,12 +265,13 @@ src/             Application sources
 third_party/     Vendored third-party code
 config.txt       Default runtime configuration
 CMakeLists.txt   Build and packaging rules
-THIRD_PARTY_NOTICES.txt  Packaged dependency notice
+THIRD_PARTY_NOTICES.txt  Vendored dependency notices
+vcpkg.json       Pinned optional WebRTC AEC3 dependency manifest
 ```
 
 ## Third-party software
 
-This repository vendors [miniaudio](https://github.com/mackron/miniaudio). Its complete license text remains in the original header and the portable package includes `THIRD_PARTY_NOTICES.txt`.
+This repository vendors [miniaudio](https://github.com/mackron/miniaudio) and RNNoise. Their notices are summarized in `THIRD_PARTY_NOTICES.txt`. AEC-enabled portable builds additionally include generated `WEBRTC_THIRD_PARTY_NOTICES.txt` covering WebRTC and the transitive static dependencies installed by the pinned vcpkg manifest.
 
 VB-CABLE is optional and is not bundled with this project. Local playback works without it. Presenting the mixed signal to other applications as a microphone requires a virtual audio endpoint; the v2 architecture keeps this as a separate bridge layer. See [docs/V2_ARCHITECTURE.md](docs/V2_ARCHITECTURE.md).
 
@@ -269,6 +285,6 @@ Released under the [MIT License](LICENSE).
 
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+Official GitHub portable builds are currently unsigned. The SignPath Foundation application is on hold until the project has broader public adoption, so signing is not a release blocker. Release artifacts are built by GitHub Actions and published with SHA-256 checksums.
 
-Project roles, privacy rules and the release-signing process are documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
+Project roles, privacy rules, verification guidance and the future signing process are documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).

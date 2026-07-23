@@ -2,8 +2,10 @@
 
 ## Status
 
-This document defines the implementation boundary for the v2.1 microphone-processing
-work. It is a design checkpoint, not a claim that the DSP features are already present.
+This document started as the implementation boundary for v2.1 microphone processing.
+The core pipeline, telemetry, presets, temporary monitoring and optional WebRTC AEC3
+path are now implemented on the v2.1 development branches; the document also records
+the design constraints that the production code must continue to preserve.
 
 The first v2.1 code change, removing the selected Hotkeys binding with the Delete key,
 is intentionally independent from this audio work.
@@ -25,9 +27,10 @@ The minimum user-facing result is:
   playback;
 - processing remains local and offline.
 
-Acoustic echo cancellation is not part of the first implementation. It requires a
-render/reference signal and delay alignment, so it will remain an experimental later
-phase.
+Acoustic echo cancellation is implemented as an optional WebRTC AEC3 stage. It uses
+only soundboard audio sent to the physical monitor as the far-end render reference;
+microphone monitoring and the virtual main-output route are never fed back as a
+reference. Missing reference audio causes safe bypass rather than microphone loss.
 
 ## Current v2.0 audio path
 
@@ -208,6 +211,7 @@ The initial key family is planned as:
 ```ini
 microphone_processing_enabled=false
 microphone_processing_preset=natural
+microphone_echo_cancellation_enabled=false
 
 microphone_high_pass_enabled=true
 microphone_high_pass_hz=80

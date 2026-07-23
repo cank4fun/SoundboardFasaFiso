@@ -1,12 +1,14 @@
-# WebRTC AEC3 build spike
+# WebRTC AEC3 build spike (completed)
 
-This spike only proves that the current WebRTC Audio Processing API can be
+This historical spike proved that the WebRTC Audio Processing API could be
 compiled, linked, created, and fed 10 ms render/capture blocks with the
-project's MSVC/CMake toolchain.
+project's MSVC/CMake toolchain. The gate passed and AEC was later integrated
+into the live microphone pipeline.
 
-It does **not** change the SoundBoardFasaFiso executable or the live audio
-pipeline. The normal build remains unchanged while
-`SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE` is `OFF`.
+Production build instructions now live in
+[`docs/BUILDING_WITH_WEBRTC_AEC3.md`](../BUILDING_WITH_WEBRTC_AEC3.md).
+`SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE` remains only as a deprecated compatibility
+alias for old local build directories.
 
 ## Dependency choice for the spike
 

@@ -75,6 +75,19 @@ ikisine birden gerçek zamanlı eklenir. Monitöre yönlendirmede geri besleme
 olmaması için kulaklık kullanılması önerilir. Discord/Steam gibi uygulamalara
 mikrofon olarak vermek için ana çıkışta sanal bir audio endpoint seçilebilir.
 
+MİKROFON İŞLEME
+----------------
+microphone_processing_enabled=false
+microphone_processing_preset=natural
+microphone_echo_cancellation_enabled=false
+microphone_noise_suppression_enabled=false
+microphone_agc_enabled=false
+
+İşleme varsayılan olarak kapalıdır. WebRTC AEC3 içeren resmi v2.1 build'inde
+echo cancellation, yalnızca fiziksel monitöre gönderilen soundboard sesini
+referans alır. Mikrofon monitor sesi ve sanal ana çıkış referansa eklenmez.
+WebRTC olmadan derlenen sürüm ayarı korur ancak AEC kontrolünü pasif gösterir.
+
 GECİKME AYARLARI
 ----------------
 audio_sample_rate=48000

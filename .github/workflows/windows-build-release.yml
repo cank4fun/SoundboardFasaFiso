@@ -22,9 +22,13 @@ concurrency:
 
 jobs:
   build:
-    name: Build portable Windows release
+    name: Build portable Windows release with WebRTC AEC3
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 180
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\_vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static
+      VCPKG_DISABLE_METRICS: "1"
 
     steps:
       - name: Check out repository
@@ -34,6 +38,22 @@ jobs:
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: x64
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v5
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: windows-vcpkg-aec3-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            windows-vcpkg-aec3-
+
+      - name: Bootstrap pinned vcpkg
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git $env:VCPKG_ROOT
+          git -C $env:VCPKG_ROOT checkout cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          & "$env:VCPKG_ROOT\vcpkg.exe" version
 
       - name: Show toolchain versions
         shell: pwsh
@@ -63,12 +83,17 @@ jobs:
             throw "Tag $actualTag does not match project version $expectedTag."
           }
 
-      - name: Configure Release build
+      - name: Configure Release build with WebRTC AEC3
         shell: pwsh
         run: >-
           cmake -S . -B out/build/ci-release
           -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ env.VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DVCPKG_MANIFEST_FEATURES=webrtc-aec3
+          -DSOUNDBOARD_ENABLE_WEBRTC_AEC3=ON
+          -DSOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS=ON
           -DSOUNDBOARD_WARNINGS_AS_ERRORS=ON
 
       - name: Build microphone processing tests
@@ -80,6 +105,11 @@ jobs:
           SoundBoardFasaFisoConfigMicrophoneProcessingTests
           SoundBoardFasaFisoMicrophoneProcessorTests
           SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
+          SoundBoardFasaFisoRnNoiseSuppressorTests
+          SoundBoardFasaFisoWebRtcAec3Smoke
+          SoundBoardFasaFisoWebRtcAec3ProcessorTests
+          SoundBoardFasaFisoAecRenderReferenceMixerTests
+          SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
           --parallel
 
       - name: Run tests
@@ -120,6 +150,7 @@ jobs:
             "README.txt",
             "LICENSE",
             "THIRD_PARTY_NOTICES.txt",
+            "WEBRTC_THIRD_PARTY_NOTICES.txt",
             "sounds"
           )
 
@@ -145,6 +176,7 @@ jobs:
             '(?m)^output=default$',
             '(?m)^monitor=none$',
             '(?m)^microphone_processing_enabled=false$',
+            '(?m)^microphone_echo_cancellation_enabled=false$',
             '(?m)^show_console_on_start=false$'
           )
 
@@ -152,6 +184,11 @@ jobs:
             if ($config -notmatch $pattern) {
               throw "Portable config is missing required safe default: $pattern"
             }
+          }
+
+          $webrtcNotices = Join-Path $root "WEBRTC_THIRD_PARTY_NOTICES.txt"
+          if ((Get-Item $webrtcNotices).Length -lt 1024) {
+            throw "Generated WebRTC third-party notices are unexpectedly small."
           }
 
           $sounds = @(

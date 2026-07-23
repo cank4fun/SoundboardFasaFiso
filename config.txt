@@ -25,9 +25,10 @@ microphone_to_monitor=false
 
 # MİKROFON İŞLEME
 # Ana anahtar varsayılan olarak kapalıdır; eski config davranışı korunur.
-# Noise suppression ve AGC altyapısı tamamlanana kadar kapalı tutulur.
+# Tüm işlemler yerel çalışır; ana anahtar varsayılan olarak kapalıdır.
 microphone_processing_enabled=false
 microphone_processing_preset=natural
+microphone_echo_cancellation_enabled=false
 microphone_high_pass_enabled=true
 microphone_high_pass_hz=80.0
 microphone_noise_suppression_enabled=false

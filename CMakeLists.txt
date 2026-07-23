@@ -27,10 +27,31 @@ option(
 )
 
 option(
-    SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE
-    "Build the isolated WebRTC AEC3 compile and processing smoke test"
+    SOUNDBOARD_ENABLE_WEBRTC_AEC3
+    "Build acoustic echo cancellation with the WebRTC Audio Processing Module"
     OFF
 )
+
+option(
+    SOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS
+    "Build WebRTC AEC3 smoke, processor, render-reference and runtime tests"
+    ON
+)
+
+option(
+    SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE
+    "Deprecated compatibility alias for SOUNDBOARD_ENABLE_WEBRTC_AEC3"
+    OFF
+)
+
+if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
+    message(DEPRECATION
+        "SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE is deprecated. Use "
+        "SOUNDBOARD_ENABLE_WEBRTC_AEC3=ON instead."
+    )
+    set(SOUNDBOARD_ENABLE_WEBRTC_AEC3 ON CACHE BOOL "" FORCE)
+    set(SOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS ON CACHE BOOL "" FORCE)
+endif()
 
 set(
     SOUNDBOARD_WEBRTC_TARGET
@@ -271,7 +292,7 @@ add_custom_target(
 
 add_dependencies(SoundBoardFasaFiso SyncRuntimeFiles)
 
-if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
+if(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
     find_package(unofficial-webrtc CONFIG REQUIRED)
 
     if(SOUNDBOARD_WEBRTC_TARGET STREQUAL "")
@@ -316,7 +337,7 @@ if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
     endif()
 
     message(STATUS
-        "WebRTC AEC3 spike target: ${SOUNDBOARD_WEBRTC_TARGET}"
+        "WebRTC AEC3 target: ${SOUNDBOARD_WEBRTC_TARGET}"
     )
 
     target_sources(
@@ -338,207 +359,240 @@ if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
             SOUNDBOARD_ENABLE_WEBRTC_AEC3=1
     )
 
-    add_executable(
-        SoundBoardFasaFisoWebRtcAec3Smoke
-        spikes/WebRtcAec3BuildSmoke.cpp
-    )
 
-    target_link_libraries(
-        SoundBoardFasaFisoWebRtcAec3Smoke
-        PRIVATE
-            "${SOUNDBOARD_WEBRTC_TARGET}"
-    )
-
-    target_compile_definitions(
-        SoundBoardFasaFisoWebRtcAec3Smoke
-        PRIVATE
-            WIN32_LEAN_AND_MEAN
-            NOMINMAX
-    )
-
-    if(MSVC)
-        target_compile_options(
-            SoundBoardFasaFisoWebRtcAec3Smoke
-            PRIVATE
-                /W4
-                /permissive-
-                /utf-8
-                /sdl
-        )
-
-        set_property(
-            TARGET SoundBoardFasaFisoWebRtcAec3Smoke
-            PROPERTY MSVC_RUNTIME_LIBRARY
-                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+    if(NOT DEFINED VCPKG_INSTALLED_DIR OR VCPKG_INSTALLED_DIR STREQUAL "")
+        message(FATAL_ERROR
+            "WebRTC AEC3 builds require the vcpkg toolchain. Official release "
+            "builds must use the pinned manifest; see docs/BUILDING_WITH_WEBRTC_AEC3.md."
         )
     endif()
 
-    add_executable(
-        SoundBoardFasaFisoWebRtcAec3ProcessorTests
-        tests/WebRtcAec3ProcessorTests.cpp
-        src/audio/WebRtcAec3Processor.cpp
+    set(
+        SOUNDBOARD_WEBRTC_NOTICE_FILE
+        "${CMAKE_CURRENT_BINARY_DIR}/WEBRTC_THIRD_PARTY_NOTICES.txt"
     )
 
-    target_include_directories(
-        SoundBoardFasaFisoWebRtcAec3ProcessorTests
-        PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    add_custom_command(
+        OUTPUT "${SOUNDBOARD_WEBRTC_NOTICE_FILE}"
+        COMMAND ${CMAKE_COMMAND}
+            "-DVCPKG_SHARE_DIR=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share"
+            "-DOUTPUT_FILE=${SOUNDBOARD_WEBRTC_NOTICE_FILE}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateVcpkgThirdPartyNotices.cmake"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenerateVcpkgThirdPartyNotices.cmake"
+            "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json"
+        COMMENT "Generating WebRTC and transitive dependency notices..."
+        VERBATIM
     )
 
-    target_link_libraries(
-        SoundBoardFasaFisoWebRtcAec3ProcessorTests
-        PRIVATE
-            "${SOUNDBOARD_WEBRTC_TARGET}"
+    add_custom_target(
+        GenerateWebRtcThirdPartyNotices
+        DEPENDS "${SOUNDBOARD_WEBRTC_NOTICE_FILE}"
     )
 
-    target_compile_definitions(
-        SoundBoardFasaFisoWebRtcAec3ProcessorTests
-        PRIVATE
-            WIN32_LEAN_AND_MEAN
-            NOMINMAX
-    )
+    add_dependencies(SoundBoardFasaFiso GenerateWebRtcThirdPartyNotices)
 
-    if(MSVC)
-        target_compile_options(
-            SoundBoardFasaFisoWebRtcAec3ProcessorTests
-            PRIVATE
-                /W4
-                /permissive-
-                /utf-8
-                /sdl
+    if(BUILD_TESTING AND SOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS)
+        add_executable(
+            SoundBoardFasaFisoWebRtcAec3Smoke
+            spikes/WebRtcAec3BuildSmoke.cpp
         )
 
-        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+        target_link_libraries(
+            SoundBoardFasaFisoWebRtcAec3Smoke
+            PRIVATE
+                "${SOUNDBOARD_WEBRTC_TARGET}"
+        )
+
+        target_compile_definitions(
+            SoundBoardFasaFisoWebRtcAec3Smoke
+            PRIVATE
+                WIN32_LEAN_AND_MEAN
+                NOMINMAX
+        )
+
+        if(MSVC)
+            target_compile_options(
+                SoundBoardFasaFisoWebRtcAec3Smoke
+                PRIVATE
+                    /W4
+                    /permissive-
+                    /utf-8
+                    /sdl
+            )
+
+            set_property(
+                TARGET SoundBoardFasaFisoWebRtcAec3Smoke
+                PROPERTY MSVC_RUNTIME_LIBRARY
+                    "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+            )
+        endif()
+
+        add_executable(
+            SoundBoardFasaFisoWebRtcAec3ProcessorTests
+            tests/WebRtcAec3ProcessorTests.cpp
+            src/audio/WebRtcAec3Processor.cpp
+        )
+
+        target_include_directories(
+            SoundBoardFasaFisoWebRtcAec3ProcessorTests
+            PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        )
+
+        target_link_libraries(
+            SoundBoardFasaFisoWebRtcAec3ProcessorTests
+            PRIVATE
+                "${SOUNDBOARD_WEBRTC_TARGET}"
+        )
+
+        target_compile_definitions(
+            SoundBoardFasaFisoWebRtcAec3ProcessorTests
+            PRIVATE
+                WIN32_LEAN_AND_MEAN
+                NOMINMAX
+        )
+
+        if(MSVC)
             target_compile_options(
                 SoundBoardFasaFisoWebRtcAec3ProcessorTests
                 PRIVATE
-                    /WX
+                    /W4
+                    /permissive-
+                    /utf-8
+                    /sdl
+            )
+
+            if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+                target_compile_options(
+                    SoundBoardFasaFisoWebRtcAec3ProcessorTests
+                    PRIVATE
+                        /WX
+                )
+            endif()
+
+            set_property(
+                TARGET SoundBoardFasaFisoWebRtcAec3ProcessorTests
+                PROPERTY MSVC_RUNTIME_LIBRARY
+                    "MultiThreaded$<$<CONFIG:Debug>:Debug>"
             )
         endif()
 
-        set_property(
-            TARGET SoundBoardFasaFisoWebRtcAec3ProcessorTests
-            PROPERTY MSVC_RUNTIME_LIBRARY
-                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        add_executable(
+            SoundBoardFasaFisoAecRenderReferenceMixerTests
+            tests/AecRenderReferenceMixerTests.cpp
+            src/audio/AecRenderReferenceMixer.cpp
+            $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
         )
-    endif()
 
-    add_executable(
-        SoundBoardFasaFisoAecRenderReferenceMixerTests
-        tests/AecRenderReferenceMixerTests.cpp
-        src/audio/AecRenderReferenceMixer.cpp
-        $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
-    )
-
-    target_include_directories(
-        SoundBoardFasaFisoAecRenderReferenceMixerTests
-        PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    )
-
-    target_include_directories(
-        SoundBoardFasaFisoAecRenderReferenceMixerTests
-        SYSTEM PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
-    )
-
-    target_compile_definitions(
-        SoundBoardFasaFisoAecRenderReferenceMixerTests
-        PRIVATE
-            WIN32_LEAN_AND_MEAN
-            NOMINMAX
-    )
-
-    if(MSVC)
-        target_compile_options(
+        target_include_directories(
             SoundBoardFasaFisoAecRenderReferenceMixerTests
             PRIVATE
-                /W4
-                /permissive-
-                /utf-8
-                /sdl
+                "${CMAKE_CURRENT_SOURCE_DIR}/include"
         )
 
-        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+        target_include_directories(
+            SoundBoardFasaFisoAecRenderReferenceMixerTests
+            SYSTEM PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+        )
+
+        target_compile_definitions(
+            SoundBoardFasaFisoAecRenderReferenceMixerTests
+            PRIVATE
+                WIN32_LEAN_AND_MEAN
+                NOMINMAX
+        )
+
+        if(MSVC)
             target_compile_options(
                 SoundBoardFasaFisoAecRenderReferenceMixerTests
                 PRIVATE
-                    /WX
+                    /W4
+                    /permissive-
+                    /utf-8
+                    /sdl
+            )
+
+            if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+                target_compile_options(
+                    SoundBoardFasaFisoAecRenderReferenceMixerTests
+                    PRIVATE
+                        /WX
+                )
+            endif()
+
+            set_property(
+                TARGET SoundBoardFasaFisoAecRenderReferenceMixerTests
+                PROPERTY MSVC_RUNTIME_LIBRARY
+                    "MultiThreaded$<$<CONFIG:Debug>:Debug>"
             )
         endif()
 
-        set_property(
-            TARGET SoundBoardFasaFisoAecRenderReferenceMixerTests
-            PROPERTY MSVC_RUNTIME_LIBRARY
-                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        add_executable(
+            SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+            tests/MicrophoneProcessingAecRuntimeTests.cpp
+            src/audio/MicrophoneProcessingRuntime.cpp
+            src/audio/MicrophoneProcessor.cpp
+            src/audio/MicrophoneProcessingSettings.cpp
+            src/audio/RnNoiseSuppressor.cpp
+            src/audio/WebRtcAec3Processor.cpp
+            $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
         )
-    endif()
 
-    add_executable(
-        SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
-        tests/MicrophoneProcessingAecRuntimeTests.cpp
-        src/audio/MicrophoneProcessingRuntime.cpp
-        src/audio/MicrophoneProcessor.cpp
-        src/audio/MicrophoneProcessingSettings.cpp
-        src/audio/RnNoiseSuppressor.cpp
-        src/audio/WebRtcAec3Processor.cpp
-        $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
-    )
-
-    target_include_directories(
-        SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
-        PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    )
-
-    target_include_directories(
-        SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
-        SYSTEM PRIVATE
-            "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
-            "${SOUNDBOARD_RNNOISE_ROOT}/include"
-    )
-
-    target_link_libraries(
-        SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
-        PRIVATE
-            SoundBoardFasaFisoRnNoise
-            "${SOUNDBOARD_WEBRTC_TARGET}"
-    )
-
-    target_compile_definitions(
-        SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
-        PRIVATE
-            SOUNDBOARD_ENABLE_WEBRTC_AEC3=1
-            WIN32_LEAN_AND_MEAN
-            NOMINMAX
-    )
-
-    if(MSVC)
-        target_compile_options(
+        target_include_directories(
             SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
             PRIVATE
-                /W4
-                /permissive-
-                /utf-8
-                /sdl
+                "${CMAKE_CURRENT_SOURCE_DIR}/include"
         )
 
-        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+        target_include_directories(
+            SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+            SYSTEM PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+                "${SOUNDBOARD_RNNOISE_ROOT}/include"
+        )
+
+        target_link_libraries(
+            SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+            PRIVATE
+                SoundBoardFasaFisoRnNoise
+                "${SOUNDBOARD_WEBRTC_TARGET}"
+        )
+
+        target_compile_definitions(
+            SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+            PRIVATE
+                SOUNDBOARD_ENABLE_WEBRTC_AEC3=1
+                WIN32_LEAN_AND_MEAN
+                NOMINMAX
+        )
+
+        if(MSVC)
             target_compile_options(
                 SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
                 PRIVATE
-                    /WX
+                    /W4
+                    /permissive-
+                    /utf-8
+                    /sdl
+            )
+
+            if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+                target_compile_options(
+                    SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+                    PRIVATE
+                        /WX
+                )
+            endif()
+
+            set_property(
+                TARGET SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+                PROPERTY MSVC_RUNTIME_LIBRARY
+                    "MultiThreaded$<$<CONFIG:Debug>:Debug>"
             )
         endif()
 
-        set_property(
-            TARGET SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
-            PROPERTY MSVC_RUNTIME_LIBRARY
-                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
-        )
-    endif()
-
-    if(BUILD_TESTING)
         add_test(
             NAME WebRtcAec3BuildSmoke
             COMMAND SoundBoardFasaFisoWebRtcAec3Smoke
@@ -818,6 +872,11 @@ if(BUILD_TESTING)
 endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(SOUNDBOARD_PORTABLE_DEPENDENCIES SoundBoardFasaFiso)
+    if(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        list(APPEND SOUNDBOARD_PORTABLE_DEPENDENCIES GenerateWebRtcThirdPartyNotices)
+    endif()
+
     set(PORTABLE_RELEASE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/portable")
     set(PORTABLE_RELEASE_DIR "${PORTABLE_RELEASE_ROOT}/SoundBoardFasaFiso")
     set(
@@ -865,6 +924,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
             "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.txt"
             "${PORTABLE_RELEASE_DIR}/THIRD_PARTY_NOTICES.txt"
 
+        COMMAND ${CMAKE_COMMAND}
+            "-DENABLED=${SOUNDBOARD_ENABLE_WEBRTC_AEC3}"
+            "-DSOURCE_NOTICE=${SOUNDBOARD_WEBRTC_NOTICE_FILE}"
+            "-DDEST_NOTICE=${PORTABLE_RELEASE_DIR}/WEBRTC_THIRD_PARTY_NOTICES.txt"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyOptionalFile.cmake"
+
         COMMAND ${CMAKE_COMMAND} -E rm -f
             "${PORTABLE_RELEASE_ZIP}"
 
@@ -876,7 +941,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
             --
             "SoundBoardFasaFiso"
 
-        DEPENDS SoundBoardFasaFiso
+        DEPENDS ${SOUNDBOARD_PORTABLE_DEPENDENCIES}
         COMMENT "Creating portable release folder and ZIP archive..."
         VERBATIM
     )
