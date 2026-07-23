@@ -15,7 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**Development version:** `2.1.0-rc.1` adds the opt-in microphone-processing pipeline, RNNoise, AGC and optional WebRTC AEC3 integration.
+**Development version:** `2.1.0-alpha.1` adds the opt-in microphone-processing pipeline, RNNoise, AGC and optional WebRTC AEC3 integration while the user-mode playback engine is expanded.
 
 **Latest stable release:** `2.0.0` is the first stable v2 release. It includes the native control panel, independent main and monitor routing, microphone mixing, resilient live configuration, device recovery and portable Windows packaging.
 
@@ -37,7 +37,7 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 - Per-sound volume and playback mode
 - `restart`, `overlap`, `toggle` and `loop` modes
 - Bounded eight-voice overlap pool
-- Live config reload with rollback on failure
+- Live config reload with rollback on failure and atomic saves that retain `config.txt.bak`
 - Automatic recovery after audio-device disconnects
 - WASAPI with configurable sample rate and buffer target
 - Turkish and English runtime messages selected from `config.txt`
@@ -252,7 +252,7 @@ cmake --build out/build/x64-Release --target PortableRelease
 The distributable archive is created at:
 
 ```text
-out/build/x64-Release/SoundBoardFasaFiso-v2.1.0-rc.1-windows-x64-portable.zip
+out/build/x64-Release/SoundBoardFasaFiso-v2.1.0-alpha.1-windows-x64-portable.zip
 ```
 
 ## Repository layout
@@ -260,6 +260,7 @@ out/build/x64-Release/SoundBoardFasaFiso-v2.1.0-rc.1-windows-x64-portable.zip
 ```text
 assets/          Repository artwork
 cmake/           Small build helper scripts
+docs/            Architecture, build and release notes
 include/         Project headers and generated-file templates
 resources/       Windows icon and resource templates
 sounds/          Neutral example tones

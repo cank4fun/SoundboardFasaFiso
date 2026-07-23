@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.0-rc.1 - Unreleased
+## 2.1.0-alpha.1 - Unreleased
 
 - Added optional WebRTC AEC3 acoustic echo cancellation with a soundboard monitor-reference path.
 - Added high-pass filtering, RNNoise suppression, automatic gain control, compression and limiting.
@@ -8,6 +8,8 @@
 - Added a pinned vcpkg manifest feature and production AEC build path.
 - Added generated license notices for WebRTC and its transitive static dependencies.
 - Kept a dependency-free build with AEC unavailable when WebRTC is disabled.
+- Added the playback-session foundation with stable runtime IDs, live position/duration snapshots and per-session pause, resume, stop, seek and volume APIs.
+- Made config replacement atomic on Windows and kept `config.txt.bak` as the last known-good saved configuration.
 
 ## 2.0.0
 

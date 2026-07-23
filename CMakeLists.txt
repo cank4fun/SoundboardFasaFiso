@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(SOUNDBOARD_VERSION "2.1.0-rc.1")
+set(SOUNDBOARD_VERSION "2.1.0-alpha.1")
 
 project(SoundBoardFasaFiso VERSION 2.1.0 LANGUAGES C CXX)
 

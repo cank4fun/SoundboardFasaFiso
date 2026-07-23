@@ -111,7 +111,7 @@ artifacts and attaches them to the tagged GitHub Release.
 
 If `docs/releases/v<version>.md` exists, the workflow uses it as the release
 description; otherwise it generates release notes. Tags containing a hyphen,
-such as `v2.1.0-rc.1`, are published as prereleases.
+such as `v2.1.0-alpha.1` or `v2.1.0-rc.1`, are published as prereleases.
 
 After publication, verify:
 

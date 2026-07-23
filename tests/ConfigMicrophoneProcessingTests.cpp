@@ -379,6 +379,41 @@ namespace
             "saved default does not claim AGC is active"
         );
     }
+
+    void TestSaveKeepsLastGoodBackup(const TemporaryDirectory& directory)
+    {
+        const auto path = directory.Path() / "atomic-save.txt";
+        std::filesystem::path backupPath = path;
+        backupPath += L".bak";
+        std::filesystem::path temporaryPath = path;
+        temporaryPath += L".tmp";
+
+        Config first;
+        Expect(first.SetOutputVolume(0.25f), "first output volume is valid");
+        Expect(first.Save(path), "first atomic config save succeeds");
+        const std::string firstContents = ReadText(path);
+
+        Config second;
+        Expect(second.SetOutputVolume(0.75f), "second output volume is valid");
+        Expect(second.Save(path), "replacement atomic config save succeeds");
+
+        Expect(
+            std::filesystem::exists(backupPath),
+            "replacement save keeps a last-good backup"
+        );
+        Expect(
+            ReadText(backupPath) == firstContents,
+            "backup contains the previous complete config"
+        );
+        Expect(
+            ReadText(path).find("output_volume=0.75") != std::string::npos,
+            "destination contains the new config"
+        );
+        Expect(
+            !std::filesystem::exists(temporaryPath),
+            "successful save leaves no temporary file"
+        );
+    }
 }
 
 int main()
@@ -391,6 +426,7 @@ int main()
     TestInvalidValuesAreRejected(directory);
     TestSetterRejectsInvalidSettings();
     TestDefaultSaveIsSafe(directory);
+    TestSaveKeepsLastGoodBackup(directory);
 
     if (failureCount != 0)
     {

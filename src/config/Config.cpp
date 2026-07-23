@@ -32,6 +32,76 @@ namespace
         std::size_t lineNumber = 0;
     };
 
+    bool FlushFileContents(
+        const std::filesystem::path& path,
+        DWORD& errorCode
+    )
+    {
+        const HANDLE fileHandle = CreateFileW(
+            path.c_str(),
+            GENERIC_WRITE,
+            FILE_SHARE_READ,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr
+        );
+
+        if (fileHandle == INVALID_HANDLE_VALUE)
+        {
+            errorCode = GetLastError();
+            return false;
+        }
+
+        const BOOL flushed = FlushFileBuffers(fileHandle);
+        errorCode = flushed ? ERROR_SUCCESS : GetLastError();
+        CloseHandle(fileHandle);
+        return flushed != FALSE;
+    }
+
+    bool CommitTemporaryFile(
+        const std::filesystem::path& temporaryPath,
+        const std::filesystem::path& destinationPath,
+        const std::filesystem::path& backupPath,
+        const bool destinationExists,
+        DWORD& errorCode
+    )
+    {
+        if (destinationExists)
+        {
+            DeleteFileW(backupPath.c_str());
+
+            if (ReplaceFileW(
+                    destinationPath.c_str(),
+                    temporaryPath.c_str(),
+                    backupPath.c_str(),
+                    REPLACEFILE_WRITE_THROUGH,
+                    nullptr,
+                    nullptr
+                ) != FALSE)
+            {
+                errorCode = ERROR_SUCCESS;
+                return true;
+            }
+
+            errorCode = GetLastError();
+            return false;
+        }
+
+        if (MoveFileExW(
+                temporaryPath.c_str(),
+                destinationPath.c_str(),
+                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+            ) != FALSE)
+        {
+            errorCode = ERROR_SUCCESS;
+            return true;
+        }
+
+        errorCode = GetLastError();
+        return false;
+    }
+
     struct ParsedBaseKey
     {
         std::string canonicalName;
@@ -2285,61 +2355,45 @@ bool Config::Save(const std::filesystem::path& filePath) const
 
     file.close();
 
-    const bool destinationExists =
-        std::filesystem::exists(filePath, error) && !error;
+    DWORD systemError = ERROR_SUCCESS;
 
-    error.clear();
-    std::filesystem::remove(backupPath, error);
-    error.clear();
-
-    if (destinationExists)
+    if (!FlushFileContents(temporaryPath, systemError))
     {
-        std::filesystem::rename(filePath, backupPath, error);
+        std::filesystem::remove(temporaryPath, error);
 
-        if (error)
-        {
-            std::filesystem::remove(temporaryPath, error);
-            std::cerr
-                << Localization::Text(
-                    "Mevcut config yedeklenemedi. Dosya başka bir programda açık olabilir: ",
-                    "The current config could not be backed up. The file may be open in another program: "
-                )
-                << PathToUtf8(filePath)
-                << '\n';
-            return false;
-        }
+        std::cerr
+            << Localization::Text(
+                "Config geçici dosyası diske yazılamadı. Hata kodu: ",
+                "The temporary config file could not be flushed to disk. Error code: "
+            )
+            << systemError
+            << '\n';
+        return false;
     }
 
     error.clear();
-    std::filesystem::rename(temporaryPath, filePath, error);
+    const bool destinationExists =
+        std::filesystem::exists(filePath, error) && !error;
 
-    if (error)
+    if (!CommitTemporaryFile(
+            temporaryPath,
+            filePath,
+            backupPath,
+            destinationExists,
+            systemError
+        ))
     {
-        const std::error_code renameError = error;
-
-        if (destinationExists)
-        {
-            error.clear();
-            std::filesystem::rename(backupPath, filePath, error);
-        }
-
         error.clear();
         std::filesystem::remove(temporaryPath, error);
 
         std::cerr
             << Localization::Text(
-                "Yeni config dosyası etkinleştirilemedi. Hata kodu: ",
-                "The new config file could not be activated. Error code: "
+                "Yeni config atomik olarak etkinleştirilemedi. Önceki dosya korundu. Hata kodu: ",
+                "The new config could not be activated atomically. The previous file was preserved. Error code: "
             )
-            << renameError.value()
+            << systemError
             << '\n';
         return false;
-    }
-
-    if (destinationExists)
-    {
-        error.clear();
-        std::filesystem::remove(backupPath, error);
     }
 
     return true;

@@ -1705,6 +1705,10 @@ bool Audio::InitializeVoiceFromFile(
     }
 #endif
 
+    voice.volume = definition.volume;
+    voice.playbackId = InvalidPlaybackId;
+    voice.paused = false;
+
     return true;
 }
 
@@ -1846,6 +1850,10 @@ bool Audio::InitializeVoiceCopy(
         );
     }
 #endif
+
+    voice.volume = definition.volume;
+    voice.playbackId = InvalidPlaybackId;
+    voice.paused = false;
 
     return true;
 }
@@ -1997,12 +2005,16 @@ bool Audio::PrepareVoiceForPlayback(
     }
 #endif
 
+    voice.playbackId = InvalidPlaybackId;
+    voice.paused = false;
+
     return success;
 }
 
 bool Audio::StartVoice(
     Voice& voice,
-    const std::string& soundId
+    const std::string& soundId,
+    const bool beginNewPlayback
 )
 {
     if (!voice.outputSound)
@@ -2080,7 +2092,68 @@ bool Audio::StartVoice(
     }
 #endif
 
+    if (beginNewPlayback || voice.playbackId == InvalidPlaybackId)
+    {
+        voice.playbackId = AllocatePlaybackId();
+    }
+
+    voice.paused = false;
     return true;
+}
+
+PlaybackId Audio::AllocatePlaybackId() noexcept
+{
+    PlaybackId id = nextPlaybackId_.fetch_add(
+        1,
+        std::memory_order_relaxed
+    );
+
+    if (id == InvalidPlaybackId)
+    {
+        id = nextPlaybackId_.fetch_add(
+            1,
+            std::memory_order_relaxed
+        );
+    }
+
+    return id;
+}
+
+Audio::Voice* Audio::FindVoiceByPlaybackId(
+    const PlaybackId playbackId,
+    const std::string** soundId
+)
+{
+    if (playbackId == InvalidPlaybackId)
+    {
+        return nullptr;
+    }
+
+    for (auto& [candidateSoundId, loadedSound] : loadedSounds_)
+    {
+        for (Voice& voice : loadedSound.voices)
+        {
+            if (voice.playbackId != playbackId)
+            {
+                continue;
+            }
+
+            if (!voice.paused && !IsVoicePlaying(voice))
+            {
+                voice.playbackId = InvalidPlaybackId;
+                return nullptr;
+            }
+
+            if (soundId != nullptr)
+            {
+                *soundId = &candidateSoundId;
+            }
+
+            return &voice;
+        }
+    }
+
+    return nullptr;
 }
 
 bool Audio::IsVoicePlaying(const Voice& voice)
@@ -2130,6 +2203,10 @@ void Audio::DestroyVoice(Voice& voice)
 
         voice.outputSound.reset();
     }
+
+    voice.playbackId = InvalidPlaybackId;
+    voice.volume = 1.0f;
+    voice.paused = false;
 }
 
 void Audio::DestroyLoadedSound(
@@ -2365,6 +2442,265 @@ bool Audio::StopAll()
     }
 
     return success;
+}
+
+std::vector<PlaybackSnapshot> Audio::GetPlaybackSnapshots() const
+{
+    std::vector<PlaybackSnapshot> snapshots;
+
+    for (const auto& [soundId, loadedSound] : loadedSounds_)
+    {
+        for (const Voice& voice : loadedSound.voices)
+        {
+            if (voice.playbackId == InvalidPlaybackId)
+            {
+                continue;
+            }
+
+            const bool playing = IsVoicePlaying(voice);
+
+            if (!playing && !voice.paused)
+            {
+                continue;
+            }
+
+            float positionSeconds = 0.0f;
+            float durationSeconds = 0.0f;
+
+            if (voice.outputSound)
+            {
+                if (ma_sound_get_cursor_in_seconds(
+                        voice.outputSound.get(),
+                        &positionSeconds
+                    ) != MA_SUCCESS)
+                {
+                    positionSeconds = 0.0f;
+                }
+
+                if (ma_sound_get_length_in_seconds(
+                        voice.outputSound.get(),
+                        &durationSeconds
+                    ) != MA_SUCCESS)
+                {
+                    durationSeconds = 0.0f;
+                }
+            }
+
+            snapshots.push_back(PlaybackSnapshot{
+                voice.playbackId,
+                soundId,
+                voice.paused
+                    ? PlaybackStatus::Paused
+                    : PlaybackStatus::Playing,
+                loadedSound.mode,
+                std::max(0.0f, positionSeconds),
+                std::max(0.0f, durationSeconds),
+                voice.volume
+            });
+        }
+    }
+
+    std::sort(
+        snapshots.begin(),
+        snapshots.end(),
+        [](const PlaybackSnapshot& left, const PlaybackSnapshot& right)
+        {
+            return left.id < right.id;
+        }
+    );
+
+    return snapshots;
+}
+
+bool Audio::PausePlayback(const PlaybackId playbackId)
+{
+    Voice* const voice = FindVoiceByPlaybackId(playbackId);
+
+    if (voice == nullptr)
+    {
+        return false;
+    }
+
+    if (voice->paused)
+    {
+        return true;
+    }
+
+    if (!IsVoicePlaying(*voice))
+    {
+        return false;
+    }
+
+    bool success = true;
+
+    if (!voice->outputSound ||
+        ma_sound_stop(voice->outputSound.get()) != MA_SUCCESS)
+    {
+        success = false;
+    }
+
+    if (voice->monitorSound &&
+        ma_sound_stop(voice->monitorSound.get()) != MA_SUCCESS)
+    {
+        success = false;
+    }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice->aecReferenceSound &&
+        ma_sound_stop(voice->aecReferenceSound.get()) != MA_SUCCESS)
+    {
+        success = false;
+    }
+#endif
+
+    if (!success)
+    {
+        recoveryRequested_.store(true, std::memory_order_release);
+        return false;
+    }
+
+    voice->paused = true;
+    return true;
+}
+
+bool Audio::ResumePlayback(const PlaybackId playbackId)
+{
+    const std::string* soundId = nullptr;
+    Voice* const voice = FindVoiceByPlaybackId(playbackId, &soundId);
+
+    if (voice == nullptr || soundId == nullptr)
+    {
+        return false;
+    }
+
+    if (!voice->paused)
+    {
+        return IsVoicePlaying(*voice);
+    }
+
+    if (!StartVoice(*voice, *soundId, false))
+    {
+        recoveryRequested_.store(true, std::memory_order_release);
+        return false;
+    }
+
+    return true;
+}
+
+bool Audio::StopPlayback(const PlaybackId playbackId)
+{
+    const std::string* soundId = nullptr;
+    Voice* const voice = FindVoiceByPlaybackId(playbackId, &soundId);
+
+    if (voice == nullptr || soundId == nullptr)
+    {
+        return false;
+    }
+
+    if (!PrepareVoiceForPlayback(*voice, *soundId))
+    {
+        recoveryRequested_.store(true, std::memory_order_release);
+        return false;
+    }
+
+    return true;
+}
+
+bool Audio::SeekPlayback(
+    const PlaybackId playbackId,
+    const float positionSeconds
+)
+{
+    if (!std::isfinite(positionSeconds) || positionSeconds < 0.0f)
+    {
+        return false;
+    }
+
+    Voice* const voice = FindVoiceByPlaybackId(playbackId);
+
+    if (voice == nullptr || !voice->outputSound)
+    {
+        return false;
+    }
+
+    float durationSeconds = 0.0f;
+    float targetSeconds = positionSeconds;
+
+    if (ma_sound_get_length_in_seconds(
+            voice->outputSound.get(),
+            &durationSeconds
+        ) == MA_SUCCESS && durationSeconds > 0.0f)
+    {
+        targetSeconds = std::min(targetSeconds, durationSeconds);
+    }
+
+    bool success =
+        ma_sound_seek_to_second(
+            voice->outputSound.get(),
+            targetSeconds
+        ) == MA_SUCCESS;
+
+    if (voice->monitorSound)
+    {
+        success =
+            ma_sound_seek_to_second(
+                voice->monitorSound.get(),
+                targetSeconds
+            ) == MA_SUCCESS && success;
+    }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice->aecReferenceSound)
+    {
+        success =
+            ma_sound_seek_to_second(
+                voice->aecReferenceSound.get(),
+                targetSeconds
+            ) == MA_SUCCESS && success;
+    }
+#endif
+
+    if (!success)
+    {
+        recoveryRequested_.store(true, std::memory_order_release);
+    }
+
+    return success;
+}
+
+bool Audio::SetPlaybackVolume(
+    const PlaybackId playbackId,
+    const float volume
+)
+{
+    if (!std::isfinite(volume) || volume < 0.0f || volume > 1.0f)
+    {
+        return false;
+    }
+
+    Voice* const voice = FindVoiceByPlaybackId(playbackId);
+
+    if (voice == nullptr || !voice->outputSound)
+    {
+        return false;
+    }
+
+    ma_sound_set_volume(voice->outputSound.get(), volume);
+
+    if (voice->monitorSound)
+    {
+        ma_sound_set_volume(voice->monitorSound.get(), volume);
+    }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice->aecReferenceSound)
+    {
+        ma_sound_set_volume(voice->aecReferenceSound.get(), volume);
+    }
+#endif
+
+    voice->volume = volume;
+    return true;
 }
 
 MuteToggleResult Audio::ToggleEngineMute(

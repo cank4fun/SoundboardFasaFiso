@@ -5,7 +5,7 @@ Windows 10/11 için kurulumsuz, portable soundboard.
 
 SÜRÜM / VERSION
 ---------------
-2.1.0-rc.1
+2.1.0-alpha.1
 
 DİL / LANGUAGE
 --------------

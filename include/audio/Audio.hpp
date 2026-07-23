@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/MicrophoneProcessingRuntime.hpp"
+#include "audio/PlaybackState.hpp"
 
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
 #include "audio/AecRenderReferenceMixer.hpp"
@@ -123,6 +124,14 @@ public:
     PlaybackResult PlayLoaded(const std::string& soundId);
     bool StopAll();
 
+    [[nodiscard]] std::vector<PlaybackSnapshot>
+        GetPlaybackSnapshots() const;
+    bool PausePlayback(PlaybackId playbackId);
+    bool ResumePlayback(PlaybackId playbackId);
+    bool StopPlayback(PlaybackId playbackId);
+    bool SeekPlayback(PlaybackId playbackId, float positionSeconds);
+    bool SetPlaybackVolume(PlaybackId playbackId, float volume);
+
     MuteToggleResult ToggleOutputMute();
     MuteToggleResult ToggleMonitorMute();
 
@@ -181,6 +190,10 @@ private:
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
         std::unique_ptr<ma_sound> aecReferenceSound;
 #endif
+
+        PlaybackId playbackId = InvalidPlaybackId;
+        float volume = 1.0f;
+        bool paused = false;
     };
 
     struct LoadedSound
@@ -273,7 +286,14 @@ private:
 
     bool StartVoice(
         Voice& voice,
-        const std::string& soundId
+        const std::string& soundId,
+        bool beginNewPlayback = true
+    );
+
+    [[nodiscard]] PlaybackId AllocatePlaybackId() noexcept;
+    Voice* FindVoiceByPlaybackId(
+        PlaybackId playbackId,
+        const std::string** soundId = nullptr
     );
 
     static bool IsVoicePlaying(const Voice& voice);
@@ -311,6 +331,7 @@ private:
 
     std::unordered_map<std::string, LoadedSound> loadedSounds_;
     std::unordered_map<std::string, SoundDefinition> soundDefinitions_;
+    std::atomic<PlaybackId> nextPlaybackId_{1};
 
     std::string requestedOutputDevice_;
     std::string requestedMonitorDevice_;
