@@ -174,6 +174,45 @@ namespace
             static_cast<std::size_t>(index)
         ];
     }
+
+    constexpr std::array MicrophoneNoiseSuppressionLevelOrder{
+        MicrophoneNoiseSuppressionLevel::Light,
+        MicrophoneNoiseSuppressionLevel::Balanced,
+        MicrophoneNoiseSuppressionLevel::Strong
+    };
+
+    int MicrophoneNoiseSuppressionLevelIndex(
+        const MicrophoneNoiseSuppressionLevel level
+    )
+    {
+        const auto iterator = std::find(
+            MicrophoneNoiseSuppressionLevelOrder.begin(),
+            MicrophoneNoiseSuppressionLevelOrder.end(),
+            level
+        );
+
+        return iterator == MicrophoneNoiseSuppressionLevelOrder.end()
+            ? 1
+            : static_cast<int>(std::distance(
+                MicrophoneNoiseSuppressionLevelOrder.begin(),
+                iterator
+            ));
+    }
+
+    std::optional<MicrophoneNoiseSuppressionLevel>
+    MicrophoneNoiseSuppressionLevelFromIndex(const int index)
+    {
+        if (index < 0 ||
+            static_cast<std::size_t>(index) >=
+                MicrophoneNoiseSuppressionLevelOrder.size())
+        {
+            return std::nullopt;
+        }
+
+        return MicrophoneNoiseSuppressionLevelOrder[
+            static_cast<std::size_t>(index)
+        ];
+    }
 }
 
 ControlWindow::~ControlWindow()
@@ -485,6 +524,9 @@ void ControlWindow::Shutdown()
     microphoneProcessingStatusCaption_ = nullptr;
     microphoneProcessingStatusValue_ = nullptr;
     microphoneTestMonitorButton_ = nullptr;
+    microphoneNoiseSuppressionEnabledCheck_ = nullptr;
+    microphoneNoiseSuppressionLevelCaption_ = nullptr;
+    microphoneNoiseSuppressionLevelCombo_ = nullptr;
     microphoneRawMeterCaption_ = nullptr;
     microphoneRawLevelMeter_ = nullptr;
     microphoneProcessedMeterCaption_ = nullptr;
@@ -1052,6 +1094,13 @@ LRESULT ControlWindow::HandleWindowMessage(
                 return 0;
             }
 
+            if (controlId == IdMicrophoneNoiseSuppressionLevel &&
+                notificationCode == CBN_SELCHANGE)
+            {
+                MarkMicrophoneProcessingPresetCustom();
+                return 0;
+            }
+
             const HWND commandControl = reinterpret_cast<HWND>(lParam);
             const bool nativeFilterEditChanged =
                 notificationCode == EN_CHANGE &&
@@ -1062,14 +1111,16 @@ LRESULT ControlWindow::HandleWindowMessage(
                     commandControl == microphoneCompressorReleaseEdit_ ||
                     commandControl == microphoneCompressorMakeupEdit_ ||
                     commandControl == microphoneLimiterCeilingEdit_);
-            const bool nativeFilterToggleChanged =
+            const bool processingToggleChanged =
                 notificationCode == BN_CLICKED &&
                 (commandControl == microphoneHighPassEnabledCheck_ ||
+                    commandControl ==
+                        microphoneNoiseSuppressionEnabledCheck_ ||
                     commandControl == microphoneCompressorEnabledCheck_ ||
                     commandControl == microphoneLimiterEnabledCheck_);
 
             if (!populatingMicrophoneProcessingControls_ &&
-                (nativeFilterEditChanged || nativeFilterToggleChanged))
+                (nativeFilterEditChanged || processingToggleChanged))
             {
                 MarkMicrophoneProcessingPresetCustom();
             }
@@ -1614,6 +1665,18 @@ bool ControlWindow::CreateControls()
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
         IdMicrophoneTestMonitor
     );
+    microphoneNoiseSuppressionEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
+    microphoneNoiseSuppressionLevelCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    microphoneNoiseSuppressionLevelCombo_ = createControl(
+        L"COMBOBOX", L"",
+        CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP,
+        IdMicrophoneNoiseSuppressionLevel,
+        WS_EX_CLIENTEDGE
+    );
     microphoneRawMeterCaption_ = createControl(
         L"STATIC", L"", SS_LEFT, 0
     );
@@ -1839,7 +1902,9 @@ bool ControlWindow::CreateControls()
         microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
         microphoneProcessingStatusValue_, microphoneTestMonitorButton_,
-        microphoneRawMeterCaption_,
+        microphoneNoiseSuppressionEnabledCheck_,
+        microphoneNoiseSuppressionLevelCaption_,
+        microphoneNoiseSuppressionLevelCombo_, microphoneRawMeterCaption_,
         microphoneRawLevelMeter_, microphoneProcessedMeterCaption_,
         microphoneProcessedLevelMeter_,
         microphoneHighPassEnabledCheck_, microphoneHighPassHzCaption_,
@@ -2558,6 +2623,21 @@ void ControlWindow::LayoutControls(
         );
         rowY += 34;
 
+        moveWindow(
+            microphoneNoiseSuppressionEnabledCheck_,
+            innerX, rowY, columnWidth, 22, TRUE
+        );
+        moveWindow(
+            microphoneNoiseSuppressionLevelCaption_,
+            rightX, rowY + 4, 94, 20, TRUE
+        );
+        moveWindow(
+            microphoneNoiseSuppressionLevelCombo_,
+            rightX + 94, rowY,
+            std::max(180, columnWidth - 94), 160, TRUE
+        );
+        rowY += 34;
+
         const int meterGap = 24;
         const int meterWidth = (innerWidth - meterGap) / 2;
         moveWindow(
@@ -2900,7 +2980,9 @@ void ControlWindow::UpdatePageVisibility()
         microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
         microphoneProcessingStatusValue_, microphoneTestMonitorButton_,
-        microphoneRawMeterCaption_,
+        microphoneNoiseSuppressionEnabledCheck_,
+        microphoneNoiseSuppressionLevelCaption_,
+        microphoneNoiseSuppressionLevelCombo_, microphoneRawMeterCaption_,
         microphoneRawLevelMeter_, microphoneProcessedMeterCaption_,
         microphoneProcessedLevelMeter_, microphoneHighPassEnabledCheck_,
         microphoneHighPassHzCaption_, microphoneHighPassHzEdit_,
@@ -2990,9 +3072,10 @@ void ControlWindow::ApplyTheme()
         ? L"DarkMode_CFD"
         : L"Explorer";
 
-    const std::array<HWND, 6> combos{
+    const std::array<HWND, 7> combos{
         outputCombo_, monitorCombo_, microphoneCombo_,
-        sampleRateCombo_, bufferCombo_, microphoneProcessingPresetCombo_
+        sampleRateCombo_, bufferCombo_, microphoneProcessingPresetCombo_,
+        microphoneNoiseSuppressionLevelCombo_
     };
 
     for (const HWND control : combos)
@@ -3045,10 +3128,11 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 9> checkBoxes{
+    const std::array<HWND, 10> checkBoxes{
         microphoneEnabledCheck_, microphoneToOutputCheck_,
         microphoneToMonitorCheck_, startWithWindowsCheck_,
         checkUpdatesOnStartCheck_, microphoneProcessingEnabledCheck_,
+        microphoneNoiseSuppressionEnabledCheck_,
         microphoneHighPassEnabledCheck_,
         microphoneCompressorEnabledCheck_, microphoneLimiterEnabledCheck_
     };
@@ -3132,7 +3216,10 @@ void ControlWindow::ApplyFonts()
         microphoneProcessingPresetCaption_,
         microphoneProcessingPresetCombo_,
         microphoneProcessingStatusCaption_,
-        microphoneProcessingStatusValue_, microphoneRawMeterCaption_,
+        microphoneProcessingStatusValue_,
+        microphoneNoiseSuppressionEnabledCheck_,
+        microphoneNoiseSuppressionLevelCaption_,
+        microphoneNoiseSuppressionLevelCombo_, microphoneRawMeterCaption_,
         microphoneProcessedMeterCaption_,
         microphoneHighPassEnabledCheck_, microphoneHighPassHzCaption_,
         microphoneHighPassHzEdit_, microphoneCompressorEnabledCheck_,
@@ -4145,6 +4232,17 @@ void ControlWindow::RefreshLocalizedText()
             )
     );
     SetControlText(
+        microphoneNoiseSuppressionEnabledCheck_,
+        Localization::Text(
+            L"RNNoise noise suppression'ı etkinleştir",
+            L"Enable RNNoise noise suppression"
+        )
+    );
+    SetControlText(
+        microphoneNoiseSuppressionLevelCaption_,
+        Localization::Text(L"Seviye:", L"Level:")
+    );
+    SetControlText(
         microphoneRawMeterCaption_,
         Localization::Text(L"Ham mikrofon seviyesi", L"Raw microphone level")
     );
@@ -4222,12 +4320,13 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         microphoneUnavailableFeaturesCaption_,
         Localization::Text(
-            L"Test düğmesi işlenmiş mikrofonu geçici olarak monitöre gönderir. Pencere kapanınca test durur. AGC sonraki aşamada eklenecek.",
-            L"The test button temporarily sends the processed microphone to the monitor. The test stops when the window closes. AGC will be added later."
+            L"RNNoise seviyesi işlenmiş sinyaldeki wet mix miktarını belirler. Test düğmesi işlenmiş mikrofonu geçici olarak monitöre gönderir. AGC sonraki aşamada eklenecek.",
+            L"The RNNoise level controls the wet mix applied to the processed signal. The test button temporarily sends the processed microphone to the monitor. AGC will be added later."
         )
     );
 
     PopulateMicrophoneProcessingPresetCombo();
+    PopulateMicrophoneNoiseSuppressionLevelCombo();
 
     SetControlText(
         controlHotkeysGroup_,
@@ -4576,6 +4675,64 @@ void ControlWindow::PopulateMicrophoneProcessingPresetCombo()
     populatingMicrophoneProcessingControls_ = previousPopulationState;
 }
 
+void ControlWindow::PopulateMicrophoneNoiseSuppressionLevelCombo()
+{
+    if (microphoneNoiseSuppressionLevelCombo_ == nullptr)
+    {
+        return;
+    }
+
+    MicrophoneNoiseSuppressionLevel selectedLevel =
+        currentConfig_.GetMicrophoneProcessingSettings().
+            noiseSuppressionLevel;
+    const int currentSelection = static_cast<int>(SendMessageW(
+        microphoneNoiseSuppressionLevelCombo_,
+        CB_GETCURSEL,
+        0,
+        0
+    ));
+
+    if (const auto currentLevel =
+            MicrophoneNoiseSuppressionLevelFromIndex(currentSelection))
+    {
+        selectedLevel = *currentLevel;
+    }
+
+    const bool previousPopulationState =
+        populatingMicrophoneProcessingControls_;
+    populatingMicrophoneProcessingControls_ = true;
+
+    SendMessageW(
+        microphoneNoiseSuppressionLevelCombo_,
+        CB_RESETCONTENT,
+        0,
+        0
+    );
+    AddComboItem(
+        microphoneNoiseSuppressionLevelCombo_,
+        Localization::Text(L"Hafif", L"Light")
+    );
+    AddComboItem(
+        microphoneNoiseSuppressionLevelCombo_,
+        Localization::Text(L"Dengeli", L"Balanced")
+    );
+    AddComboItem(
+        microphoneNoiseSuppressionLevelCombo_,
+        Localization::Text(L"Güçlü", L"Strong")
+    );
+
+    SendMessageW(
+        microphoneNoiseSuppressionLevelCombo_,
+        CB_SETCURSEL,
+        static_cast<WPARAM>(
+            MicrophoneNoiseSuppressionLevelIndex(selectedLevel)
+        ),
+        0
+    );
+
+    populatingMicrophoneProcessingControls_ = previousPopulationState;
+}
+
 void ControlWindow::ApplySelectedMicrophoneProcessingPreset()
 {
     if (populatingMicrophoneProcessingControls_ ||
@@ -4631,6 +4788,18 @@ void ControlWindow::ApplySelectedMicrophoneProcessingPreset()
     };
 
     populatingMicrophoneProcessingControls_ = true;
+    setCheck(
+        microphoneNoiseSuppressionEnabledCheck_,
+        settings->noiseSuppressionEnabled
+    );
+    SendMessageW(
+        microphoneNoiseSuppressionLevelCombo_,
+        CB_SETCURSEL,
+        static_cast<WPARAM>(MicrophoneNoiseSuppressionLevelIndex(
+            settings->noiseSuppressionLevel
+        )),
+        0
+    );
     setCheck(
         microphoneHighPassEnabledCheck_,
         settings->highPassEnabled
@@ -4706,6 +4875,7 @@ void ControlWindow::PopulateMicrophoneProcessingControls()
 
     populatingMicrophoneProcessingControls_ = true;
     PopulateMicrophoneProcessingPresetCombo();
+    PopulateMicrophoneNoiseSuppressionLevelCombo();
 
     const MicrophoneProcessingSettings& settings =
         currentConfig_.GetMicrophoneProcessingSettings();
@@ -4728,6 +4898,18 @@ void ControlWindow::PopulateMicrophoneProcessingControls()
     };
 
     setCheck(microphoneProcessingEnabledCheck_, settings.enabled);
+    setCheck(
+        microphoneNoiseSuppressionEnabledCheck_,
+        settings.noiseSuppressionEnabled
+    );
+    SendMessageW(
+        microphoneNoiseSuppressionLevelCombo_,
+        CB_SETCURSEL,
+        static_cast<WPARAM>(MicrophoneNoiseSuppressionLevelIndex(
+            settings.noiseSuppressionLevel
+        )),
+        0
+    );
     setCheck(microphoneHighPassEnabledCheck_, settings.highPassEnabled);
     setCheck(
         microphoneCompressorEnabledCheck_,
@@ -5313,6 +5495,16 @@ bool ControlWindow::SavePendingSettings()
     ));
     const auto selectedPreset =
         MicrophoneProcessingPresetFromIndex(presetSelection);
+    const int noiseSuppressionSelection = static_cast<int>(SendMessageW(
+        microphoneNoiseSuppressionLevelCombo_,
+        CB_GETCURSEL,
+        0,
+        0
+    ));
+    const auto selectedNoiseSuppressionLevel =
+        MicrophoneNoiseSuppressionLevelFromIndex(
+            noiseSuppressionSelection
+        );
 
     if (!selectedPreset.has_value())
     {
@@ -5321,6 +5513,20 @@ bool ControlWindow::SavePendingSettings()
             Localization::Text(
                 L"Geçerli bir mikrofon preset'i seçin.",
                 L"Select a valid microphone preset."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
+    if (!selectedNoiseSuppressionLevel.has_value())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Geçerli bir noise suppression seviyesi seçin.",
+                L"Select a valid noise-suppression level."
             ),
             L"SoundBoardFasaFiso",
             MB_OK | MB_ICONWARNING
@@ -5353,6 +5559,14 @@ bool ControlWindow::SavePendingSettings()
     {
         processingSettings.enabled = processingEnabled;
         processingSettings.preset = MicrophoneProcessingPreset::Custom;
+        processingSettings.noiseSuppressionEnabled = SendMessageW(
+            microphoneNoiseSuppressionEnabledCheck_,
+            BM_GETCHECK,
+            0,
+            0
+        ) == BST_CHECKED;
+        processingSettings.noiseSuppressionLevel =
+            *selectedNoiseSuppressionLevel;
         processingSettings.highPassEnabled = SendMessageW(
             microphoneHighPassEnabledCheck_,
             BM_GETCHECK,

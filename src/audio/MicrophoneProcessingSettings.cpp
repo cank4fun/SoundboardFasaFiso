@@ -175,14 +175,16 @@ BuildMicrophoneProcessingPreset(
     MicrophoneProcessingSettings settings;
     settings.enabled = enabled;
     settings.preset = preset;
-    settings.noiseSuppressionEnabled = false;
+    settings.noiseSuppressionEnabled = true;
     settings.agcEnabled = false;
 
-    // Conservative native-filter starting points. Live voice-chat A/B
+    // Conservative voice-processing starting points. Live voice-chat A/B
     // testing may tune these values before the v2.1 release.
     switch (preset)
     {
         case MicrophoneProcessingPreset::Natural:
+            settings.noiseSuppressionLevel =
+                MicrophoneNoiseSuppressionLevel::Light;
             settings.highPassHz = 80.0f;
             settings.compressorThresholdDb = -24.0f;
             settings.compressorRatio = 3.0f;
@@ -193,6 +195,8 @@ BuildMicrophoneProcessingPreset(
             break;
 
         case MicrophoneProcessingPreset::Clean:
+            settings.noiseSuppressionLevel =
+                MicrophoneNoiseSuppressionLevel::Balanced;
             settings.highPassHz = 90.0f;
             settings.compressorThresholdDb = -27.0f;
             settings.compressorRatio = 3.5f;
@@ -203,6 +207,8 @@ BuildMicrophoneProcessingPreset(
             break;
 
         case MicrophoneProcessingPreset::Strong:
+            settings.noiseSuppressionLevel =
+                MicrophoneNoiseSuppressionLevel::Strong;
             settings.highPassHz = 100.0f;
             settings.compressorThresholdDb = -30.0f;
             settings.compressorRatio = 4.5f;
@@ -213,6 +219,8 @@ BuildMicrophoneProcessingPreset(
             break;
 
         case MicrophoneProcessingPreset::Aggressive:
+            settings.noiseSuppressionLevel =
+                MicrophoneNoiseSuppressionLevel::Strong;
             settings.highPassHz = 120.0f;
             settings.compressorThresholdDb = -34.0f;
             settings.compressorRatio = 6.0f;

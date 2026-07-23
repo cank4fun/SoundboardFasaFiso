@@ -33,7 +33,7 @@ namespace
         );
         Expect(
             !settings.noiseSuppressionEnabled,
-            "unimplemented noise suppression defaults to disabled"
+            "noise suppression defaults to disabled"
         );
         Expect(
             !settings.agcEnabled,
@@ -123,6 +123,7 @@ namespace
         struct PresetCase
         {
             MicrophoneProcessingPreset preset;
+            MicrophoneNoiseSuppressionLevel noiseSuppressionLevel;
             float highPassHz;
             float thresholdDb;
             float ratio;
@@ -134,12 +135,16 @@ namespace
 
         constexpr std::array cases{
             PresetCase{MicrophoneProcessingPreset::Natural,
+                MicrophoneNoiseSuppressionLevel::Light,
                 80.0f, -24.0f, 3.0f, 10.0f, 120.0f, 0.0f, -1.0f},
             PresetCase{MicrophoneProcessingPreset::Clean,
+                MicrophoneNoiseSuppressionLevel::Balanced,
                 90.0f, -27.0f, 3.5f, 8.0f, 140.0f, 2.0f, -1.0f},
             PresetCase{MicrophoneProcessingPreset::Strong,
+                MicrophoneNoiseSuppressionLevel::Strong,
                 100.0f, -30.0f, 4.5f, 6.0f, 170.0f, 4.0f, -1.0f},
             PresetCase{MicrophoneProcessingPreset::Aggressive,
+                MicrophoneNoiseSuppressionLevel::Strong,
                 120.0f, -34.0f, 6.0f, 4.0f, 200.0f, 6.0f, -1.5f}
         };
 
@@ -161,8 +166,13 @@ namespace
             Expect(settings->highPassEnabled, "preset enables high-pass");
             Expect(settings->compressorEnabled, "preset enables compressor");
             Expect(settings->limiterEnabled, "preset enables limiter");
-            Expect(!settings->noiseSuppressionEnabled,
-                "preset does not claim unavailable noise suppression");
+            Expect(settings->noiseSuppressionEnabled,
+                "preset enables RNNoise suppression");
+            Expect(
+                settings->noiseSuppressionLevel ==
+                    testCase.noiseSuppressionLevel,
+                "preset noise-suppression level is stable"
+            );
             Expect(!settings->agcEnabled,
                 "preset does not claim unavailable AGC");
             Expect(settings->highPassHz == testCase.highPassHz,

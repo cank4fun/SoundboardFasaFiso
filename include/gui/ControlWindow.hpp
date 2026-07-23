@@ -117,6 +117,7 @@ private:
     static constexpr int IdMicrophoneProcessingTab = 1028;
     static constexpr int IdMicrophoneProcessingPreset = 1029;
     static constexpr int IdMicrophoneTestMonitor = 1030;
+    static constexpr int IdMicrophoneNoiseSuppressionLevel = 1031;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -170,6 +171,7 @@ private:
     void PopulateNumericCombos();
     void PopulateMicrophoneProcessingControls();
     void PopulateMicrophoneProcessingPresetCombo();
+    void PopulateMicrophoneNoiseSuppressionLevelCombo();
     void ApplySelectedMicrophoneProcessingPreset();
     void MarkMicrophoneProcessingPresetCustom();
     void PopulateControlHotkeys();
@@ -287,6 +289,9 @@ private:
     HWND microphoneProcessingStatusCaption_ = nullptr;
     HWND microphoneProcessingStatusValue_ = nullptr;
     HWND microphoneTestMonitorButton_ = nullptr;
+    HWND microphoneNoiseSuppressionEnabledCheck_ = nullptr;
+    HWND microphoneNoiseSuppressionLevelCaption_ = nullptr;
+    HWND microphoneNoiseSuppressionLevelCombo_ = nullptr;
     HWND microphoneRawMeterCaption_ = nullptr;
     HWND microphoneRawLevelMeter_ = nullptr;
     HWND microphoneProcessedMeterCaption_ = nullptr;
