@@ -181,6 +181,7 @@ add_executable(
     src/localization/Localization.cpp
     src/platform/ApplicationPaths.cpp
     src/platform/MediaToolManager.cpp
+    src/platform/ProcessRunner.cpp
     src/platform/DebugConsole.cpp
     src/platform/SingleInstance.cpp
     src/platform/StartupManager.cpp
@@ -858,6 +859,58 @@ if(BUILD_TESTING)
     add_test(
         NAME MediaToolManager
         COMMAND SoundBoardFasaFisoMediaToolManagerTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoProcessRunnerTests
+        EXCLUDE_FROM_ALL
+        tests/ProcessRunnerTests.cpp
+        src/platform/ProcessRunner.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoProcessRunnerTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoProcessRunnerTests
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+            UNICODE
+            _UNICODE
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoProcessRunnerTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoProcessRunnerTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoProcessRunnerTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME ProcessRunner
+        COMMAND SoundBoardFasaFisoProcessRunnerTests
     )
 
     add_executable(
