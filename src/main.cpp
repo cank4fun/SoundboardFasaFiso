@@ -14,6 +14,7 @@
 #include "hotkeys/HotkeyManager.hpp"
 #include "localization/Localization.hpp"
 #include "platform/ApplicationPaths.hpp"
+#include "platform/MediaToolManager.hpp"
 #include "platform/DebugConsole.hpp"
 #include "platform/SingleInstance.hpp"
 #include "platform/StartupManager.hpp"
@@ -667,6 +668,32 @@ int WINAPI wWinMain(
             L"SoundBoardFasaFiso",
             MB_OK | MB_ICONWARNING
         );
+    }
+
+    const std::optional<MediaToolBundleStatus> mediaToolBundle =
+        MediaToolManager::FindUsableBundle(
+            {
+                applicationPaths.userToolsFolder,
+                applicationPaths.bundledToolsFolder
+            }
+        );
+
+    if (mediaToolBundle.has_value())
+    {
+        std::cout
+            << "Verified standalone media tools: "
+            << mediaToolBundle->bundleVersion
+            << " ("
+            << PathToUtf8(mediaToolBundle->rootFolder)
+            << ")\n";
+    }
+    else
+    {
+        std::cerr
+            << Localization::Text(
+                "Medya araçları eksik veya doğrulanamadı. Yerel soundboard çalışmaya devam edecek; URL içe aktarma ve dönüştürme kapalı kalacak.\n",
+                "Media tools are missing or failed verification. Local soundboard features remain available; URL import and conversion will stay disabled.\n"
+            );
     }
 
     Config config;
