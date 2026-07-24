@@ -44,6 +44,25 @@ option(
     OFF
 )
 
+option(
+    SOUNDBOARD_BUNDLE_MEDIA_TOOLS
+    "Download, verify and package private yt-dlp, Deno and FFmpeg tools"
+    ON
+)
+
+set(
+    SOUNDBOARD_MEDIA_TOOLS_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/media-tools"
+    CACHE PATH
+    "Verified media-tool bundle used by PortableRelease"
+)
+
+set(
+    SOUNDBOARD_MEDIA_TOOLS_CACHE_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/media-tools-cache"
+    CACHE PATH
+    "Download cache for pinned standalone media tools"
+)
 if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
     message(DEPRECATION
         "SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE is deprecated. Use "
@@ -1096,8 +1115,35 @@ if(BUILD_TESTING)
     )
 endif()
 
+if(SOUNDBOARD_BUNDLE_MEDIA_TOOLS)
+    find_program(
+        SOUNDBOARD_POWERSHELL_EXECUTABLE
+        NAMES pwsh powershell powershell.exe
+        REQUIRED
+    )
+
+    add_custom_target(
+        PrepareMediaTools
+
+        COMMAND "${SOUNDBOARD_POWERSHELL_EXECUTABLE}"
+            -NoLogo
+            -NoProfile
+            -NonInteractive
+            -ExecutionPolicy Bypass
+            -File "${CMAKE_CURRENT_SOURCE_DIR}/tools/Install-MediaTools.ps1"
+            -Destination "${SOUNDBOARD_MEDIA_TOOLS_DIR}"
+            -CacheDirectory "${SOUNDBOARD_MEDIA_TOOLS_CACHE_DIR}"
+            -LockFile "${CMAKE_CURRENT_SOURCE_DIR}/resources/media-tools.lock.json"
+
+        COMMENT "Downloading and verifying pinned standalone media tools..."
+        VERBATIM
+    )
+endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(SOUNDBOARD_PORTABLE_DEPENDENCIES SoundBoardFasaFiso)
+    if(SOUNDBOARD_BUNDLE_MEDIA_TOOLS)
+        list(APPEND SOUNDBOARD_PORTABLE_DEPENDENCIES PrepareMediaTools)
+    endif()
     if(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
         list(APPEND SOUNDBOARD_PORTABLE_DEPENDENCIES GenerateWebRtcThirdPartyNotices)
     endif()
@@ -1143,6 +1189,12 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/resources/MediaToolsREADME.txt"
             "${PORTABLE_RELEASE_DIR}/tools/README.txt"
+
+        COMMAND ${CMAKE_COMMAND}
+            "-DENABLED=${SOUNDBOARD_BUNDLE_MEDIA_TOOLS}"
+            "-DSOURCE_DIR=${SOUNDBOARD_MEDIA_TOOLS_DIR}"
+            "-DDEST_DIR=${PORTABLE_RELEASE_DIR}/tools"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CopyOptionalDirectory.cmake"
 
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/sounds"
