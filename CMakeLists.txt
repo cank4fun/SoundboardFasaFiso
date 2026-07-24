@@ -178,6 +178,7 @@ add_executable(
     src/gui/ControlWindow.cpp
     src/hotkeys/HotkeyManager.cpp
     src/import/SoundImporter.cpp
+    src/import/MediaImportWorkspace.cpp
     src/localization/Localization.cpp
     src/platform/ApplicationPaths.cpp
     src/platform/MediaToolExecutor.cpp
@@ -1025,6 +1026,64 @@ if(BUILD_TESTING)
     add_test(
         NAME MediaToolCommandBuilder
         COMMAND SoundBoardFasaFisoMediaToolCommandBuilderTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoMediaImportWorkspaceTests
+        EXCLUDE_FROM_ALL
+        tests/MediaImportWorkspaceTests.cpp
+        src/import/MediaImportWorkspace.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoMediaImportWorkspaceTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoMediaImportWorkspaceTests
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+            UNICODE
+            _UNICODE
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFisoMediaImportWorkspaceTests
+        PRIVATE
+            bcrypt
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoMediaImportWorkspaceTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoMediaImportWorkspaceTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoMediaImportWorkspaceTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME MediaImportWorkspace
+        COMMAND SoundBoardFasaFisoMediaImportWorkspaceTests
     )
 
     add_executable(
