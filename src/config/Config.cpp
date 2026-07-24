@@ -624,6 +624,11 @@ namespace
             return PlaybackMode::Loop;
         }
 
+        if (modeName == "IGNORE")
+        {
+            return PlaybackMode::Ignore;
+        }
+
         return std::nullopt;
     }
 
@@ -768,8 +773,8 @@ namespace
                                 "Desteklenmeyen mode değeri: ",
                                 "Unsupported mode value: "
                             )} + optionValue + Localization::Text(
-                                ". Desteklenenler: restart, overlap, toggle, loop.",
-                                ". Supported values: restart, overlap, toggle, loop."
+                                ". Desteklenenler: restart, overlap, toggle, loop, ignore.",
+                                ". Supported values: restart, overlap, toggle, loop, ignore."
                             );
                         correctExample =
                             "F1=example.wav|volume=0.80|mode=restart";

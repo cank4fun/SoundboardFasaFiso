@@ -35,7 +35,8 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 - WAV, MP3 and FLAC playback
 - Audio preloaded into RAM
 - Per-sound volume and playback mode
-- `restart`, `overlap`, `toggle` and `loop` modes
+- Active Playbacks tab with live progress, pause/resume, seek, per-session stop and temporary session volume
+- `restart`, `overlap`, `toggle`, `loop` and `ignore` retrigger modes
 - Bounded eight-voice overlap pool
 - Live config reload with rollback on failure and atomic saves that retain `config.txt.bak`
 - Automatic recovery after audio-device disconnects
@@ -131,6 +132,7 @@ F1=example.wav|volume=0.80|mode=restart
 F2=example.mp3|volume=1.00|mode=toggle
 F3=example.flac|volume=0.60|mode=loop
 F4=example.wav|volume=1.00|mode=overlap
+F5=example.wav|volume=1.00|mode=ignore
 ```
 
 `language=tr` selects Turkish messages and `language=en` selects English messages. `theme=dark` and `theme=light` select the persistent interface theme. Both settings are applied during startup and live reload.
@@ -151,6 +153,7 @@ Sound paths are relative to the `sounds` folder. Subfolders are supported, but a
 | `overlap` | Starts another voice without stopping the previous one. Uses up to eight voices. |
 | `toggle` | Starts on the first press and stops on the next. |
 | `loop` | Loops until the same hotkey is pressed again. |
+| `ignore` | Starts only when inactive; repeated presses leave the current session untouched. |
 
 Defaults when options are omitted:
 

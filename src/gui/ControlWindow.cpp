@@ -2205,6 +2205,7 @@ bool ControlWindow::CreateControls()
     AddComboItem(bindingModeCombo_, L"toggle");
     AddComboItem(bindingModeCombo_, L"loop");
     AddComboItem(bindingModeCombo_, L"overlap");
+    AddComboItem(bindingModeCombo_, L"ignore");
 
     const HWND controls[] = {
         headerLabel_, subtitleLabel_, themeToggleButton_,
@@ -7328,6 +7329,10 @@ bool ControlWindow::AddOrUpdateBinding(const bool updateExisting)
     else if (modeIndex == 3)
     {
         mode = PlaybackMode::Overlap;
+    }
+    else if (modeIndex == 4)
+    {
+        mode = PlaybackMode::Ignore;
     }
 
     const int volume = static_cast<int>(SendMessageW(

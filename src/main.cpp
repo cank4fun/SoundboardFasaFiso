@@ -1361,6 +1361,25 @@ int WINAPI wWinMain(
                 Localization::Text(L"Ses durduruldu.", L"Sound stopped.")
             );
         }
+        else if (playbackResult == PlaybackResult::Ignored)
+        {
+            std::cout
+                << Localization::Text(
+                    "Çalma isteği yok sayıldı: ",
+                    "Playback request ignored: "
+                )
+                << PathToUtf8(binding.soundFile.stem())
+                << " ["
+                << PlaybackModeName(binding.mode)
+                << "]\n";
+
+            controlWindow.SetStatus(
+                Localization::Text(
+                    L"Çalma isteği mevcut moda göre yok sayıldı.",
+                    L"The playback request was ignored by the current mode."
+                )
+            );
+        }
         else if (playbackResult == PlaybackResult::Failed)
         {
             std::cerr

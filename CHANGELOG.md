@@ -12,6 +12,8 @@
 - Added an Active Playbacks tab with live session rows, selection-preserving refresh, pause/resume, per-session stop, seek and volume controls.
 - Fixed sub-second playback timing display and made the seek thumb stable during mouse and keyboard interaction.
 - Prevented committed seeks from snapping back to stale runtime positions while the audio cursor catches up.
+- Added an `ignore` retrigger policy with deterministic behavior for playing and paused sessions.
+- Added dedicated playback-policy tests and config round-trip coverage for every serialized mode.
 - Made config replacement atomic on Windows and kept `config.txt.bak` as the last known-good saved configuration.
 
 ## 2.0.0

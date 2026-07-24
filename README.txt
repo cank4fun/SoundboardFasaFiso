@@ -25,8 +25,9 @@ HIZLI KULLANIM
 1. Ses dosyalarını sounds klasörüne koy.
 2. SoundBoardFasaFiso.exe dosyasını çalıştır; kontrol paneli açılır.
 3. Hotkey'ler sekmesinde her ses için bir atama oluştur. Dosyayı yalnızca sounds klasörüne kopyalamak otomatik hotkey atamaz.
-4. Ses cihazlarını ve kontrol hotkey'lerini panelden düzenle.
-5. Kaydet ve uygula'ya bas; yeni config doğrulanıp güvenli şekilde etkinleştirilir.
+4. Çalan sesleri Oynatma sekmesinden duraklat, konumlandır, tek tek durdur veya geçici ses seviyesini değiştir.
+5. Ses cihazlarını ve kontrol hotkey'lerini panelden düzenle.
+6. Kaydet ve uygula'ya bas; yeni config doğrulanıp güvenli şekilde etkinleştirilir.
 
 Hiç etkin ses ataması olmasa veya eski atamalardaki dosyalar kayıp olsa bile panel açık kalır; config.txt dosyasını elle düzeltmeden yeni atama ekleyebilirsin.
 
@@ -49,13 +50,16 @@ WAV, MP3 ve FLAC
 F1=example.wav
 F2=example.mp3|volume=0.80|mode=restart
 F3=example.flac|volume=1.00|mode=overlap
+F4=example.wav|volume=1.00|mode=toggle
+F5=example.wav|volume=1.00|mode=ignore
 
 SES MODLARI
 -----------
 restart : Her basışta sesi baştan çalar.
 overlap : Aynı sesi üst üste bindirir; en fazla 8 voice kullanır.
-toggle  : Bir basışta çalar, tekrar basışta durdurur.
+toggle  : Pasifse çalar, aktif veya duraklatılmışsa durdurur.
 loop    : Döngüye alır, tekrar basışta durdurur.
+ignore  : Pasifse çalar, aktif veya duraklatılmışsa basışı yok sayar.
 
 CİHAZ AYARLARI
 --------------
@@ -125,8 +129,8 @@ CTRL+SHIFT+F12  : Programı kapat
 
 KONTROL PANELİ
 ---------------
-Panel tek pencere içinde Ana ekran, Ayarlar ve Hotkey'ler sekmelerini
-kullanır. Açık/koyu tema, canlı sinyal göstergeleri ve DPI ölçeklendirme
+Panel tek pencere içinde Ana ekran, Ayarlar, Mikrofon işleme, Hotkey'ler
+ve Oynatma sekmelerini kullanır. Açık/koyu tema, canlı sinyal göstergeleri ve DPI ölçeklendirme
 desteklenir. Panelden ana/monitör/mikrofon cihazı, ses seviyeleri,
 mikrofon yönlendirmesi, dil, örnekleme hızı, buffer, Windows başlangıcı,
 kontrol hotkey'leri ve ses atamaları düzenlenebilir. Ses ataması eklerken
@@ -137,7 +141,7 @@ Pencerenin X düğmesi programı kapatmaz; paneli tray'e gizler.
 
 PANEL KISAYOLLARI
 -----------------
-CTRL+1 / CTRL+2 / CTRL+3 : Sekmeler arasında geç
+CTRL+1 ... CTRL+5       : Sekmeler arasında geç
 CTRL+S                    : Kaydet ve uygula
 ESC                       : Hotkey yakalamayı iptal et
 

@@ -301,6 +301,87 @@ namespace
 
         return result == MA_SUCCESS;
     }
+
+    bool ReadPlaybackTimeline(
+        const ma_sound& sound,
+        float& positionSeconds,
+        float& durationSeconds
+    )
+    {
+        ma_uint32 sampleRate = 0;
+        ma_uint64 cursorFrames = 0;
+        ma_uint64 lengthFrames = 0;
+
+        if (ma_sound_get_data_format(
+                &sound,
+                nullptr,
+                nullptr,
+                &sampleRate,
+                nullptr,
+                0
+            ) == MA_SUCCESS &&
+            sampleRate != 0 &&
+            ma_sound_get_cursor_in_pcm_frames(
+                &sound,
+                &cursorFrames
+            ) == MA_SUCCESS &&
+            ma_sound_get_length_in_pcm_frames(
+                &sound,
+                &lengthFrames
+            ) == MA_SUCCESS)
+        {
+            const double rate = static_cast<double>(sampleRate);
+            const double duration =
+                static_cast<double>(lengthFrames) / rate;
+            const double position = std::min(
+                static_cast<double>(cursorFrames) / rate,
+                duration
+            );
+
+            positionSeconds = static_cast<float>(
+                std::max(0.0, position)
+            );
+            durationSeconds = static_cast<float>(
+                std::max(0.0, duration)
+            );
+            return true;
+        }
+
+        positionSeconds = 0.0f;
+        durationSeconds = 0.0f;
+
+        const ma_result cursorResult =
+            ma_sound_get_cursor_in_seconds(
+                &sound,
+                &positionSeconds
+            );
+        const ma_result lengthResult =
+            ma_sound_get_length_in_seconds(
+                &sound,
+                &durationSeconds
+            );
+
+        if (cursorResult != MA_SUCCESS ||
+            lengthResult != MA_SUCCESS)
+        {
+            positionSeconds = 0.0f;
+            durationSeconds = 0.0f;
+            return false;
+        }
+
+        positionSeconds = std::max(0.0f, positionSeconds);
+        durationSeconds = std::max(0.0f, durationSeconds);
+
+        if (durationSeconds > 0.0f)
+        {
+            positionSeconds = std::min(
+                positionSeconds,
+                durationSeconds
+            );
+        }
+
+        return true;
+    }
 }
 
 
@@ -2173,6 +2254,11 @@ bool Audio::IsVoicePlaying(const Voice& voice)
     return outputIsPlaying || monitorIsPlaying;
 }
 
+bool Audio::IsVoiceActive(const Voice& voice)
+{
+    return voice.paused || IsVoicePlaying(voice);
+}
+
 void Audio::DestroyVoice(Voice& voice)
 {
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
@@ -2335,7 +2421,7 @@ PlaybackResult Audio::PlayLoaded(const std::string& soundId)
                 (loadedSound.nextOverlapVoice + offset) %
                 voiceCount;
 
-            if (!IsVoicePlaying(
+            if (!IsVoiceActive(
                 loadedSound.voices[candidateIndex]
             ))
             {
@@ -2373,11 +2459,18 @@ PlaybackResult Audio::PlayLoaded(const std::string& soundId)
     Voice& voice =
         loadedSound.voices.front();
 
-    const bool isToggleMode =
-        loadedSound.mode == PlaybackMode::Toggle ||
-        loadedSound.mode == PlaybackMode::Loop;
+    const PlaybackTriggerAction triggerAction =
+        ResolvePlaybackTrigger(
+            loadedSound.mode,
+            IsVoiceActive(voice)
+        );
 
-    if (isToggleMode && IsVoicePlaying(voice))
+    if (triggerAction == PlaybackTriggerAction::Ignore)
+    {
+        return PlaybackResult::Ignored;
+    }
+
+    if (triggerAction == PlaybackTriggerAction::Stop)
     {
         if (!PrepareVoiceForPlayback(
             voice,
@@ -2469,21 +2562,11 @@ std::vector<PlaybackSnapshot> Audio::GetPlaybackSnapshots() const
 
             if (voice.outputSound)
             {
-                if (ma_sound_get_cursor_in_seconds(
-                        voice.outputSound.get(),
-                        &positionSeconds
-                    ) != MA_SUCCESS)
-                {
-                    positionSeconds = 0.0f;
-                }
-
-                if (ma_sound_get_length_in_seconds(
-                        voice.outputSound.get(),
-                        &durationSeconds
-                    ) != MA_SUCCESS)
-                {
-                    durationSeconds = 0.0f;
-                }
+                ReadPlaybackTimeline(
+                    *voice.outputSound,
+                    positionSeconds,
+                    durationSeconds
+                );
             }
 
             snapshots.push_back(PlaybackSnapshot{

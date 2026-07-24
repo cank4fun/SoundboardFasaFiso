@@ -29,6 +29,7 @@ enum class PlaybackResult
 {
     Started,
     Stopped,
+    Ignored,
     Unsupported,
     Failed
 };
@@ -297,6 +298,7 @@ private:
     );
 
     static bool IsVoicePlaying(const Voice& voice);
+    static bool IsVoiceActive(const Voice& voice);
     static void DestroyVoice(Voice& voice);
     static void DestroyLoadedSound(LoadedSound& loadedSound);
 

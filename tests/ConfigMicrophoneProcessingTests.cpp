@@ -293,6 +293,71 @@ namespace
         );
     }
 
+    void TestPlaybackPoliciesRoundTrip(
+        const TemporaryDirectory& directory
+    )
+    {
+        const auto sourcePath =
+            directory.Path() / "playback-policies.txt";
+
+        constexpr std::string_view content =
+            "language=en\n"
+            "F1=example.wav|volume=0.80|mode=restart\n"
+            "F2=example.wav|volume=0.80|mode=overlap\n"
+            "F3=example.wav|volume=0.80|mode=toggle\n"
+            "F4=example.wav|volume=0.80|mode=loop\n"
+            "F5=example.wav|volume=0.80|mode=ignore\n";
+
+        Expect(
+            WriteText(sourcePath, content),
+            "playback-policy fixture is written"
+        );
+
+        Config loaded;
+        Expect(
+            loaded.Load(sourcePath),
+            "all playback policies parse"
+        );
+
+        const auto& bindings = loaded.GetBindings();
+        Expect(bindings.size() == 5, "all playback-policy bindings load");
+
+        if (bindings.size() == 5)
+        {
+            Expect(
+                bindings[0].mode == PlaybackMode::Restart,
+                "restart policy parses"
+            );
+            Expect(
+                bindings[1].mode == PlaybackMode::Overlap,
+                "overlap policy parses"
+            );
+            Expect(
+                bindings[2].mode == PlaybackMode::Toggle,
+                "toggle policy parses"
+            );
+            Expect(
+                bindings[3].mode == PlaybackMode::Loop,
+                "loop policy parses"
+            );
+            Expect(
+                bindings[4].mode == PlaybackMode::Ignore,
+                "ignore policy parses"
+            );
+        }
+
+        const auto savedPath =
+            directory.Path() / "playback-policies-saved.txt";
+
+        Expect(loaded.Save(savedPath), "playback policies save");
+
+        const std::string saved = ReadText(savedPath);
+        Expect(
+            saved.find("|mode=ignore") != std::string::npos,
+            "ignore policy serializes"
+        );
+    }
+
     void TestInvalidValuesAreRejected(const TemporaryDirectory& directory)
     {
         struct InvalidCase
@@ -423,6 +488,7 @@ int main()
     TestOldConfigUsesSafeDefaults(directory);
     TestAllProcessingKeysParse(directory);
     TestSaveAndLoadRoundTrip(directory);
+    TestPlaybackPoliciesRoundTrip(directory);
     TestInvalidValuesAreRejected(directory);
     TestSetterRejectsInvalidSettings();
     TestDefaultSaveIsSafe(directory);

@@ -23,8 +23,9 @@ bars, an active-playback list and remote-control integrations can share one
 stable runtime contract.
 
 Overlap voices receive independent IDs. Restart, toggle and loop modes continue
-to preserve their existing hotkey behavior. A stopped or restarted voice
-invalidates its previous session ID.
+to preserve their existing hotkey behavior. The `ignore` policy starts an
+inactive sound but leaves an existing playing or paused session untouched.
+A stopped or restarted voice invalidates its previous session ID.
 
 ## Active-playback controls
 
@@ -47,10 +48,25 @@ about half a second long. After a seek is committed, the UI keeps the target
 position until the audio engine reports the updated cursor; this prevents the
 thumb from briefly jumping back to the pre-seek position.
 
+## Retrigger policies
+
+Playback behavior is resolved from a small deterministic policy table shared by
+the runtime and unit tests:
+
+- `restart`: start when inactive, restart from the beginning when active;
+- `overlap`: always start a separate voice from the bounded overlap pool;
+- `toggle`: start when inactive, stop when active;
+- `loop`: start looping when inactive, stop when active;
+- `ignore`: start when inactive and ignore repeated presses while active.
+
+Paused sessions count as active. This prevents `ignore` from accidentally
+restarting a paused clip. The existing `toggle` mode remains the
+start-when-inactive, stop-when-active policy.
+
 ## Planned follow-up
 
 1. Add configurable fade-in and fade-out envelopes.
-2. Add richer retrigger policies and queue controls.
+2. Add queue controls and bounded per-binding concurrency.
 3. Add categories, search, favorites and profiles.
 4. Add Auto-PTT, recording, editing, TTS and external control APIs.
 

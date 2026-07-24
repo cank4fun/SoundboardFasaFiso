@@ -71,12 +71,14 @@ F3=example.wav|volume=0.60|mode=loop
 F4=example2.wav|volume=1.00|mode=overlap
 F5=example.mp3|volume=0.80|mode=restart
 F6=example.flac|volume=1.00|mode=overlap
+# F7=example.wav|volume=1.00|mode=ignore
 
 # MODLAR
 # restart = Her basışta sesi baştan çalar.
 # toggle  = Bir basışta çalar, tekrar basışta durdurur.
 # loop    = Döngüye alır, tekrar basışta durdurur.
 # overlap = Her basışta yeni voice açar; en fazla 8 kopya aynı anda çalar.
+# ignore  = Pasifse çalar; aktif veya duraklatılmışsa yeni basışı yok sayar.
 
 # HOTKEY ÖRNEKLERİ
 # CTRL+F2=effects/example.wav|volume=0.50|mode=restart

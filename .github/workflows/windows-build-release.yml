@@ -104,6 +104,7 @@ jobs:
           cmake --build out/build/ci-release
           --target
           SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+          SoundBoardFasaFisoPlaybackModeTests
           SoundBoardFasaFisoConfigMicrophoneProcessingTests
           SoundBoardFasaFisoMicrophoneProcessorTests
           SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
