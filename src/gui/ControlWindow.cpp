@@ -2,7 +2,6 @@
 
 #include "app/Version.hpp"
 #include "audio/Audio.hpp"
-#include "import/SoundImporter.hpp"
 #include "localization/Localization.hpp"
 #include "platform/Utf8Path.hpp"
 #include "sound/SoundFileFormat.hpp"
@@ -528,6 +527,13 @@ void ControlWindow::Shutdown()
 {
     StopMicrophoneTestMonitor();
 
+    localMediaImportCancellationRequested_.store(true);
+
+    if (localMediaImportThread_.joinable())
+    {
+        localMediaImportThread_.join();
+    }
+
     urlImportCancellationRequested_.store(true);
 
     if (urlImportThread_.joinable())
@@ -555,6 +561,14 @@ void ControlWindow::Shutdown()
 
     urlImportRunning_.store(false);
     urlImportCancellationRequested_.store(false);
+
+    {
+        const std::scoped_lock lock{localMediaImportMutex_};
+        pendingLocalMediaImportResult_.reset();
+    }
+
+    localMediaImportRunning_.store(false);
+    localMediaImportCancellationRequested_.store(false);
 
     if (acceleratorTable_ != nullptr)
     {
@@ -1227,6 +1241,10 @@ LRESULT ControlWindow::HandleWindowMessage(
 
         case UrlImportCompletedMessage:
             HandleUrlImportCompleted();
+            return 0;
+
+        case LocalMediaImportCompletedMessage:
+            HandleLocalMediaImportCompleted();
             return 0;
 
         case WM_TIMER:
@@ -7661,10 +7679,16 @@ void ControlWindow::BrowseForSoundFile()
     dialog.lpstrFile = selectedPaths.data();
     dialog.nMaxFile = static_cast<DWORD>(selectedPaths.size());
     dialog.lpstrFilter =
-        L"Audio files (*.wav;*.mp3;*.flac)\0*.wav;*.mp3;*.flac\0"
-        L"WAV files (*.wav)\0*.wav\0"
-        L"MP3 files (*.mp3)\0*.mp3\0"
-        L"FLAC files (*.flac)\0*.flac\0"
+        L"Audio and media files\0"
+        L"*.wav;*.mp3;*.flac;*.m4a;*.aac;*.ogg;*.oga;*.opus;"
+        L"*.webm;*.wma;*.mp4;*.mkv;*.mov;*.aif;*.aiff;*.ac3;"
+        L"*.alac;*.ape;*.caf;*.mka;*.flv;*.mpeg;*.mpg\0"
+        L"Direct playback (*.wav;*.mp3;*.flac)\0"
+        L"*.wav;*.mp3;*.flac\0"
+        L"Convertible media\0"
+        L"*.m4a;*.aac;*.ogg;*.oga;*.opus;*.webm;*.wma;*.mp4;"
+        L"*.mkv;*.mov;*.aif;*.aiff;*.ac3;*.alac;*.ape;*.caf;"
+        L"*.mka;*.flv;*.mpeg;*.mpg\0"
         L"All files (*.*)\0*.*\0\0";
     dialog.lpstrInitialDir = initialFolder.c_str();
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
@@ -7786,97 +7810,6 @@ bool ControlWindow::CaptureHotkeyFromMessage(const WPARAM virtualKey)
         L"Hotkey captured."
     ));
     return true;
-}
-
-std::vector<std::filesystem::path> ControlWindow::ImportSoundItems(
-    const std::vector<std::filesystem::path>& selectedPaths
-)
-{
-    if (selectedPaths.empty())
-    {
-        return {};
-    }
-
-    SetStatus(Localization::Text(
-        L"Sesler içe aktarılıyor...",
-        L"Importing sounds..."
-    ));
-
-    const SoundImportSummary summary =
-        SoundImporter{soundsFolder_}.Import(selectedPaths);
-
-    if (!summary.importedRelativePaths.empty())
-    {
-        SetActivePage(ControlPage::Hotkeys);
-        SetControlText(
-            bindingFileEdit_,
-            summary.importedRelativePaths.front().wstring()
-        );
-    }
-
-    std::wostringstream status;
-    status << Localization::Text(
-        L"İçe aktarılan ses: ",
-        L"Imported sounds: "
-    ) << summary.importedRelativePaths.size();
-
-    if (summary.copiedCount != 0)
-    {
-        status << Localization::Text(L" · Kopyalanan: ", L" · Copied: ")
-            << summary.copiedCount;
-    }
-
-    if (summary.existingCount != 0)
-    {
-        status << Localization::Text(L" · Zaten içeride: ", L" · Existing: ")
-            << summary.existingCount;
-    }
-
-    if (summary.unsupportedCount != 0)
-    {
-        status << Localization::Text(L" · Desteklenmeyen: ", L" · Unsupported: ")
-            << summary.unsupportedCount;
-    }
-
-    if (!summary.failedPaths.empty())
-    {
-        status << Localization::Text(L" · Başarısız: ", L" · Failed: ")
-            << summary.failedPaths.size();
-    }
-
-    if (summary.itemLimitReached)
-    {
-        status << Localization::Text(
-            L" · 4096 dosya sınırına ulaşıldı",
-            L" · 4096-file limit reached"
-        );
-    }
-
-    SetStatus(status.str());
-
-    if (summary.importedRelativePaths.empty() ||
-        summary.unsupportedCount != 0 ||
-        !summary.failedPaths.empty() ||
-        summary.itemLimitReached)
-    {
-        std::wostringstream details;
-        details << status.str() << L"\n\n"
-            << Localization::Text(
-                L"Doğrudan oynatma için desteklenen biçimler: WAV, MP3 ve FLAC. Diğer biçimler daha sonra FFmpeg içe aktarma akışından dönüştürülecek.",
-                L"Direct playback supports WAV, MP3, and FLAC. Other formats will be converted by the upcoming FFmpeg import workflow."
-            );
-
-        MessageBoxW(
-            window_,
-            details.str().c_str(),
-            L"SoundBoardFasaFiso",
-            MB_OK | (summary.importedRelativePaths.empty()
-                ? MB_ICONWARNING
-                : MB_ICONINFORMATION)
-        );
-    }
-
-    return summary.importedRelativePaths;
 }
 
 void ControlWindow::HandleDroppedSoundItems(const WPARAM dropHandle)

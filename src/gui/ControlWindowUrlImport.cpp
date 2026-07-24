@@ -40,6 +40,15 @@ void ControlWindow::ToggleUrlImport()
         return;
     }
 
+    if (localMediaImportRunning_.load())
+    {
+        SetStatus(Localization::Text(
+            L"Yerel medya içe aktarma tamamlanmadan URL eklenemez.",
+            L"A URL cannot be added until the local media import finishes."
+        ));
+        return;
+    }
+
     if (urlImportRunning_.load())
     {
         if (!urlImportCancellationRequested_.exchange(true))
@@ -337,8 +346,9 @@ void ControlWindow::UpdateUrlImportControls()
         return;
     }
 
-    const bool running =
-        urlImportRunning_.load();
+    const bool running = urlImportRunning_.load();
+    const bool localRunning = localMediaImportRunning_.load();
+    const bool anyImportRunning = running || localRunning;
 
     SetControlText(
         importUrlButton_,
@@ -350,11 +360,16 @@ void ControlWindow::UpdateUrlImportControls()
             : L"URL"
     );
 
+    EnableWindow(
+        importUrlButton_,
+        localRunning ? FALSE : TRUE
+    );
+
     if (browseSoundButton_ != nullptr)
     {
         EnableWindow(
             browseSoundButton_,
-            running ? FALSE : TRUE
+            anyImportRunning ? FALSE : TRUE
         );
     }
 
@@ -362,7 +377,7 @@ void ControlWindow::UpdateUrlImportControls()
     {
         EnableWindow(
             bindingFileEdit_,
-            running ? FALSE : TRUE
+            anyImportRunning ? FALSE : TRUE
         );
     }
 

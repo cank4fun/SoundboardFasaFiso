@@ -10,6 +10,7 @@
 
 #include "audio/PlaybackState.hpp"
 #include "config/Config.hpp"
+#include "import/LocalMediaImportService.hpp"
 #include "import/UrlImportService.hpp"
 #include "platform/MediaToolManager.hpp"
 #include "update/UpdateChecker.hpp"
@@ -136,6 +137,7 @@ private:
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
     static constexpr UINT UrlImportCompletedMessage = WM_APP + 65;
+    static constexpr UINT LocalMediaImportCompletedMessage = WM_APP + 66;
     static constexpr UINT LevelMeterIntervalMilliseconds = 40;
 
     static LRESULT CALLBACK WindowProcedure(
@@ -206,6 +208,11 @@ private:
     void ToggleUrlImport();
     void HandleUrlImportCompleted();
     void UpdateUrlImportControls();
+    void HandleLocalMediaImportCompleted();
+    void UpdateLocalMediaImportControls();
+    void PresentLocalMediaImportResult(
+        const LocalMediaImportResult& result
+    );
     bool SavePendingSettings();
 
     void LoadSelectedBindingIntoEditor();
@@ -216,7 +223,7 @@ private:
     void BeginHotkeyCapture();
     bool CaptureHotkeyFromMessage(WPARAM virtualKey);
 
-    std::vector<std::filesystem::path> ImportSoundItems(
+    void ImportSoundItems(
         const std::vector<std::filesystem::path>& selectedPaths
     );
     void HandleDroppedSoundItems(WPARAM dropHandle);
@@ -467,6 +474,13 @@ private:
     std::optional<UrlImportResult> pendingUrlImportResult_;
     std::atomic_bool urlImportRunning_{false};
     std::atomic_bool urlImportCancellationRequested_{false};
+
+    std::jthread localMediaImportThread_;
+    std::mutex localMediaImportMutex_;
+    std::optional<LocalMediaImportResult>
+        pendingLocalMediaImportResult_;
+    std::atomic_bool localMediaImportRunning_{false};
+    std::atomic_bool localMediaImportCancellationRequested_{false};
 
     int selectedBindingIndex_ = -1;
     bool capturingBindingHotkey_ = false;
