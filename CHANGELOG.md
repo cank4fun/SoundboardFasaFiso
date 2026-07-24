@@ -18,6 +18,9 @@
 - Added an `ignore` retrigger policy with deterministic behavior for playing and paused sessions.
 - Added dedicated playback-policy tests and config round-trip coverage for every serialized mode.
 - Made config replacement atomic on Windows and kept `config.txt.bak` as the last known-good saved configuration.
+- Added multi-file and recursive folder import through Windows drag and drop and the file picker.
+- Added a shared collision-safe importer that copies external audio into `sounds/Imported`, keeps in-tree files in place and rejects unsupported formats without overwriting existing files.
+- Added dedicated importer tests and documented the planned `yt-dlp` plus FFmpeg URL-import path.
 
 ## 2.0.0
 

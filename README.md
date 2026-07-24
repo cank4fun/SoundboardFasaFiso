@@ -33,6 +33,7 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 - Manual and optional startup update checks through the public GitHub Releases API
 - Optional Windows startup registration and console-free launch
 - WAV, MP3 and FLAC playback
+- Multi-file and recursive folder import by dropping items onto the control panel
 - Audio preloaded into RAM
 - Per-sound volume and playback mode
 - Active Playbacks tab with live progress, pause/resume, seek, per-session stop and temporary session volume
@@ -50,9 +51,9 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 ## Quick start
 
 1. Download and extract the latest portable ZIP.
-2. Put audio files in the `sounds` folder.
-3. Run `SoundBoardFasaFiso.exe`; the control panel opens automatically.
-4. Open the **Hotkeys** tab and create a binding for each sound. Copying a file into `sounds` does not assign a hotkey automatically.
+2. Run `SoundBoardFasaFiso.exe`; the control panel opens automatically.
+3. Drop WAV, MP3 or FLAC files, or a folder containing them, anywhere on the control panel. External files are copied into `sounds/Imported`; the **Browse** button also supports multi-select.
+4. Open the **Hotkeys** tab and create a binding for each sound. Importing a file fills the editor but does not assign a global hotkey automatically.
 5. Configure devices and control hotkeys, then click **Save and apply**. Invalid changes are rejected and the previous runtime is restored.
 
 The control panel remains available even when no sound binding is active or previously configured files are missing, so a fresh portable folder can be repaired without editing `config.txt` manually.

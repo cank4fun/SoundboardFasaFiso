@@ -105,6 +105,7 @@ jobs:
           --target
           SoundBoardFasaFisoMicrophoneProcessingSettingsTests
           SoundBoardFasaFisoPlaybackModeTests
+          SoundBoardFasaFisoSoundImporterTests
           SoundBoardFasaFisoConfigMicrophoneProcessingTests
           SoundBoardFasaFisoMicrophoneProcessorTests
           SoundBoardFasaFisoMicrophoneProcessingRuntimeTests

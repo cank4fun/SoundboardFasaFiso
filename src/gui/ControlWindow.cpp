@@ -2,6 +2,7 @@
 
 #include "app/Version.hpp"
 #include "audio/Audio.hpp"
+#include "import/SoundImporter.hpp"
 #include "localization/Localization.hpp"
 #include "platform/Utf8Path.hpp"
 #include "sound/SoundFileFormat.hpp"
@@ -477,6 +478,8 @@ bool ControlWindow::Initialize(
         return false;
     }
 
+    DragAcceptFiles(window_, TRUE);
+
     if (!CreateControls() || !CreateAccelerators())
     {
         Shutdown();
@@ -489,8 +492,8 @@ bool ControlWindow::Initialize(
     if (config.GetBindings().empty())
     {
         SetStatus(Localization::Text(
-            L"Etkin ses ataması yok. Hotkey'ler sekmesinden ses ekleyip Kaydet ve uygula'ya bas.",
-            L"No sound binding is active. Add a sound in the Hotkeys tab and click Save and apply."
+            L"Etkin ses ataması yok. Pencereye ses bırak veya Hotkey'ler sekmesinden ekleyip Kaydet ve uygula'ya bas.",
+            L"No sound binding is active. Drop audio onto the window or add it in Hotkeys, then click Save and apply."
         ));
     }
     else
@@ -544,6 +547,7 @@ void ControlWindow::Shutdown()
 
     if (window_ != nullptr)
     {
+        DragAcceptFiles(window_, FALSE);
         KillTimer(window_, LevelMeterTimerId);
         DestroyWindow(window_);
         window_ = nullptr;
@@ -1605,6 +1609,10 @@ LRESULT ControlWindow::HandleWindowMessage(
             }
             break;
         }
+
+        case WM_DROPFILES:
+            HandleDroppedSoundItems(wParam);
+            return 0;
 
         case WM_DPICHANGED:
         {
@@ -5002,7 +5010,13 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(exitHotkeyCaption_, Localization::Text(L"Çıkış", L"Exit"));
 
     SetControlText(bindingsGroup_, Localization::Text(L"Ses atamaları", L"Sound bindings"));
-    SetControlText(bindingEditorGroup_, Localization::Text(L"Atama düzenleyici", L"Binding editor"));
+    SetControlText(
+        bindingEditorGroup_,
+        Localization::Text(
+            L"Atama düzenleyici · dosya/klasör bırak",
+            L"Binding editor · drop files/folders"
+        )
+    );
     SetControlText(bindingHotkeyCaption_, Localization::Text(L"Hotkey:", L"Hotkey:"));
     SetControlText(bindingFileCaption_, Localization::Text(L"Ses:", L"Sound:"));
     SetControlText(bindingModeCaption_, Localization::Text(L"Mod:", L"Mode:"));
@@ -7584,14 +7598,14 @@ bool ControlWindow::RemoveSelectedBinding(
 
 void ControlWindow::BrowseForSoundFile()
 {
-    wchar_t selectedPath[32768]{};
+    std::vector<wchar_t> selectedPaths(65536, L'\0');
     const std::wstring initialFolder = soundsFolder_.wstring();
 
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
     dialog.hwndOwner = window_;
-    dialog.lpstrFile = selectedPath;
-    dialog.nMaxFile = static_cast<DWORD>(std::size(selectedPath));
+    dialog.lpstrFile = selectedPaths.data();
+    dialog.nMaxFile = static_cast<DWORD>(selectedPaths.size());
     dialog.lpstrFilter =
         L"Audio files (*.wav;*.mp3;*.flac)\0*.wav;*.mp3;*.flac\0"
         L"WAV files (*.wav)\0*.wav\0"
@@ -7600,26 +7614,34 @@ void ControlWindow::BrowseForSoundFile()
         L"All files (*.*)\0*.*\0\0";
     dialog.lpstrInitialDir = initialFolder.c_str();
     dialog.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST |
-        OFN_NOCHANGEDIR | OFN_EXPLORER;
+        OFN_NOCHANGEDIR | OFN_EXPLORER | OFN_ALLOWMULTISELECT;
 
     if (GetOpenFileNameW(&dialog) == FALSE)
     {
         return;
     }
 
-    const std::filesystem::path imported =
-        ImportSoundFile(std::filesystem::path{selectedPath});
+    std::vector<std::filesystem::path> inputs;
+    const std::filesystem::path first{selectedPaths.data()};
+    const wchar_t* cursor = selectedPaths.data() +
+        first.wstring().size() + 1;
 
-    if (imported.empty())
+    if (*cursor == L'\0')
     {
-        return;
+        inputs.push_back(first);
+    }
+    else
+    {
+        const std::filesystem::path directory = first;
+        while (*cursor != L'\0')
+        {
+            const std::filesystem::path filename{cursor};
+            inputs.push_back(directory / filename);
+            cursor += filename.wstring().size() + 1;
+        }
     }
 
-    SetControlText(bindingFileEdit_, imported.wstring());
-    SetStatus(Localization::Text(
-        L"Ses dosyası atama düzenleyicisine eklendi.",
-        L"The audio file was added to the binding editor."
-    ));
+    ImportSoundItems(inputs);
 }
 
 void ControlWindow::BeginHotkeyCapture()
@@ -7712,159 +7734,137 @@ bool ControlWindow::CaptureHotkeyFromMessage(const WPARAM virtualKey)
     return true;
 }
 
-std::filesystem::path ControlWindow::ImportSoundFile(
-    const std::filesystem::path& selectedPath
+std::vector<std::filesystem::path> ControlWindow::ImportSoundItems(
+    const std::vector<std::filesystem::path>& selectedPaths
 )
 {
-    if (selectedPath.empty() ||
-        !SoundFileFormat::IsSupported(selectedPath))
+    if (selectedPaths.empty())
     {
-        MessageBoxW(
-            window_,
-            Localization::Text(
-                L"Yalnızca WAV, MP3 ve FLAC dosyaları seçilebilir.",
-                L"Only WAV, MP3, and FLAC files can be selected."
-            ),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONWARNING
-        );
         return {};
     }
 
-    std::error_code error;
-    const std::filesystem::path source =
-        std::filesystem::weakly_canonical(selectedPath, error);
+    SetStatus(Localization::Text(
+        L"Sesler içe aktarılıyor...",
+        L"Importing sounds..."
+    ));
 
-    if (error || !std::filesystem::is_regular_file(source, error) || error)
+    const SoundImportSummary summary =
+        SoundImporter{soundsFolder_}.Import(selectedPaths);
+
+    if (!summary.importedRelativePaths.empty())
     {
+        SetActivePage(ControlPage::Hotkeys);
+        SetControlText(
+            bindingFileEdit_,
+            summary.importedRelativePaths.front().wstring()
+        );
+    }
+
+    std::wostringstream status;
+    status << Localization::Text(
+        L"İçe aktarılan ses: ",
+        L"Imported sounds: "
+    ) << summary.importedRelativePaths.size();
+
+    if (summary.copiedCount != 0)
+    {
+        status << Localization::Text(L" · Kopyalanan: ", L" · Copied: ")
+            << summary.copiedCount;
+    }
+
+    if (summary.existingCount != 0)
+    {
+        status << Localization::Text(L" · Zaten içeride: ", L" · Existing: ")
+            << summary.existingCount;
+    }
+
+    if (summary.unsupportedCount != 0)
+    {
+        status << Localization::Text(L" · Desteklenmeyen: ", L" · Unsupported: ")
+            << summary.unsupportedCount;
+    }
+
+    if (!summary.failedPaths.empty())
+    {
+        status << Localization::Text(L" · Başarısız: ", L" · Failed: ")
+            << summary.failedPaths.size();
+    }
+
+    if (summary.itemLimitReached)
+    {
+        status << Localization::Text(
+            L" · 4096 dosya sınırına ulaşıldı",
+            L" · 4096-file limit reached"
+        );
+    }
+
+    SetStatus(status.str());
+
+    if (summary.importedRelativePaths.empty() ||
+        summary.unsupportedCount != 0 ||
+        !summary.failedPaths.empty() ||
+        summary.itemLimitReached)
+    {
+        std::wostringstream details;
+        details << status.str() << L"\n\n"
+            << Localization::Text(
+                L"Doğrudan oynatma için desteklenen biçimler: WAV, MP3 ve FLAC. Diğer biçimler daha sonra FFmpeg içe aktarma akışından dönüştürülecek.",
+                L"Direct playback supports WAV, MP3, and FLAC. Other formats will be converted by the upcoming FFmpeg import workflow."
+            );
+
         MessageBoxW(
             window_,
-            Localization::Text(
-                L"Seçilen ses dosyası okunamıyor.",
-                L"The selected audio file cannot be read."
-            ),
+            details.str().c_str(),
             L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONERROR
+            MB_OK | (summary.importedRelativePaths.empty()
+                ? MB_ICONWARNING
+                : MB_ICONINFORMATION)
         );
-        return {};
     }
 
-    error.clear();
-    std::filesystem::create_directories(soundsFolder_, error);
+    return summary.importedRelativePaths;
+}
 
-    if (error)
+void ControlWindow::HandleDroppedSoundItems(const WPARAM dropHandle)
+{
+    const HDROP drop = reinterpret_cast<HDROP>(dropHandle);
+
+    if (drop == nullptr)
     {
-        MessageBoxW(
-            window_,
-            Localization::Text(
-                L"sounds klasörü oluşturulamadı.",
-                L"The sounds folder could not be created."
-            ),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONERROR
-        );
-        return {};
+        return;
     }
 
-    const std::filesystem::path soundsRoot =
-        std::filesystem::weakly_canonical(soundsFolder_, error);
-
-    if (!error)
-    {
-        error.clear();
-        const std::filesystem::path relative =
-            std::filesystem::relative(source, soundsRoot, error);
-
-        bool staysInside = !error && !relative.empty() &&
-            !relative.has_root_path();
-
-        if (staysInside)
-        {
-            for (const auto& component : relative)
-            {
-                if (component == L"..")
-                {
-                    staysInside = false;
-                    break;
-                }
-            }
-        }
-
-        if (staysInside)
-        {
-            return relative.lexically_normal();
-        }
-    }
-
-    const int answer = MessageBoxW(
-        window_,
-        Localization::Text(
-            L"Seçilen dosya sounds klasörünün dışında. Portable kullanım için sounds klasörüne kopyalansın mı?",
-            L"The selected file is outside the sounds folder. Copy it into the sounds folder for portable use?"
-        ),
-        L"SoundBoardFasaFiso",
-        MB_YESNO | MB_ICONQUESTION
+    const UINT itemCount = DragQueryFileW(
+        drop,
+        0xFFFFFFFFU,
+        nullptr,
+        0
     );
+    std::vector<std::filesystem::path> inputs;
+    inputs.reserve(itemCount);
 
-    if (answer != IDYES)
+    for (UINT index = 0; index < itemCount; ++index)
     {
-        return {};
-    }
-
-    std::filesystem::path destination =
-        soundsFolder_ / source.filename();
-
-    if (std::filesystem::exists(destination, error) && !error)
-    {
-        error.clear();
-
-        if (std::filesystem::equivalent(source, destination, error) &&
-            !error)
+        const UINT length = DragQueryFileW(drop, index, nullptr, 0);
+        if (length == 0)
         {
-            return destination.filename();
+            continue;
         }
 
-        const std::filesystem::path stem = source.stem();
-        const std::filesystem::path extension = source.extension();
-
-        for (unsigned int suffix = 2; suffix < 10000; ++suffix)
+        std::vector<wchar_t> path(length + 1, L'\0');
+        if (DragQueryFileW(
+                drop,
+                index,
+                path.data(),
+                static_cast<UINT>(path.size())
+            ) != 0)
         {
-            destination = soundsFolder_ /
-                (stem.wstring() + L"_" + std::to_wstring(suffix) +
-                    extension.wstring());
-
-            error.clear();
-
-            if (!std::filesystem::exists(destination, error) && !error)
-            {
-                break;
-            }
+            inputs.emplace_back(path.data());
         }
     }
 
-    error.clear();
-    std::filesystem::copy_file(
-        source,
-        destination,
-        std::filesystem::copy_options::none,
-        error
-    );
-
-    if (error)
-    {
-        MessageBoxW(
-            window_,
-            Localization::Text(
-                L"Ses dosyası sounds klasörüne kopyalanamadı.",
-                L"The audio file could not be copied into the sounds folder."
-            ),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONERROR
-        );
-        return {};
-    }
-
-    return destination.filename();
+    DragFinish(drop);
+    ImportSoundItems(inputs);
 }
 
 void ControlWindow::PostApplicationCommand(

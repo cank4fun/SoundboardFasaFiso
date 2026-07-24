@@ -158,6 +158,7 @@ add_executable(
     src/diagnostics/Logger.cpp
     src/gui/ControlWindow.cpp
     src/hotkeys/HotkeyManager.cpp
+    src/import/SoundImporter.cpp
     src/localization/Localization.cpp
     src/platform/DebugConsole.cpp
     src/platform/SingleInstance.cpp
@@ -708,6 +709,49 @@ if(BUILD_TESTING)
     add_test(
         NAME PlaybackModes
         COMMAND SoundBoardFasaFisoPlaybackModeTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoSoundImporterTests
+        EXCLUDE_FROM_ALL
+        tests/SoundImporterTests.cpp
+        src/import/SoundImporter.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoSoundImporterTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoSoundImporterTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoSoundImporterTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoSoundImporterTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME SoundImporter
+        COMMAND SoundBoardFasaFisoSoundImporterTests
     )
 
     add_executable(

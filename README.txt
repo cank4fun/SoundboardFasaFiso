@@ -22,9 +22,9 @@ Kaydet ve uygula düğmesine basılır.
 
 HIZLI KULLANIM
 --------------
-1. Ses dosyalarını sounds klasörüne koy.
-2. SoundBoardFasaFiso.exe dosyasını çalıştır; kontrol paneli açılır.
-3. Hotkey'ler sekmesinde her ses için bir atama oluştur. Dosyayı yalnızca sounds klasörüne kopyalamak otomatik hotkey atamaz.
+1. SoundBoardFasaFiso.exe dosyasını çalıştır; kontrol paneli açılır.
+2. WAV, MP3 veya FLAC dosyalarını ya da bunları içeren bir klasörü panelin üzerine bırak. Dışarıdaki dosyalar sounds\Imported altına güvenli biçimde kopyalanır; Gözat düğmesi birden fazla dosya seçebilir.
+3. Hotkey'ler sekmesinde her ses için bir atama oluştur. İçe aktarma ilk dosyayı düzenleyiciye doldurur ancak otomatik global hotkey atamaz.
 4. Çalan sesleri Oynatma sekmesinden duraklat, konumlandır, tek tek durdur veya geçici ses seviyesini değiştir.
 5. Ses cihazlarını ve kontrol hotkey'lerini panelden düzenle.
 6. Kaydet ve uygula'ya bas; yeni config doğrulanıp güvenli şekilde etkinleştirilir.
@@ -134,8 +134,9 @@ ve Oynatma sekmelerini kullanır. Açık/koyu tema, canlı sinyal göstergeleri 
 desteklenir. Panelden ana/monitör/mikrofon cihazı, ses seviyeleri,
 mikrofon yönlendirmesi, dil, örnekleme hızı, buffer, Windows başlangıcı,
 kontrol hotkey'leri ve ses atamaları düzenlenebilir. Ses ataması eklerken
-WAV/MP3/FLAC seçilebilir; dışarıdaki dosya isteğe bağlı olarak sounds
-klasörüne kopyalanır. Kaydet ve uygula tüm ayarları önce doğrular; hotkey
+WAV/MP3/FLAC seçilebilir; birden fazla dosya veya klasör pencereye
+sürüklenebilir. Dışarıdaki dosyalar sounds\Imported klasörüne kopyalanır,
+aynı isimler _2, _3 şeklinde güvenle ayrılır. Kaydet ve uygula tüm ayarları önce doğrular; hotkey
 çakışması veya ses sistemi hatasında önceki çalışan ayarlar geri yüklenir.
 Pencerenin X düğmesi programı kapatmaz; paneli tray'e gizler.
 

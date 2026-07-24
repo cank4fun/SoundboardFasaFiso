@@ -69,9 +69,9 @@ start-when-inactive, stop-when-active policy.
 
 ## Planned follow-up
 
-1. Add configurable fade-in and fade-out envelopes.
-2. Add queue controls and bounded per-binding concurrency.
-3. Add categories, search, favorites and profiles.
+1. Add queue controls and bounded per-binding concurrency.
+2. Add categories, search, favorites and profiles.
+3. Add URL import through optional `yt-dlp` and FFmpeg tools.
 4. Add Auto-PTT, recording, editing, TTS and external control APIs.
 
 ## Configuration durability

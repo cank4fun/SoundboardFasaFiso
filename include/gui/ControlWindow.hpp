@@ -208,9 +208,10 @@ private:
     void BeginHotkeyCapture();
     bool CaptureHotkeyFromMessage(WPARAM virtualKey);
 
-    std::filesystem::path ImportSoundFile(
-        const std::filesystem::path& selectedPath
+    std::vector<std::filesystem::path> ImportSoundItems(
+        const std::vector<std::filesystem::path>& selectedPaths
     );
+    void HandleDroppedSoundItems(WPARAM dropHandle);
 
     void PostApplicationCommand(int commandId) const;
     void OpenPath(const std::filesystem::path& path) const;
