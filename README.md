@@ -294,3 +294,5 @@ Released under the [MIT License](LICENSE).
 Official GitHub release artifacts are currently unsigned. The project does not currently use a SignPath Foundation certificate or another public code-signing certificate. Signing is not a release blocker; official artifacts are built by GitHub Actions and published with SHA-256 checksums.
 
 Build provenance, project roles, privacy rules, checksum verification and the requirements for any future signed release are documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
+
+- Per-binding fade-in/fade-out: `fade_in_ms` and `fade_out_ms` accept values from 0 to 10000 milliseconds.

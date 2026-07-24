@@ -364,7 +364,9 @@ namespace
                 binding.keyName,
                 soundPath,
                 binding.volume,
-                binding.mode
+                binding.mode,
+                binding.fadeInMilliseconds,
+                binding.fadeOutMilliseconds
             ))
             {
                 std::cerr
@@ -561,7 +563,7 @@ namespace
         std::vector<SoundBinding>& activeBindings
     )
     {
-        audio.StopAll();
+        audio.StopAll(true);
         hotkeys.UnregisterAll();
         audio.Shutdown();
         activeBindings.clear();

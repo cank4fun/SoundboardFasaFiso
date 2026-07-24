@@ -2,6 +2,9 @@
 
 ## 2.1.0-alpha.1 - Unreleased
 
+- Added per-binding fade-in and fade-out envelopes with millisecond controls.
+- Applied fade-out consistently to selected-session stop, toggle/loop stop, and Stop All while keeping shutdown/reload teardown immediate.
+
 - Added optional WebRTC AEC3 acoustic echo cancellation with a soundboard monitor-reference path.
 - Added high-pass filtering, RNNoise suppression, automatic gain control, compression and limiting.
 - Added raw/processed microphone meters, AEC telemetry, presets and temporary processed-microphone monitoring.

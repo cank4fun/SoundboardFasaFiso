@@ -119,11 +119,13 @@ public:
         const std::string& soundId,
         const std::filesystem::path& soundPath,
         float volume,
-        PlaybackMode mode
+        PlaybackMode mode,
+        unsigned int fadeInMilliseconds,
+        unsigned int fadeOutMilliseconds
     );
 
     PlaybackResult PlayLoaded(const std::string& soundId);
-    bool StopAll();
+    bool StopAll(bool immediate = false);
 
     [[nodiscard]] std::vector<PlaybackSnapshot>
         GetPlaybackSnapshots() const;
@@ -181,6 +183,8 @@ private:
         std::filesystem::path path;
         float volume = 1.0f;
         PlaybackMode mode = PlaybackMode::Restart;
+        unsigned int fadeInMilliseconds = 0;
+        unsigned int fadeOutMilliseconds = 0;
     };
 
     struct Voice
@@ -194,7 +198,10 @@ private:
 
         PlaybackId playbackId = InvalidPlaybackId;
         float volume = 1.0f;
+        unsigned int fadeInMilliseconds = 0;
+        unsigned int fadeOutMilliseconds = 0;
         bool paused = false;
+        bool stopping = false;
     };
 
     struct LoadedSound
@@ -289,6 +296,12 @@ private:
         Voice& voice,
         const std::string& soundId,
         bool beginNewPlayback = true
+    );
+
+    bool StopVoice(
+        Voice& voice,
+        const std::string& soundId,
+        bool immediate
     );
 
     [[nodiscard]] PlaybackId AllocatePlaybackId() noexcept;

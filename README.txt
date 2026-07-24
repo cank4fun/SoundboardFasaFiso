@@ -174,3 +174,5 @@ NOTLAR
 - Cihaz koparsa program açık kalır ve yeniden bağlanmayı dener.
 - Hatalı reload uygulanmaz; son çalışan ayarlar korunur.
 - Aynı anda uygulamanın yalnızca bir kopyası çalışır.
+
+Per-binding fade-in/fade-out: fade_in_ms and fade_out_ms accept values from 0 to 10000 milliseconds.

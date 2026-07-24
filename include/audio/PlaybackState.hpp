@@ -12,7 +12,8 @@ inline constexpr PlaybackId InvalidPlaybackId = 0;
 enum class PlaybackStatus
 {
     Playing,
-    Paused
+    Paused,
+    Stopping
 };
 
 struct PlaybackSnapshot

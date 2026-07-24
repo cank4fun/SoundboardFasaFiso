@@ -120,6 +120,8 @@ namespace
         std::filesystem::path soundFile;
         float volume = 1.0f;
         PlaybackMode mode = PlaybackMode::Restart;
+        unsigned int fadeInMilliseconds = 0;
+        unsigned int fadeOutMilliseconds = 0;
     };
 
     struct SettingSource
@@ -642,6 +644,8 @@ namespace
 
         bool volumeWasSet = false;
         bool modeWasSet = false;
+        bool fadeInWasSet = false;
+        bool fadeOutWasSet = false;
 
         std::size_t tokenStart = 0;
         std::size_t tokenIndex = 0;
@@ -784,6 +788,52 @@ namespace
                     parsedValue.mode = *mode;
                     modeWasSet = true;
                 }
+                else if (optionName == "FADE_IN_MS" ||
+                    optionName == "FADE_OUT_MS")
+                {
+                    bool& wasSet = optionName == "FADE_IN_MS"
+                        ? fadeInWasSet
+                        : fadeOutWasSet;
+
+                    if (wasSet)
+                    {
+                        errorReason = optionName +
+                            Localization::Text(
+                                " ayarı aynı satırda birden fazla yazılmış.",
+                                " is specified more than once on the same line."
+                            );
+                        correctExample =
+                            "F1=example.wav|volume=0.80|mode=restart|fade_in_ms=50|fade_out_ms=100";
+                        return std::nullopt;
+                    }
+
+                    const auto milliseconds =
+                        ParseUnsignedInteger(optionValue);
+
+                    if (!milliseconds.has_value() ||
+                        *milliseconds > 10000)
+                    {
+                        errorReason = optionName +
+                            std::string{Localization::Text(
+                                " değeri 0 ile 10000 arasında tam sayı olmalı. Girilen değer: ",
+                                " must be an integer between 0 and 10000. Entered value: "
+                            )} + optionValue;
+                        correctExample =
+                            "F1=example.wav|volume=0.80|mode=restart|fade_in_ms=50|fade_out_ms=100";
+                        return std::nullopt;
+                    }
+
+                    if (optionName == "FADE_IN_MS")
+                    {
+                        parsedValue.fadeInMilliseconds = *milliseconds;
+                    }
+                    else
+                    {
+                        parsedValue.fadeOutMilliseconds = *milliseconds;
+                    }
+
+                    wasSet = true;
+                }
                 else
                 {
                     errorReason =
@@ -791,8 +841,8 @@ namespace
                             "Desteklenmeyen ses ayarı: ",
                             "Unsupported sound option: "
                         )} + optionName + Localization::Text(
-                            ". Desteklenen ayarlar: volume, mode.",
-                            ". Supported options: volume, mode."
+                            ". Desteklenen ayarlar: volume, mode, fade_in_ms, fade_out_ms.",
+                            ". Supported options: volume, mode, fade_in_ms, fade_out_ms."
                         );
                     correctExample =
                         "F1=example.wav|volume=0.80|mode=restart";
@@ -2151,7 +2201,9 @@ bool Config::Load(const std::filesystem::path& filePath)
                 hotkey->virtualKey,
                 soundValue->soundFile,
                 soundValue->volume,
-                soundValue->mode
+                soundValue->mode,
+                soundValue->fadeInMilliseconds,
+                soundValue->fadeOutMilliseconds
             }
         );
     }
@@ -2337,8 +2389,19 @@ bool Config::Save(const std::filesystem::path& filePath) const
             << std::setprecision(2)
             << binding.volume
             << "|mode="
-            << PlaybackModeName(binding.mode)
-            << '\n';
+            << PlaybackModeName(binding.mode);
+
+        if (binding.fadeInMilliseconds > 0)
+        {
+            file << "|fade_in_ms=" << binding.fadeInMilliseconds;
+        }
+
+        if (binding.fadeOutMilliseconds > 0)
+        {
+            file << "|fade_out_ms=" << binding.fadeOutMilliseconds;
+        }
+
+        file << '\n';
     }
 
     file.flush();
@@ -2616,6 +2679,8 @@ bool Config::SetBindings(std::vector<SoundBinding> bindings)
     for (SoundBinding& binding : bindings)
     {
         if (binding.volume < 0.0f || binding.volume > 1.0f ||
+            binding.fadeInMilliseconds > 10000 ||
+            binding.fadeOutMilliseconds > 10000 ||
             binding.soundFile.empty() ||
             binding.soundFile.has_root_path() ||
             !SoundFileFormat::IsSupported(binding.soundFile))

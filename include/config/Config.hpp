@@ -22,6 +22,8 @@ struct SoundBinding
     std::filesystem::path soundFile;
     float volume = 1.0f;
     PlaybackMode mode = PlaybackMode::Restart;
+    unsigned int fadeInMilliseconds = 0;
+    unsigned int fadeOutMilliseconds = 0;
 };
 
 class Config

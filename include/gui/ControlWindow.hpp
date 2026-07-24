@@ -126,6 +126,8 @@ private:
     static constexpr int IdPlaybackStop = 1035;
     static constexpr int IdPlaybackSeekSlider = 1036;
     static constexpr int IdPlaybackVolumeSlider = 1037;
+    static constexpr int IdBindingFadeInEdit = 1038;
+    static constexpr int IdBindingFadeOutEdit = 1039;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -377,6 +379,10 @@ private:
     HWND bindingVolumeCaption_ = nullptr;
     HWND bindingVolumeSlider_ = nullptr;
     HWND bindingVolumeValue_ = nullptr;
+    HWND bindingFadeInCaption_ = nullptr;
+    HWND bindingFadeInEdit_ = nullptr;
+    HWND bindingFadeOutCaption_ = nullptr;
+    HWND bindingFadeOutEdit_ = nullptr;
     HWND addBindingButton_ = nullptr;
     HWND updateBindingButton_ = nullptr;
     HWND removeBindingButton_ = nullptr;

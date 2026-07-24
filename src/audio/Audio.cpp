@@ -287,6 +287,8 @@ namespace
 
     bool PrepareSoundForPlayback(ma_sound* sound)
     {
+        ma_sound_reset_stop_time_and_fade(sound);
+
         ma_result result = ma_sound_stop(sound);
 
         if (result != MA_SUCCESS)
@@ -1787,8 +1789,11 @@ bool Audio::InitializeVoiceFromFile(
 #endif
 
     voice.volume = definition.volume;
+    voice.fadeInMilliseconds = definition.fadeInMilliseconds;
+    voice.fadeOutMilliseconds = definition.fadeOutMilliseconds;
     voice.playbackId = InvalidPlaybackId;
     voice.paused = false;
+    voice.stopping = false;
 
     return true;
 }
@@ -1933,8 +1938,11 @@ bool Audio::InitializeVoiceCopy(
 #endif
 
     voice.volume = definition.volume;
+    voice.fadeInMilliseconds = definition.fadeInMilliseconds;
+    voice.fadeOutMilliseconds = definition.fadeOutMilliseconds;
     voice.playbackId = InvalidPlaybackId;
     voice.paused = false;
+    voice.stopping = false;
 
     return true;
 }
@@ -2088,6 +2096,7 @@ bool Audio::PrepareVoiceForPlayback(
 
     voice.playbackId = InvalidPlaybackId;
     voice.paused = false;
+    voice.stopping = false;
 
     return success;
 }
@@ -2101,6 +2110,38 @@ bool Audio::StartVoice(
     if (!voice.outputSound)
     {
         return false;
+    }
+
+    if (beginNewPlayback && voice.fadeInMilliseconds > 0)
+    {
+        ma_sound_set_fade_in_milliseconds(
+            voice.outputSound.get(),
+            0.0f,
+            1.0f,
+            voice.fadeInMilliseconds
+        );
+
+        if (voice.monitorSound)
+        {
+            ma_sound_set_fade_in_milliseconds(
+                voice.monitorSound.get(),
+                0.0f,
+                1.0f,
+                voice.fadeInMilliseconds
+            );
+        }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        if (voice.aecReferenceSound)
+        {
+            ma_sound_set_fade_in_milliseconds(
+                voice.aecReferenceSound.get(),
+                0.0f,
+                1.0f,
+                voice.fadeInMilliseconds
+            );
+        }
+#endif
     }
 
     ma_result result =
@@ -2179,7 +2220,77 @@ bool Audio::StartVoice(
     }
 
     voice.paused = false;
+    voice.stopping = false;
     return true;
+}
+
+bool Audio::StopVoice(
+    Voice& voice,
+    const std::string& soundId,
+    const bool immediate
+)
+{
+    if (!immediate && voice.stopping && IsVoicePlaying(voice))
+    {
+        return true;
+    }
+
+    if (immediate || voice.paused ||
+        voice.fadeOutMilliseconds == 0 ||
+        !IsVoicePlaying(voice))
+    {
+        return PrepareVoiceForPlayback(voice, soundId);
+    }
+
+    bool success = true;
+
+    if (!voice.outputSound ||
+        ma_sound_stop_with_fade_in_milliseconds(
+            voice.outputSound.get(),
+            voice.fadeOutMilliseconds
+        ) != MA_SUCCESS)
+    {
+        success = false;
+    }
+
+    if (voice.monitorSound &&
+        ma_sound_stop_with_fade_in_milliseconds(
+            voice.monitorSound.get(),
+            voice.fadeOutMilliseconds
+        ) != MA_SUCCESS)
+    {
+        success = false;
+    }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound &&
+        ma_sound_stop_with_fade_in_milliseconds(
+            voice.aecReferenceSound.get(),
+            voice.fadeOutMilliseconds
+        ) != MA_SUCCESS)
+    {
+        success = false;
+    }
+#endif
+
+    if (success)
+    {
+        voice.stopping = true;
+    }
+    else
+    {
+        PrepareVoiceForPlayback(voice, soundId);
+
+        std::cerr
+            << Localization::Text(
+                "Ses fade-out ile durdurulamadı: ",
+                "The sound could not be stopped with fade-out: "
+            )
+            << soundId
+            << '\n';
+    }
+
+    return success;
 }
 
 PlaybackId Audio::AllocatePlaybackId() noexcept
@@ -2222,6 +2333,7 @@ Audio::Voice* Audio::FindVoiceByPlaybackId(
             if (!voice.paused && !IsVoicePlaying(voice))
             {
                 voice.playbackId = InvalidPlaybackId;
+                voice.stopping = false;
                 return nullptr;
             }
 
@@ -2292,7 +2404,10 @@ void Audio::DestroyVoice(Voice& voice)
 
     voice.playbackId = InvalidPlaybackId;
     voice.volume = 1.0f;
+    voice.fadeInMilliseconds = 0;
+    voice.fadeOutMilliseconds = 0;
     voice.paused = false;
+    voice.stopping = false;
 }
 
 void Audio::DestroyLoadedSound(
@@ -2316,7 +2431,9 @@ bool Audio::LoadSound(
     const std::string& soundId,
     const std::filesystem::path& soundPath,
     const float volume,
-    const PlaybackMode mode
+    const PlaybackMode mode,
+    const unsigned int fadeInMilliseconds,
+    const unsigned int fadeOutMilliseconds
 )
 {
     if (soundDefinitions_.contains(soundId))
@@ -2358,10 +2475,17 @@ bool Audio::LoadSound(
         return false;
     }
 
+    if (fadeInMilliseconds > 10000 || fadeOutMilliseconds > 10000)
+    {
+        return false;
+    }
+
     const SoundDefinition definition{
         soundPath,
         volume,
-        mode
+        mode,
+        fadeInMilliseconds,
+        fadeOutMilliseconds
     };
 
     if (!LoadSoundIntoRuntime(soundId, definition))
@@ -2472,9 +2596,10 @@ PlaybackResult Audio::PlayLoaded(const std::string& soundId)
 
     if (triggerAction == PlaybackTriggerAction::Stop)
     {
-        if (!PrepareVoiceForPlayback(
+        if (!StopVoice(
             voice,
-            soundId
+            soundId,
+            false
         ))
         {
             recoveryRequested_.store(
@@ -2508,7 +2633,7 @@ PlaybackResult Audio::PlayLoaded(const std::string& soundId)
     return PlaybackResult::Started;
 }
 
-bool Audio::StopAll()
+bool Audio::StopAll(const bool immediate)
 {
     bool success = true;
 
@@ -2516,9 +2641,10 @@ bool Audio::StopAll()
     {
         for (Voice& voice : loadedSound.voices)
         {
-            if (!PrepareVoiceForPlayback(
+            if (!StopVoice(
                 voice,
-                soundId
+                soundId,
+                immediate
             ))
             {
                 success = false;
@@ -2574,7 +2700,9 @@ std::vector<PlaybackSnapshot> Audio::GetPlaybackSnapshots() const
                 soundId,
                 voice.paused
                     ? PlaybackStatus::Paused
-                    : PlaybackStatus::Playing,
+                    : (voice.stopping
+                        ? PlaybackStatus::Stopping
+                        : PlaybackStatus::Playing),
                 loadedSound.mode,
                 std::max(0.0f, positionSeconds),
                 std::max(0.0f, durationSeconds),
@@ -2607,6 +2735,11 @@ bool Audio::PausePlayback(const PlaybackId playbackId)
     if (voice->paused)
     {
         return true;
+    }
+
+    if (voice->stopping)
+    {
+        return false;
     }
 
     if (!IsVoicePlaying(*voice))
@@ -2680,7 +2813,7 @@ bool Audio::StopPlayback(const PlaybackId playbackId)
         return false;
     }
 
-    if (!PrepareVoiceForPlayback(*voice, *soundId))
+    if (!StopVoice(*voice, *soundId, false))
     {
         recoveryRequested_.store(true, std::memory_order_release);
         return false;
@@ -2701,7 +2834,7 @@ bool Audio::SeekPlayback(
 
     Voice* const voice = FindVoiceByPlaybackId(playbackId);
 
-    if (voice == nullptr || !voice->outputSound)
+    if (voice == nullptr || !voice->outputSound || voice->stopping)
     {
         return false;
     }

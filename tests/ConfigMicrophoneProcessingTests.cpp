@@ -306,7 +306,7 @@ namespace
             "F2=example.wav|volume=0.80|mode=overlap\n"
             "F3=example.wav|volume=0.80|mode=toggle\n"
             "F4=example.wav|volume=0.80|mode=loop\n"
-            "F5=example.wav|volume=0.80|mode=ignore\n";
+            "F5=example.wav|volume=0.80|mode=ignore|fade_in_ms=75|fade_out_ms=125\n";
 
         Expect(
             WriteText(sourcePath, content),
@@ -344,6 +344,14 @@ namespace
                 bindings[4].mode == PlaybackMode::Ignore,
                 "ignore policy parses"
             );
+            Expect(
+                bindings[4].fadeInMilliseconds == 75,
+                "fade-in duration parses"
+            );
+            Expect(
+                bindings[4].fadeOutMilliseconds == 125,
+                "fade-out duration parses"
+            );
         }
 
         const auto savedPath =
@@ -353,8 +361,9 @@ namespace
 
         const std::string saved = ReadText(savedPath);
         Expect(
-            saved.find("|mode=ignore") != std::string::npos,
-            "ignore policy serializes"
+            saved.find("|mode=ignore|fade_in_ms=75|fade_out_ms=125") !=
+                std::string::npos,
+            "ignore policy and fade durations serialize"
         );
     }
 
@@ -375,7 +384,15 @@ namespace
             {"microphone_processing_preset=studio\n", "invalid preset"},
             {"microphone_high_pass_hz=301\n", "out-of-range high-pass"},
             {"microphone_compressor_ratio=nan\n", "non-finite ratio"},
-            {"microphone_noise_suppression_level=maximum\n", "invalid level"}
+            {"microphone_noise_suppression_level=maximum\n", "invalid level"},
+            {
+                "F8=example.wav|fade_in_ms=10001\n",
+                "out-of-range fade in"
+            },
+            {
+                "F9=example.wav|fade_out_ms=-1\n",
+                "negative fade out"
+            }
         };
 
         std::size_t index = 0;

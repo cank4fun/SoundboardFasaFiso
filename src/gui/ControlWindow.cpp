@@ -696,6 +696,10 @@ void ControlWindow::Shutdown()
     bindingVolumeCaption_ = nullptr;
     bindingVolumeSlider_ = nullptr;
     bindingVolumeValue_ = nullptr;
+    bindingFadeInCaption_ = nullptr;
+    bindingFadeInEdit_ = nullptr;
+    bindingFadeOutCaption_ = nullptr;
+    bindingFadeOutEdit_ = nullptr;
     addBindingButton_ = nullptr;
     updateBindingButton_ = nullptr;
     removeBindingButton_ = nullptr;
@@ -2152,6 +2156,18 @@ bool ControlWindow::CreateControls()
         IdBindingVolumeSlider
     );
     bindingVolumeValue_ = createControl(L"STATIC", L"", SS_RIGHT, 0);
+    bindingFadeInCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    bindingFadeInEdit_ = createControl(
+        L"EDIT", L"0", ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP,
+        IdBindingFadeInEdit, WS_EX_CLIENTEDGE
+    );
+    bindingFadeOutCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    bindingFadeOutEdit_ = createControl(
+        L"EDIT", L"0", ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP,
+        IdBindingFadeOutEdit, WS_EX_CLIENTEDGE
+    );
+    SendMessageW(bindingFadeInEdit_, EM_SETLIMITTEXT, 5, 0);
+    SendMessageW(bindingFadeOutEdit_, EM_SETLIMITTEXT, 5, 0);
     addBindingButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdAddBinding
     );
@@ -2272,6 +2288,8 @@ bool ControlWindow::CreateControls()
         captureHotkeyButton_, bindingFileCaption_, bindingFileEdit_,
         browseSoundButton_, bindingModeCaption_, bindingModeCombo_,
         bindingVolumeCaption_, bindingVolumeSlider_, bindingVolumeValue_,
+        bindingFadeInCaption_, bindingFadeInEdit_,
+        bindingFadeOutCaption_, bindingFadeOutEdit_,
         addBindingButton_, updateBindingButton_, removeBindingButton_,
         clearBindingButton_, reloadButton_, stopButton_, outputMuteButton_,
         monitorMuteButton_, openConfigButton_, openSoundsButton_,
@@ -2579,6 +2597,48 @@ void ControlWindow::LayoutControls(
             editorY + 4,
             38,
             20,
+            TRUE
+        );
+
+        editorY += 30;
+
+        const int fadeCaptionWidth = 82;
+        const int fadeEditWidth = 58;
+        const int fadeGap = 8;
+        const int fadeSecondX = editorContentX +
+            fadeCaptionWidth + fadeEditWidth + fadeGap;
+
+        moveWindow(
+            bindingFadeInCaption_,
+            editorContentX,
+            editorY + 4,
+            fadeCaptionWidth,
+            20,
+            TRUE
+        );
+        moveWindow(
+            bindingFadeInEdit_,
+            editorContentX + fadeCaptionWidth,
+            editorY,
+            fadeEditWidth,
+            25,
+            TRUE
+        );
+        moveWindow(
+            bindingFadeOutCaption_,
+            fadeSecondX,
+            editorY + 4,
+            fadeCaptionWidth,
+            20,
+            TRUE
+        );
+        moveWindow(
+            bindingFadeOutEdit_,
+            fadeSecondX + fadeCaptionWidth,
+            editorY,
+            std::max(48, editorContentX + editorContentWidth -
+                (fadeSecondX + fadeCaptionWidth)),
+            25,
             TRUE
         );
 
@@ -3446,7 +3506,9 @@ void ControlWindow::UpdatePageVisibility()
         bindingHotkeyCaption_, bindingHotkeyEdit_, captureHotkeyButton_,
         bindingFileCaption_, bindingFileEdit_, browseSoundButton_,
         bindingModeCaption_, bindingModeCombo_, bindingVolumeCaption_,
-        bindingVolumeSlider_, bindingVolumeValue_, addBindingButton_,
+        bindingVolumeSlider_, bindingVolumeValue_, bindingFadeInCaption_,
+        bindingFadeInEdit_, bindingFadeOutCaption_, bindingFadeOutEdit_,
+        addBindingButton_,
         updateBindingButton_, removeBindingButton_, clearBindingButton_,
         reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_
     };
@@ -3614,10 +3676,11 @@ void ControlWindow::ApplyTheme()
         SetWindowTheme(bindingModeCombo_, comboTheme, nullptr);
     }
 
-    const std::array<HWND, 17> edits{
+    const std::array<HWND, 19> edits{
         stopHotkeyEdit_, outputMuteHotkeyEdit_, monitorMuteHotkeyEdit_,
         reloadHotkeyEdit_, exitHotkeyEdit_, bindingHotkeyEdit_,
-        bindingFileEdit_, bindingsList_, microphoneHighPassHzEdit_,
+        bindingFileEdit_, bindingFadeInEdit_, bindingFadeOutEdit_,
+        bindingsList_, microphoneHighPassHzEdit_,
         microphoneAgcTargetEdit_, microphoneCompressorThresholdEdit_,
         microphoneCompressorRatioEdit_, microphoneCompressorAttackEdit_,
         microphoneCompressorReleaseEdit_,
@@ -3765,6 +3828,8 @@ void ControlWindow::ApplyFonts()
         bindingHotkeyCaption_, bindingHotkeyEdit_, bindingFileCaption_,
         bindingFileEdit_, bindingModeCaption_, bindingModeCombo_,
         bindingVolumeCaption_, bindingVolumeSlider_, bindingVolumeValue_,
+        bindingFadeInCaption_, bindingFadeInEdit_,
+        bindingFadeOutCaption_, bindingFadeOutEdit_,
         playbackList_, playbackSoundCaption_, playbackSoundValue_,
         playbackStatusCaption_, playbackStatusValue_,
         playbackPositionCaption_, playbackPositionValue_,
@@ -4942,6 +5007,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(bindingFileCaption_, Localization::Text(L"Ses:", L"Sound:"));
     SetControlText(bindingModeCaption_, Localization::Text(L"Mod:", L"Mode:"));
     SetControlText(bindingVolumeCaption_, Localization::Text(L"Ses:", L"Volume:"));
+    SetControlText(bindingFadeInCaption_, Localization::Text(L"Giriş (ms):", L"Fade in (ms):"));
+    SetControlText(bindingFadeOutCaption_, Localization::Text(L"Çıkış (ms):", L"Fade out (ms):"));
     SetControlText(
         captureHotkeyButton_,
         capturingBindingHotkey_
@@ -4985,7 +5052,13 @@ void ControlWindow::PopulateBindings()
             Utf8ToWide(binding.keyName) + L"  ->  " +
             binding.soundFile.wstring() + L"  |  " +
             BuildVolumeText(binding.volume) + L"  |  " +
-            Utf8ToWide(std::string{PlaybackModeName(binding.mode)});
+            Utf8ToWide(std::string{PlaybackModeName(binding.mode)}) +
+            ((binding.fadeInMilliseconds > 0 ||
+                binding.fadeOutMilliseconds > 0)
+                ? L"  |  " + std::to_wstring(binding.fadeInMilliseconds) +
+                    L"/" + std::to_wstring(binding.fadeOutMilliseconds) +
+                    L" ms fade"
+                : L"");
 
         SendMessageW(
             bindingsList_,
@@ -5786,7 +5859,9 @@ void ControlWindow::UpdatePlaybackControls(const bool force)
     {
         const std::wstring state = snapshot.status == PlaybackStatus::Paused
             ? Localization::Text(L"Duraklatıldı", L"Paused")
-            : Localization::Text(L"Çalıyor", L"Playing");
+            : (snapshot.status == PlaybackStatus::Stopping
+                ? Localization::Text(L"Kapanıyor", L"Stopping")
+                : Localization::Text(L"Çalıyor", L"Playing"));
         const std::wstring mode = Utf8ToWide(
             std::string{PlaybackModeName(snapshot.mode)}
         );
@@ -5870,13 +5945,16 @@ void ControlWindow::LoadSelectedPlaybackIntoControls()
     );
 
     const bool available = snapshotIterator != playbackSnapshots_.end();
-    const bool seekAvailable = available &&
+    const bool stopping = available &&
+        snapshotIterator->status == PlaybackStatus::Stopping;
+    const bool controllable = available && !stopping;
+    const bool seekAvailable = controllable &&
         snapshotIterator->durationSeconds > 0.0f;
 
     EnableWindow(playbackSeekSlider_, seekAvailable ? TRUE : FALSE);
     EnableWindow(playbackVolumeSlider_, available ? TRUE : FALSE);
-    EnableWindow(playbackPauseResumeButton_, available ? TRUE : FALSE);
-    EnableWindow(playbackStopButton_, available ? TRUE : FALSE);
+    EnableWindow(playbackPauseResumeButton_, controllable ? TRUE : FALSE);
+    EnableWindow(playbackStopButton_, controllable ? TRUE : FALSE);
 
     populatingPlaybackControls_ = true;
 
@@ -5910,7 +5988,9 @@ void ControlWindow::LoadSelectedPlaybackIntoControls()
 
     const std::wstring state = snapshot.status == PlaybackStatus::Paused
         ? Localization::Text(L"Duraklatıldı", L"Paused")
-        : Localization::Text(L"Çalıyor", L"Playing");
+        : (snapshot.status == PlaybackStatus::Stopping
+            ? Localization::Text(L"Kapanıyor", L"Stopping")
+            : Localization::Text(L"Çalıyor", L"Playing"));
     const std::wstring mode = Utf8ToWide(
         std::string{PlaybackModeName(snapshot.mode)}
     );
@@ -5996,7 +6076,9 @@ void ControlWindow::LoadSelectedPlaybackIntoControls()
         playbackPauseResumeButton_,
         snapshot.status == PlaybackStatus::Paused
             ? Localization::Text(L"Devam ettir", L"Resume")
-            : Localization::Text(L"Duraklat", L"Pause")
+            : (snapshot.status == PlaybackStatus::Stopping
+                ? Localization::Text(L"Kapanıyor", L"Stopping")
+                : Localization::Text(L"Duraklat", L"Pause"))
     );
 
     populatingPlaybackControls_ = false;
@@ -6021,6 +6103,15 @@ void ControlWindow::ToggleSelectedPlaybackPause()
 
     if (snapshotIterator == playbackSnapshots_.end())
     {
+        return;
+    }
+
+    if (snapshotIterator->status == PlaybackStatus::Stopping)
+    {
+        SetStatus(Localization::Text(
+            L"Ses fade-out ile kapanıyor.",
+            L"The sound is stopping with fade-out."
+        ));
         return;
     }
 
@@ -7116,6 +7207,14 @@ void ControlWindow::LoadSelectedBindingIntoEditor()
         static_cast<LPARAM>(binding.volume * 100.0f + 0.5f)
     );
     UpdateBindingVolumeLabel();
+    SetControlText(
+        bindingFadeInEdit_,
+        std::to_wstring(binding.fadeInMilliseconds)
+    );
+    SetControlText(
+        bindingFadeOutEdit_,
+        std::to_wstring(binding.fadeOutMilliseconds)
+    );
 
     SetStatus(Localization::Text(
         L"Seçili ses ataması düzenleyiciye yüklendi.",
@@ -7138,6 +7237,8 @@ void ControlWindow::ClearBindingEditor()
     SelectComboText(bindingModeCombo_, L"restart");
     SendMessageW(bindingVolumeSlider_, TBM_SETPOS, TRUE, 100);
     UpdateBindingVolumeLabel();
+    SetControlText(bindingFadeInEdit_, L"0");
+    SetControlText(bindingFadeOutEdit_, L"0");
     RefreshLocalizedText();
 }
 
@@ -7342,11 +7443,64 @@ bool ControlWindow::AddOrUpdateBinding(const bool updateExisting)
         0
     ));
 
+    const auto parseFadeMilliseconds = [](const HWND edit)
+        -> std::optional<unsigned int>
+    {
+        std::wstring value = GetControlText(edit);
+        const std::size_t first = value.find_first_not_of(L" \t\r\n");
+
+        if (first == std::wstring::npos)
+        {
+            return 0U;
+        }
+
+        const std::size_t last = value.find_last_not_of(L" \t\r\n");
+        value = value.substr(first, last - first + 1);
+        const std::string utf8 = WideToUtf8(value);
+        unsigned int milliseconds = 0;
+        const auto [pointer, error] = std::from_chars(
+            utf8.data(),
+            utf8.data() + utf8.size(),
+            milliseconds
+        );
+
+        if (error != std::errc{} ||
+            pointer != utf8.data() + utf8.size() ||
+            milliseconds > 10000)
+        {
+            return std::nullopt;
+        }
+
+        return milliseconds;
+    };
+
+    const auto fadeInMilliseconds =
+        parseFadeMilliseconds(bindingFadeInEdit_);
+    const auto fadeOutMilliseconds =
+        parseFadeMilliseconds(bindingFadeOutEdit_);
+
+    if (!fadeInMilliseconds.has_value() ||
+        !fadeOutMilliseconds.has_value())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Fade süreleri 0 ile 10000 ms arasında tam sayı olmalı.",
+                L"Fade times must be whole numbers between 0 and 10000 ms."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
     SoundBinding binding;
     binding.keyName = WideToUtf8(hotkeyText);
     binding.soundFile = relativePath.lexically_normal();
     binding.volume = static_cast<float>(volume) / 100.0f;
     binding.mode = mode;
+    binding.fadeInMilliseconds = *fadeInMilliseconds;
+    binding.fadeOutMilliseconds = *fadeOutMilliseconds;
 
     if (updateExisting)
     {

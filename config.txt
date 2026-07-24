@@ -65,7 +65,7 @@ exit=CTRL+SHIFT+F12
 
 # TUŞ ATAMALARI
 # Varsayılan: volume=1.00 ve mode=restart
-F1=example.wav|volume=0.80|mode=restart
+F1=example.wav|volume=0.80|mode=restart|fade_in_ms=0|fade_out_ms=0
 F2=example2.wav|volume=1.00|mode=toggle
 F3=example.wav|volume=0.60|mode=loop
 F4=example2.wav|volume=1.00|mode=overlap

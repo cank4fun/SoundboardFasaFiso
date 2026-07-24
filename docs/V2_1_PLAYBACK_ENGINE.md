@@ -1,5 +1,9 @@
 # v2.1 User-Mode Playback Engine
 
+## Per-binding fades
+
+Bindings may define `fade_in_ms` and `fade_out_ms` from 0 to 10000 milliseconds. Fade-in applies to new playback sessions and restarts. Fade-out applies to manual session stop, toggle/loop stop, and Stop All. Runtime teardown remains immediate so reload and exit are never delayed.
+
 ## Scope
 
 This work remains entirely in user mode. It does not create a kernel driver,
