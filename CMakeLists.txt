@@ -161,6 +161,7 @@ add_executable(
     src/import/SoundImporter.cpp
     src/localization/Localization.cpp
     src/platform/ApplicationPaths.cpp
+    src/platform/MediaToolManager.cpp
     src/platform/DebugConsole.cpp
     src/platform/SingleInstance.cpp
     src/platform/StartupManager.cpp
@@ -282,6 +283,7 @@ target_link_libraries(
         dwmapi
         uxtheme
         winhttp
+        bcrypt
 )
 
 add_custom_target(
@@ -781,6 +783,62 @@ if(BUILD_TESTING)
     add_test(
         NAME ApplicationPaths
         COMMAND SoundBoardFasaFisoApplicationPathsTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoMediaToolManagerTests
+        EXCLUDE_FROM_ALL
+        tests/MediaToolManagerTests.cpp
+        src/platform/MediaToolManager.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoMediaToolManagerTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoMediaToolManagerTests
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFisoMediaToolManagerTests
+        PRIVATE
+            bcrypt
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoMediaToolManagerTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoMediaToolManagerTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoMediaToolManagerTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME MediaToolManager
+        COMMAND SoundBoardFasaFisoMediaToolManagerTests
     )
 
     add_executable(
