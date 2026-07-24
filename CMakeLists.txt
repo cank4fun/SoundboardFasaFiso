@@ -179,6 +179,7 @@ add_executable(
     src/hotkeys/HotkeyManager.cpp
     src/import/SoundImporter.cpp
     src/import/MediaImportWorkspace.cpp
+    src/import/UrlImportService.cpp
     src/localization/Localization.cpp
     src/platform/ApplicationPaths.cpp
     src/platform/MediaToolExecutor.cpp
@@ -1084,6 +1085,69 @@ if(BUILD_TESTING)
     add_test(
         NAME MediaImportWorkspace
         COMMAND SoundBoardFasaFisoMediaImportWorkspaceTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoUrlImportServiceTests
+        EXCLUDE_FROM_ALL
+        tests/UrlImportServiceTests.cpp
+        src/import/UrlImportService.cpp
+        src/import/MediaImportWorkspace.cpp
+        src/platform/MediaToolCommandBuilder.cpp
+        src/platform/MediaToolExecutor.cpp
+        src/platform/MediaToolManager.cpp
+        src/platform/ProcessRunner.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoUrlImportServiceTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoUrlImportServiceTests
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+            UNICODE
+            _UNICODE
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFisoUrlImportServiceTests
+        PRIVATE
+            bcrypt
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoUrlImportServiceTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoUrlImportServiceTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoUrlImportServiceTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME UrlImportService
+        COMMAND SoundBoardFasaFisoUrlImportServiceTests
     )
 
     add_executable(
