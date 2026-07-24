@@ -13,6 +13,7 @@
 #include "gui/ControlWindow.hpp"
 #include "hotkeys/HotkeyManager.hpp"
 #include "localization/Localization.hpp"
+#include "platform/ApplicationPaths.hpp"
 #include "platform/DebugConsole.hpp"
 #include "platform/SingleInstance.hpp"
 #include "platform/StartupManager.hpp"
@@ -614,14 +615,44 @@ int WINAPI wWinMain(
         return 1;
     }
 
-    const std::filesystem::path programFolder =
-        executablePath->parent_path();
+    const ApplicationPathResolution pathResolution =
+        ResolveApplicationPaths(*executablePath);
+
+    if (!pathResolution.paths.has_value())
+    {
+        MessageBoxW(
+            nullptr,
+            pathResolution.errorMessage.c_str(),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return 1;
+    }
+
+    const ApplicationPaths applicationPaths =
+        *pathResolution.paths;
+    std::wstring storageErrorMessage;
+
+    if (!PrepareApplicationStorage(
+            applicationPaths,
+            storageErrorMessage
+        ))
+    {
+        MessageBoxW(
+            nullptr,
+            storageErrorMessage.c_str(),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return 1;
+    }
+
     const std::filesystem::path soundsFolder =
-        programFolder / "sounds";
+        applicationPaths.soundsFolder;
     const std::filesystem::path logsFolder =
-        programFolder / "logs";
+        applicationPaths.logsFolder;
     const std::filesystem::path configPath =
-        programFolder / "config.txt";
+        applicationPaths.configPath;
 
     std::filesystem::path pendingConfigPath = configPath;
     pendingConfigPath += L".pending";
@@ -652,6 +683,19 @@ int WINAPI wWinMain(
             MB_OK | MB_ICONERROR
         );
         return 1;
+    }
+
+    if (IsCurrentProcessElevated())
+    {
+        MessageBoxW(
+            nullptr,
+            Localization::Text(
+                L"Uygulama yönetici olarak çalışıyor. SoundBoardFasaFiso yönetici yetkisi istemez; Windows güvenlik sınırı nedeniyle normal Explorer pencerelerinden sürükle-bırak çalışmayabilir. Uygulamayı kapatıp normal şekilde açman önerilir.",
+                L"The application is running as administrator. SoundBoardFasaFiso does not require elevation, and Windows may block drag and drop from normal Explorer windows across the integrity boundary. Close it and launch it normally."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
     }
 
     SingleInstance singleInstance;
@@ -702,10 +746,18 @@ int WINAPI wWinMain(
 
     std::cout
         << Localization::Text(
+            "Veri modu: ",
+            "Data mode: "
+        )
+        << (applicationPaths.storageMode == ApplicationStorageMode::Portable
+            ? Localization::Text("portable", "portable")
+            : "LocalAppData")
+        << '\n'
+        << Localization::Text(
             "Kullanılan config: ",
             "Config in use: "
         )
-        << PathToUtf8(configPath.filename())
+        << PathToUtf8(configPath)
         << '\n';
 
     if (!logger.GetLogPath().empty())
@@ -715,9 +767,7 @@ int WINAPI wWinMain(
                 "Oturum logu: ",
                 "Session log: "
             )
-            << PathToUtf8(
-                logsFolder.filename() / logger.GetLogPath().filename()
-            )
+            << PathToUtf8(logger.GetLogPath())
             << '\n';
     }
 

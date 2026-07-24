@@ -35,6 +35,8 @@ passes the finished file to `SoundImporter`.
 
 The URL workflow will include tool discovery, progress and cancellation,
 playlist opt-in, collision-safe naming, cleanup of partial downloads and clear
-error output. `yt-dlp.exe` and `ffmpeg.exe` will remain optional external tools;
-they are not bundled into the portable application without their own packaging
-and license review.
+error output. `yt-dlp.exe`, `ffmpeg.exe`, and `ffprobe.exe` will be private verified files
+inside the portable `tools` directory. Official packages will pin versions,
+verify hashes and include license notices. The tools will never be installed
+system-wide or added to PATH, and local playback will continue when they are
+missing or damaged.

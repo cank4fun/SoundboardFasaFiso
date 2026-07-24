@@ -160,6 +160,7 @@ add_executable(
     src/hotkeys/HotkeyManager.cpp
     src/import/SoundImporter.cpp
     src/localization/Localization.cpp
+    src/platform/ApplicationPaths.cpp
     src/platform/DebugConsole.cpp
     src/platform/SingleInstance.cpp
     src/platform/StartupManager.cpp
@@ -219,6 +220,7 @@ if(MSVC)
             /guard:cf
             /DYNAMICBASE
             /NXCOMPAT
+            "/MANIFESTUAC:level='asInvoker' uiAccess='false'"
             $<$<CONFIG:Release>:/OPT:REF>
             $<$<CONFIG:Release>:/OPT:ICF>
             $<$<CONFIG:Release>:/INCREMENTAL:NO>
@@ -273,6 +275,7 @@ target_link_libraries(
         SoundBoardFasaFisoRnNoise
         user32
         shell32
+        ole32
         comctl32
         comdlg32
         advapi32
@@ -296,7 +299,18 @@ add_custom_target(
         "-DDEST_CONFIG=${CMAKE_CURRENT_BINARY_DIR}/config.txt"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SyncConfigIfMissing.cmake"
 
-    COMMENT "Syncing example sounds and creating config.txt when missing..."
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/portable.flag"
+        "${CMAKE_CURRENT_BINARY_DIR}/portable.flag"
+
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "${CMAKE_CURRENT_BINARY_DIR}/tools"
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources/MediaToolsREADME.txt"
+        "${CMAKE_CURRENT_BINARY_DIR}/tools/README.txt"
+
+    COMMENT "Syncing standalone runtime files and example sounds..."
     VERBATIM
 )
 
@@ -712,6 +726,64 @@ if(BUILD_TESTING)
     )
 
     add_executable(
+        SoundBoardFasaFisoApplicationPathsTests
+        EXCLUDE_FROM_ALL
+        tests/ApplicationPathsTests.cpp
+        src/platform/ApplicationPaths.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoApplicationPathsTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoApplicationPathsTests
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+    )
+
+    target_link_libraries(
+        SoundBoardFasaFisoApplicationPathsTests
+        PRIVATE
+            shell32
+            ole32
+            advapi32
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoApplicationPathsTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoApplicationPathsTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoApplicationPathsTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME ApplicationPaths
+        COMMAND SoundBoardFasaFisoApplicationPathsTests
+    )
+
+    add_executable(
         SoundBoardFasaFisoSoundImporterTests
         EXCLUDE_FROM_ALL
         tests/SoundImporterTests.cpp
@@ -995,6 +1067,9 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         COMMAND ${CMAKE_COMMAND} -E make_directory
             "${PORTABLE_RELEASE_DIR}/sounds"
 
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${PORTABLE_RELEASE_DIR}/tools"
+
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "$<TARGET_FILE:SoundBoardFasaFiso>"
             "${PORTABLE_RELEASE_DIR}/SoundBoardFasaFiso.exe"
@@ -1002,6 +1077,14 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/config.txt"
             "${PORTABLE_RELEASE_DIR}/config.txt"
+
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/portable.flag"
+            "${PORTABLE_RELEASE_DIR}/portable.flag"
+
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/resources/MediaToolsREADME.txt"
+            "${PORTABLE_RELEASE_DIR}/tools/README.txt"
 
         COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_CURRENT_SOURCE_DIR}/sounds"

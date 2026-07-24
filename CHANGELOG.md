@@ -2,6 +2,9 @@
 
 ## 2.1.0-alpha.1 - Unreleased
 
+- Added a strict standalone runtime path layer with explicit portable mode, LocalAppData fallback, writability checks and first-run default copying.
+- Embedded an `asInvoker` manifest, added elevated-process warnings for drag-and-drop reliability, and packaged `portable.flag` plus a private `tools` directory.
+- Added application-path tests and documented the no-admin, no-runtime-install standalone contract.
 - Added per-binding fade-in and fade-out envelopes with millisecond controls.
 - Applied fade-out consistently to selected-session stop, toggle/loop stop, and Stop All while keeping shutdown/reload teardown immediate.
 

@@ -21,7 +21,7 @@
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
-There is no installer, database or GUI framework. Audio settings, control hotkeys, and sound bindings can be edited from the native control panel; `config.txt` remains available for manual workflows.
+There is no installer, database or GUI framework. The official ZIP is a self-contained folder: no Visual C++ redistributable, .NET, Python, CMake, vcpkg or administrator rights are required. Audio settings, control hotkeys, and sound bindings can be edited from the native control panel; `config.txt` remains available for manual workflows.
 
 ## Features
 
@@ -46,6 +46,7 @@ There is no installer, database or GUI framework. Audio settings, control hotkey
 - Modern native Win32 control panel with persistent light/dark themes, live signal meters, device selectors, hotkey capture and sound-binding editing
 - UTF-8 console and Unicode file-path support
 - Tray menu and single-instance protection
+- Strict portable data mode through `portable.flag`, with clear writability checks and no silent system-wide installation
 - Portable Release ZIP generation with CMake
 
 ## Quick start
@@ -75,14 +76,25 @@ A matching checksum confirms that the archive is identical to the release asset;
 ```text
 SoundBoardFasaFiso/
 ├── SoundBoardFasaFiso.exe
+├── portable.flag       # keeps mutable data inside this folder
 ├── config.txt
 ├── README.txt
 ├── LICENSE
 ├── THIRD_PARTY_NOTICES.txt
 ├── WEBRTC_THIRD_PARTY_NOTICES.txt  # AEC-enabled official builds
+├── tools/         # private verified media tools; never installed into PATH
 ├── logs/          # created automatically
 └── sounds/
 ```
+
+
+### Standalone storage behavior
+
+The official archive contains `portable.flag`. In this mode, configuration, backups, logs, imported sounds and private tools all stay inside the extracted folder. Portable mode requires a writable location; placing the folder under Program Files or another protected directory produces a clear startup error instead of silently redirecting data elsewhere.
+
+If the marker is intentionally removed, the application uses `%LOCALAPPDATA%\SoundBoardFasaFiso` and copies packaged defaults only when user data does not already exist. This fallback is for future installer or loose-EXE workflows; official releases remain strict portable folders.
+
+The embedded manifest requests `asInvoker`. SoundBoardFasaFiso never needs elevation. Running it manually as administrator can make Explorer drag and drop fail because Windows blocks messages between different integrity levels, so an elevated launch displays a warning.
 
 ## Configuration
 

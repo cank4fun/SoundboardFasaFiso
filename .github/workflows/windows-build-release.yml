@@ -105,6 +105,7 @@ jobs:
           --target
           SoundBoardFasaFisoMicrophoneProcessingSettingsTests
           SoundBoardFasaFisoPlaybackModeTests
+          SoundBoardFasaFisoApplicationPathsTests
           SoundBoardFasaFisoSoundImporterTests
           SoundBoardFasaFisoConfigMicrophoneProcessingTests
           SoundBoardFasaFisoMicrophoneProcessorTests
@@ -150,12 +151,14 @@ jobs:
           $root = Join-Path $extract "SoundBoardFasaFiso"
           $required = @(
             "SoundBoardFasaFiso.exe",
+            "portable.flag",
             "config.txt",
             "README.txt",
             "LICENSE",
             "THIRD_PARTY_NOTICES.txt",
             "WEBRTC_THIRD_PARTY_NOTICES.txt",
-            "sounds"
+            "sounds",
+            "tools"
           )
 
           foreach ($item in $required) {
@@ -163,6 +166,16 @@ jobs:
             if (-not (Test-Path $path)) {
               throw "Portable package is missing: $item"
             }
+          }
+
+          $portableMarker = Join-Path $root "portable.flag"
+          if ((Get-Item $portableMarker).Length -eq 0) {
+            throw "Portable marker is empty."
+          }
+
+          $mediaToolsReadme = Join-Path $root "tools\README.txt"
+          if (-not (Test-Path $mediaToolsReadme)) {
+            throw "Portable tools directory is missing its safety notice."
           }
 
           $unexpected = @(

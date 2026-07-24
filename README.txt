@@ -34,8 +34,10 @@ Hiç etkin ses ataması olmasa veya eski atamalardaki dosyalar kayıp olsa bile 
 KLASÖR YAPISI
 -------------
 SoundBoardFasaFiso.exe
+portable.flag
 config.txt
 sounds\
+tools\
 README.txt
 LICENSE
 THIRD_PARTY_NOTICES.txt
@@ -170,7 +172,10 @@ kalıcı olarak zayıflatma.
 
 NOTLAR
 ------
-- Program config.txt ve sounds klasörünü EXE'nin yanından okur.
+- Resmi ZIP içindeki portable.flag nedeniyle config, log, import ve tools verileri EXE klasöründe kalır.
+- Portable klasör yazılabilir olmalıdır; Program Files gibi korumalı konumlarda uygulama açık hata verir ve başka yere sessizce veri yazmaz.
+- portable.flag kaldırılırsa veri klasörü %LOCALAPPDATA%\SoundBoardFasaFiso olur; mevcut kullanıcı dosyaları üzerine yazılmaz.
+- Uygulama yönetici yetkisi istemez. Yönetici olarak elle açmak Explorer sürükle-bırak özelliğini engelleyebilir.
 - Ses yolları sounds klasörüne göre yazılır; alt klasör kullanılabilir.
 - Cihaz koparsa program açık kalır ve yeniden bağlanmayı dener.
 - Hatalı reload uygulanmaz; son çalışan ayarlar korunur.
