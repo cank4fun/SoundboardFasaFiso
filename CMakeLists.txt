@@ -181,6 +181,7 @@ add_executable(
     src/localization/Localization.cpp
     src/platform/ApplicationPaths.cpp
     src/platform/MediaToolExecutor.cpp
+    src/platform/MediaToolCommandBuilder.cpp
     src/platform/MediaToolManager.cpp
     src/platform/ProcessRunner.cpp
     src/platform/DebugConsole.cpp
@@ -972,6 +973,58 @@ if(BUILD_TESTING)
     add_test(
         NAME MediaToolExecutor
         COMMAND SoundBoardFasaFisoMediaToolExecutorTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoMediaToolCommandBuilderTests
+        EXCLUDE_FROM_ALL
+        tests/MediaToolCommandBuilderTests.cpp
+        src/platform/MediaToolCommandBuilder.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoMediaToolCommandBuilderTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoMediaToolCommandBuilderTests
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+            UNICODE
+            _UNICODE
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoMediaToolCommandBuilderTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoMediaToolCommandBuilderTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoMediaToolCommandBuilderTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME MediaToolCommandBuilder
+        COMMAND SoundBoardFasaFisoMediaToolCommandBuilderTests
     )
 
     add_executable(
