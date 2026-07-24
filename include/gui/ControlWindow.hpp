@@ -10,6 +10,8 @@
 
 #include "audio/PlaybackState.hpp"
 #include "config/Config.hpp"
+#include "import/UrlImportService.hpp"
+#include "platform/MediaToolManager.hpp"
 #include "update/UpdateChecker.hpp"
 
 #include <Windows.h>
@@ -51,7 +53,8 @@ public:
         const std::vector<std::string>& playbackDevices,
         const std::vector<std::string>& captureDevices,
         const ControlWindowCommandIds& commandIds,
-        Audio* audio
+        Audio* audio,
+        const std::optional<MediaToolBundleStatus>& mediaToolBundle
     );
 
     void Shutdown();
@@ -128,9 +131,11 @@ private:
     static constexpr int IdPlaybackVolumeSlider = 1037;
     static constexpr int IdBindingFadeInEdit = 1038;
     static constexpr int IdBindingFadeOutEdit = 1039;
+    static constexpr int IdImportUrl = 1040;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
+    static constexpr UINT UrlImportCompletedMessage = WM_APP + 65;
     static constexpr UINT LevelMeterIntervalMilliseconds = 40;
 
     static LRESULT CALLBACK WindowProcedure(
@@ -198,6 +203,9 @@ private:
     void ToggleMicrophoneTestMonitor();
     void StopMicrophoneTestMonitor();
     void HandleUpdateCheckCompleted();
+    void ToggleUrlImport();
+    void HandleUrlImportCompleted();
+    void UpdateUrlImportControls();
     bool SavePendingSettings();
 
     void LoadSelectedBindingIntoEditor();
@@ -243,6 +251,7 @@ private:
     std::filesystem::path pendingConfigPath_;
     std::filesystem::path soundsFolder_;
     std::filesystem::path logsFolder_;
+    std::optional<MediaToolBundleStatus> mediaToolBundle_;
 
     Config currentConfig_;
     std::vector<std::string> playbackDevices_;
@@ -375,6 +384,7 @@ private:
     HWND bindingFileCaption_ = nullptr;
     HWND bindingFileEdit_ = nullptr;
     HWND browseSoundButton_ = nullptr;
+    HWND importUrlButton_ = nullptr;
     HWND bindingModeCaption_ = nullptr;
     HWND bindingModeCombo_ = nullptr;
     HWND bindingVolumeCaption_ = nullptr;
@@ -451,6 +461,12 @@ private:
     std::optional<UpdateCheckResult> pendingUpdateResult_;
     bool pendingUpdateShowCurrentResult_ = false;
     std::atomic_bool updateCheckRunning_{false};
+
+    std::jthread urlImportThread_;
+    std::mutex urlImportMutex_;
+    std::optional<UrlImportResult> pendingUrlImportResult_;
+    std::atomic_bool urlImportRunning_{false};
+    std::atomic_bool urlImportCancellationRequested_{false};
 
     int selectedBindingIndex_ = -1;
     bool capturingBindingHotkey_ = false;

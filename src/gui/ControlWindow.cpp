@@ -331,7 +331,8 @@ bool ControlWindow::Initialize(
     const std::vector<std::string>& playbackDevices,
     const std::vector<std::string>& captureDevices,
     const ControlWindowCommandIds& commandIds,
-    Audio* const audio
+    Audio* const audio,
+    const std::optional<MediaToolBundleStatus>& mediaToolBundle
 )
 {
     Shutdown();
@@ -345,6 +346,7 @@ bool ControlWindow::Initialize(
     pendingConfigPath_ += L".pending";
     soundsFolder_ = soundsFolder;
     logsFolder_ = configPath.parent_path() / L"logs";
+    mediaToolBundle_ = mediaToolBundle;
     currentConfig_ = config;
     activeTheme_ = config.GetTheme();
     playbackDevices_ = playbackDevices;
@@ -526,6 +528,13 @@ void ControlWindow::Shutdown()
 {
     StopMicrophoneTestMonitor();
 
+    urlImportCancellationRequested_.store(true);
+
+    if (urlImportThread_.joinable())
+    {
+        urlImportThread_.join();
+    }
+
     if (updateCheckThread_.joinable())
     {
         updateCheckThread_.join();
@@ -538,6 +547,14 @@ void ControlWindow::Shutdown()
     }
 
     updateCheckRunning_.store(false);
+
+    {
+        const std::scoped_lock lock{urlImportMutex_};
+        pendingUrlImportResult_.reset();
+    }
+
+    urlImportRunning_.store(false);
+    urlImportCancellationRequested_.store(false);
 
     if (acceleratorTable_ != nullptr)
     {
@@ -570,6 +587,7 @@ void ControlWindow::Shutdown()
     pendingConfigPath_.clear();
     soundsFolder_.clear();
     logsFolder_.clear();
+    mediaToolBundle_.reset();
     playbackDevices_.clear();
     captureDevices_.clear();
     pendingBindings_.clear();
@@ -695,6 +713,7 @@ void ControlWindow::Shutdown()
     bindingFileCaption_ = nullptr;
     bindingFileEdit_ = nullptr;
     browseSoundButton_ = nullptr;
+    importUrlButton_ = nullptr;
     bindingModeCaption_ = nullptr;
     bindingModeCombo_ = nullptr;
     bindingVolumeCaption_ = nullptr;
@@ -1206,6 +1225,10 @@ LRESULT ControlWindow::HandleWindowMessage(
             HandleUpdateCheckCompleted();
             return 0;
 
+        case UrlImportCompletedMessage:
+            HandleUrlImportCompleted();
+            return 0;
+
         case WM_TIMER:
             if (wParam == LevelMeterTimerId)
             {
@@ -1381,6 +1404,10 @@ LRESULT ControlWindow::HandleWindowMessage(
 
                 case IdBrowseSound:
                     BrowseForSoundFile();
+                    return 0;
+
+                case IdImportUrl:
+                    ToggleUrlImport();
                     return 0;
 
                 case IdCaptureHotkey:
@@ -2148,6 +2175,9 @@ bool ControlWindow::CreateControls()
     browseSoundButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdBrowseSound
     );
+    importUrlButton_ = createControl(
+        L"BUTTON", L"URL", BS_OWNERDRAW | WS_TABSTOP, IdImportUrl
+    );
     bindingModeCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     bindingModeCombo_ = createControl(
         L"COMBOBOX",
@@ -2294,7 +2324,8 @@ bool ControlWindow::CreateControls()
         exitHotkeyCaption_, exitHotkeyEdit_, bindingsGroup_, bindingsList_,
         bindingEditorGroup_, bindingHotkeyCaption_, bindingHotkeyEdit_,
         captureHotkeyButton_, bindingFileCaption_, bindingFileEdit_,
-        browseSoundButton_, bindingModeCaption_, bindingModeCombo_,
+        browseSoundButton_, importUrlButton_,
+        bindingModeCaption_, bindingModeCombo_,
         bindingVolumeCaption_, bindingVolumeSlider_, bindingVolumeValue_,
         bindingFadeInCaption_, bindingFadeInEdit_,
         bindingFadeOutCaption_, bindingFadeOutEdit_,
@@ -2504,6 +2535,7 @@ void ControlWindow::LayoutControls(
         const int editorMargin = 10;
         const int editorLabelWidth = 72;
         const int editorButtonWidth = 88;
+        const int fileButtonWidth = 68;
         const int editorContentX = editorX + editorMargin;
         const int editorContentWidth = editorWidth - editorMargin * 2;
         int editorY = bindingsInnerY + 32;
@@ -2544,20 +2576,36 @@ void ControlWindow::LayoutControls(
             20,
             TRUE
         );
+        const int fileEditWidth = std::max(
+            72,
+            editorContentWidth - editorLabelWidth -
+                fileButtonWidth * 2 - ButtonGap * 2
+        );
+
         moveWindow(
             bindingFileEdit_,
             editorContentX + editorLabelWidth,
             editorY,
-            editorContentWidth - editorLabelWidth -
-                editorButtonWidth - ButtonGap,
+            fileEditWidth,
             25,
             TRUE
         );
         moveWindow(
             browseSoundButton_,
-            editorContentX + editorContentWidth - editorButtonWidth,
+            editorContentX + editorLabelWidth +
+                fileEditWidth + ButtonGap,
             editorY,
-            editorButtonWidth,
+            fileButtonWidth,
+            25,
+            TRUE
+        );
+        moveWindow(
+            importUrlButton_,
+            editorContentX + editorLabelWidth +
+                fileEditWidth + ButtonGap * 2 +
+                fileButtonWidth,
+            editorY,
+            fileButtonWidth,
             25,
             TRUE
         );
@@ -3513,7 +3561,8 @@ void ControlWindow::UpdatePageVisibility()
         bindingsGroup_, bindingsList_, bindingEditorGroup_,
         bindingHotkeyCaption_, bindingHotkeyEdit_, captureHotkeyButton_,
         bindingFileCaption_, bindingFileEdit_, browseSoundButton_,
-        bindingModeCaption_, bindingModeCombo_, bindingVolumeCaption_,
+        importUrlButton_, bindingModeCaption_, bindingModeCombo_,
+        bindingVolumeCaption_,
         bindingVolumeSlider_, bindingVolumeValue_, bindingFadeInCaption_,
         bindingFadeInEdit_, bindingFadeOutCaption_, bindingFadeOutEdit_,
         addBindingButton_,
@@ -3863,8 +3912,9 @@ void ControlWindow::ApplyFonts()
         microphoneProcessingTabButton_, hotkeysTabButton_,
         playbackTabButton_, refreshDevicesButton_, applySettingsButton_,
         microphoneTestMonitorButton_,
-        captureHotkeyButton_, browseSoundButton_, addBindingButton_,
-        updateBindingButton_, removeBindingButton_, clearBindingButton_,
+        captureHotkeyButton_, browseSoundButton_, importUrlButton_,
+        addBindingButton_, updateBindingButton_, removeBindingButton_,
+        clearBindingButton_,
         reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_,
         openConfigButton_, openSoundsButton_, openLogsButton_,
         checkUpdatesButton_, consoleButton_, exitButton_,
@@ -4650,7 +4700,9 @@ bool ControlWindow::IsPrimaryButton(const HWND control) const
 {
     return control == applySettingsButton_ ||
         control == addBindingButton_ ||
-        control == updateBindingButton_;
+        control == updateBindingButton_ ||
+        (control == importUrlButton_ &&
+            !urlImportRunning_.load());
 }
 
 bool ControlWindow::IsNavigationTab(const HWND control) const
@@ -4666,7 +4718,9 @@ bool ControlWindow::IsDangerButton(const HWND control) const
 {
     return control == exitButton_ ||
         control == removeBindingButton_ ||
-        control == playbackStopButton_;
+        control == playbackStopButton_ ||
+        (control == importUrlButton_ &&
+            urlImportRunning_.load());
 }
 
 HBRUSH ControlWindow::StaticBrushFor(const HWND control) const

@@ -833,7 +833,8 @@ int WINAPI wWinMain(
         Audio::EnumeratePlaybackDevices(),
         Audio::EnumerateCaptureDevices(),
         controlWindowCommandIds,
-        &audio
+        &audio,
+        mediaToolBundle
     ))
     {
         controlWindow.Show();

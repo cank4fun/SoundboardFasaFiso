@@ -176,6 +176,7 @@ add_executable(
     src/config/Config.cpp
     src/diagnostics/Logger.cpp
     src/gui/ControlWindow.cpp
+    src/gui/ControlWindowUrlImport.cpp
     src/hotkeys/HotkeyManager.cpp
     src/import/SoundImporter.cpp
     src/import/MediaImportWorkspace.cpp
