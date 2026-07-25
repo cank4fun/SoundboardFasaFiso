@@ -177,7 +177,9 @@ add_executable(
     src/diagnostics/Logger.cpp
     src/editor/AudioDocument.cpp
     src/editor/AudioDocumentWav.cpp
+    src/editor/AudioEditorViewport.cpp
     src/editor/AudioEditorWindow.cpp
+    src/editor/AudioPreviewPlayer.cpp
     src/editor/AudioWaveformCache.cpp
     src/gui/ControlWindow.cpp
     src/gui/ControlWindowLocalMediaImport.cpp
@@ -859,6 +861,50 @@ if(BUILD_TESTING)
     add_test(
         NAME AudioWaveformCache
         COMMAND SoundBoardFasaFisoAudioWaveformCacheTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoAudioEditorViewportTests
+        EXCLUDE_FROM_ALL
+        tests/AudioEditorViewportTests.cpp
+        src/editor/AudioDocument.cpp
+        src/editor/AudioEditorViewport.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoAudioEditorViewportTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoAudioEditorViewportTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoAudioEditorViewportTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoAudioEditorViewportTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME AudioEditorViewport
+        COMMAND SoundBoardFasaFisoAudioEditorViewportTests
     )
 
     add_executable(

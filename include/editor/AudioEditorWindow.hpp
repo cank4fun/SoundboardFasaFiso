@@ -10,6 +10,8 @@
 
 #include "config/Config.hpp"
 #include "editor/AudioDocument.hpp"
+#include "editor/AudioEditorViewport.hpp"
+#include "editor/AudioPreviewPlayer.hpp"
 #include "editor/AudioWaveformCache.hpp"
 
 #include <Windows.h>
@@ -42,11 +44,20 @@ public:
 
 private:
     static constexpr int InitialClientWidth = 980;
-    static constexpr int InitialClientHeight = 580;
-    static constexpr int MinimumClientWidth = 720;
-    static constexpr int MinimumClientHeight = 420;
+    static constexpr int InitialClientHeight = 620;
+    static constexpr int MinimumClientWidth = 760;
+    static constexpr int MinimumClientHeight = 480;
     static constexpr int IdOpenFile = 2100;
     static constexpr int IdClose = 2101;
+    static constexpr int IdPlayPause = 2102;
+    static constexpr int IdStop = 2103;
+    static constexpr int IdZoomOut = 2104;
+    static constexpr int IdZoomFit = 2105;
+    static constexpr int IdZoomIn = 2106;
+    static constexpr int IdWaveformScroll = 2107;
+    static constexpr UINT_PTR PlaybackTimerId = 1U;
+    static constexpr UINT PlaybackTimerMilliseconds = 33U;
+    static constexpr int ScrollRangeMaximum = 10000;
 
     static LRESULT CALLBACK WindowProcedure(
         HWND window,
@@ -76,8 +87,23 @@ private:
     void ApplyFonts();
     void ReleaseResources();
     void UpdateMetadataText();
+    void UpdateTransportControls();
+    void UpdatePlaybackTimeText();
+    void UpdateWaveformScrollBar();
     void SetStatusText(const std::wstring& text);
 
+    void TogglePlayback();
+    void StopPlayback();
+    void SeekToFrame(std::size_t frame);
+    void HandlePlaybackTimer();
+    void ZoomAtFrame(std::size_t anchorFrame, double magnification);
+    void FitWaveform();
+    void HandleHorizontalScroll(WPARAM wParam);
+    void HandleMouseWheel(WPARAM wParam, LPARAM lParam);
+    void HandleWaveformClick(int x, int y);
+
+    [[nodiscard]] RECT WaveformInnerRectangle() const noexcept;
+    [[nodiscard]] std::size_t CurrentPlayheadFrame() const noexcept;
     [[nodiscard]] int Scale(int value) const noexcept;
 
     static std::wstring Utf8ToWide(const std::string& value);
@@ -88,8 +114,15 @@ private:
     HWND window_ = nullptr;
     HWND openButton_ = nullptr;
     HWND closeButton_ = nullptr;
+    HWND playPauseButton_ = nullptr;
+    HWND stopButton_ = nullptr;
+    HWND zoomOutButton_ = nullptr;
+    HWND zoomFitButton_ = nullptr;
+    HWND zoomInButton_ = nullptr;
+    HWND waveformScrollBar_ = nullptr;
     HWND fileLabel_ = nullptr;
     HWND metadataLabel_ = nullptr;
+    HWND timeLabel_ = nullptr;
     HWND statusLabel_ = nullptr;
     HFONT bodyFont_ = nullptr;
     HFONT buttonFont_ = nullptr;
@@ -107,9 +140,13 @@ private:
     COLORREF accentColor_ = RGB(124, 92, 255);
     COLORREF waveformColor_ = RGB(139, 108, 255);
     COLORREF centerLineColor_ = RGB(70, 78, 96);
+    COLORREF playheadColor_ = RGB(255, 93, 115);
 
     RECT waveformRectangle_{};
     std::filesystem::path loadedFile_;
     std::optional<AudioDocument> document_;
     std::optional<AudioWaveformCache> waveformCache_;
+    AudioEditorViewport viewport_;
+    AudioPreviewPlayer previewPlayer_;
+    std::size_t playheadFrame_ = 0U;
 };
