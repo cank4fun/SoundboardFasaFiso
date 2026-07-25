@@ -126,6 +126,49 @@ namespace
 
 }
 
+std::optional<AudioFrameRange> SetAudioSelectionBoundary(
+    const std::optional<AudioFrameRange>& selection,
+    const std::size_t playheadFrame,
+    const std::size_t frameCount,
+    const AudioSelectionBoundary boundary
+) noexcept
+{
+    if (frameCount == 0U)
+    {
+        return std::nullopt;
+    }
+
+    const std::size_t frame = std::min(playheadFrame, frameCount);
+    const bool hasValidSelection = selection.has_value() &&
+        selection->beginFrame < selection->endFrame &&
+        selection->endFrame <= frameCount;
+
+    if (boundary == AudioSelectionBoundary::Begin)
+    {
+        if (frame >= frameCount)
+        {
+            return std::nullopt;
+        }
+
+        const std::size_t endFrame = hasValidSelection &&
+            selection->endFrame > frame
+            ? selection->endFrame
+            : frameCount;
+        return AudioFrameRange{frame, endFrame};
+    }
+
+    if (frame == 0U)
+    {
+        return std::nullopt;
+    }
+
+    const std::size_t beginFrame = hasValidSelection &&
+        selection->beginFrame < frame
+        ? selection->beginFrame
+        : 0U;
+    return AudioFrameRange{beginFrame, frame};
+}
+
 std::string FormatAudioFrameTime(
     const std::size_t frame,
     const std::uint32_t sampleRate

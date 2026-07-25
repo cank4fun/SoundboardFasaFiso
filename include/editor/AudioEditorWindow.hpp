@@ -45,6 +45,21 @@ public:
         const std::optional<std::filesystem::path>& initialFile = std::nullopt
     );
 
+    bool ShowEmbedded(
+        HINSTANCE instance,
+        HWND parent,
+        AppTheme theme,
+        std::string previewDevice,
+        float previewVolume,
+        const std::optional<std::filesystem::path>& initialFile = std::nullopt
+    );
+
+    void SetEmbeddedBounds(int x, int y, int width, int height);
+    void SetEmbeddedVisible(bool visible);
+    void Focus();
+    void SaveCurrent();
+    void SaveAs();
+    void CancelOrClear();
     void Shutdown();
     void SetPreviewRoute(std::string previewDevice, float previewVolume);
     void SetTheme(AppTheme theme);
@@ -94,10 +109,10 @@ private:
         bool cancelled = false;
     };
 
-    static constexpr int InitialClientWidth = 1080;
-    static constexpr int InitialClientHeight = 820;
-    static constexpr int MinimumClientWidth = 900;
-    static constexpr int MinimumClientHeight = 680;
+    static constexpr int InitialClientWidth = 1120;
+    static constexpr int InitialClientHeight = 840;
+    static constexpr int MinimumClientWidth = 980;
+    static constexpr int MinimumClientHeight = 700;
     static constexpr int IdOpenFile = 2100;
     static constexpr int IdClose = 2101;
     static constexpr int IdPlayPause = 2102;
@@ -150,7 +165,7 @@ private:
         LPARAM lParam
     );
 
-    bool EnsureWindow(HINSTANCE instance, HWND owner);
+    bool EnsureWindow(HINSTANCE instance, HWND owner, bool embedded);
     bool CreateControls();
     void LayoutControls(int clientWidth, int clientHeight);
     void HandleDpiChanged(UINT dpi, const RECT& suggestedRectangle);
@@ -190,13 +205,26 @@ private:
         const std::optional<AudioFrameRange>& currentSelection
     );
     void DrawButton(const DRAWITEMSTRUCT& item) const;
+    [[nodiscard]] int DrawButtonGlyph(
+        HDC deviceContext,
+        HWND button,
+        const RECT& rectangle,
+        COLORREF color
+    ) const;
+    [[nodiscard]] bool IsPrimaryButton(HWND control) const;
+    [[nodiscard]] bool IsDangerButton(HWND control) const;
+    void DrawSectionHeader(
+        HDC deviceContext,
+        int top,
+        const wchar_t* text
+    ) const;
     void ApplyTheme();
     void ApplyFonts();
     void ReleaseResources();
     void UpdateMetadataText();
     void UpdateTransportControls();
     void UpdateEditControls();
-    void UpdateSelectionControls();
+    void UpdateSelectionControls(bool force = false);
     void UpdateEffectControls();
     void UpdatePlaybackTimeText();
     void UpdateWaveformScrollBar();
@@ -217,6 +245,7 @@ private:
     void UpdateSelectionFromPoint(int x);
     void ClearSelection();
     void SelectAllAudio();
+    void SetSelectionBoundaryAtPlayhead(AudioSelectionBoundary boundary);
     void ApplySelectionTimes();
     void SnapSelectionToZeroCrossings();
     void ZoomToSelection();
@@ -294,6 +323,7 @@ private:
     HWND waveformScrollBar_ = nullptr;
     HWND fileLabel_ = nullptr;
     HWND metadataLabel_ = nullptr;
+    HWND hintLabel_ = nullptr;
     HWND timeLabel_ = nullptr;
     HWND statusLabel_ = nullptr;
     HFONT bodyFont_ = nullptr;
@@ -312,6 +342,7 @@ private:
     UINT currentDpi_ = USER_DEFAULT_SCREEN_DPI;
     AppTheme theme_ = AppTheme::Dark;
     bool classRegistered_ = false;
+    bool embedded_ = false;
 
     COLORREF backgroundColor_ = RGB(15, 17, 23);
     COLORREF panelColor_ = RGB(24, 28, 36);
@@ -326,6 +357,11 @@ private:
     COLORREF selectionBorderColor_ = RGB(177, 155, 255);
 
     RECT waveformRectangle_{};
+    RECT hintRectangle_{};
+    int fileSectionTop_ = 0;
+    int editSectionTop_ = 0;
+    int selectionSectionTop_ = 0;
+    int effectsSectionTop_ = 0;
     std::filesystem::path loadedFile_;
     std::optional<AudioDocument> document_;
     std::jthread loadThread_;

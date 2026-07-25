@@ -74,6 +74,88 @@ namespace
             "empty time is rejected");
     }
 
+    void TestSelectionBoundaryMarkers()
+    {
+        const auto expectRange = [](
+            const std::optional<AudioFrameRange>& range,
+            const std::size_t beginFrame,
+            const std::size_t endFrame,
+            const std::string_view message
+        )
+        {
+            Expect(
+                range.has_value() && range->beginFrame == beginFrame &&
+                    range->endFrame == endFrame,
+                message
+            );
+        };
+
+        expectRange(
+            SetAudioSelectionBoundary(
+                std::nullopt, 25U, 100U, AudioSelectionBoundary::Begin
+            ),
+            25U,
+            100U,
+            "an in marker selects through the document end"
+        );
+        expectRange(
+            SetAudioSelectionBoundary(
+                std::nullopt, 75U, 100U, AudioSelectionBoundary::End
+            ),
+            0U,
+            75U,
+            "an out marker selects from the document start"
+        );
+
+        const std::optional<AudioFrameRange> existing =
+            AudioFrameRange{20U, 80U};
+        expectRange(
+            SetAudioSelectionBoundary(
+                existing, 30U, 100U, AudioSelectionBoundary::Begin
+            ),
+            30U,
+            80U,
+            "the in marker preserves a later out marker"
+        );
+        expectRange(
+            SetAudioSelectionBoundary(
+                existing, 70U, 100U, AudioSelectionBoundary::End
+            ),
+            20U,
+            70U,
+            "the out marker preserves an earlier in marker"
+        );
+        expectRange(
+            SetAudioSelectionBoundary(
+                existing, 90U, 100U, AudioSelectionBoundary::Begin
+            ),
+            90U,
+            100U,
+            "a crossed in marker resets the out marker to the document end"
+        );
+        expectRange(
+            SetAudioSelectionBoundary(
+                existing, 10U, 100U, AudioSelectionBoundary::End
+            ),
+            0U,
+            10U,
+            "a crossed out marker resets the in marker to the document start"
+        );
+
+        Expect(
+            !SetAudioSelectionBoundary(
+                existing, 100U, 100U, AudioSelectionBoundary::Begin
+            ).has_value(),
+            "an in marker at the document end is rejected"
+        );
+        Expect(
+            !SetAudioSelectionBoundary(
+                existing, 0U, 100U, AudioSelectionBoundary::End
+            ).has_value(),
+            "an out marker at the document start is rejected"
+        );
+    }
+
     void TestZeroCrossingSnap()
     {
         std::string errorMessage;
@@ -163,6 +245,7 @@ namespace
 int main()
 {
     TestFormattingAndParsing();
+    TestSelectionBoundaryMarkers();
     TestZeroCrossingSnap();
     TestAudibleRangeDetection();
 

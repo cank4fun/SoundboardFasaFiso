@@ -487,6 +487,19 @@ bool ControlWindow::Initialize(
         return false;
     }
 
+    if (!audioEditorWindow_.ShowEmbedded(
+            instance_,
+            window_,
+            activeTheme_,
+            currentConfig_.GetMonitorDevice(),
+            currentConfig_.GetMonitorVolume()
+        ))
+    {
+        Shutdown();
+        return false;
+    }
+    audioEditorWindow_.SetEmbeddedVisible(false);
+
     UpdateConfig(config);
     activePage_ = ControlPage::Main;
     UpdatePageVisibility();
@@ -1369,7 +1382,6 @@ LRESULT ControlWindow::HandleWindowMessage(
 
                 case IdPlaybackTab:
                     SetActivePage(ControlPage::Playback);
-                    UpdatePlaybackControls(true);
                     return 0;
 
                 case IdPlaybackPauseResume:
@@ -1381,7 +1393,21 @@ LRESULT ControlWindow::HandleWindowMessage(
                     return 0;
 
                 case IdApplySettings:
-                    SavePendingSettings();
+                    if (activePage_ == ControlPage::Playback)
+                    {
+                        if ((GetKeyState(VK_SHIFT) & 0x8000) != 0)
+                        {
+                            audioEditorWindow_.SaveAs();
+                        }
+                        else
+                        {
+                            audioEditorWindow_.SaveCurrent();
+                        }
+                    }
+                    else
+                    {
+                        SavePendingSettings();
+                    }
                     return 0;
 
                 case IdThemeToggle:
@@ -1503,6 +1529,11 @@ LRESULT ControlWindow::HandleWindowMessage(
                     return 0;
 
                 case IdCancelHotkeyCapture:
+                    if (activePage_ == ControlPage::Playback)
+                    {
+                        audioEditorWindow_.CancelOrClear();
+                        return 0;
+                    }
                     if (capturingBindingHotkey_)
                     {
                         capturingBindingHotkey_ = false;
@@ -2836,121 +2867,11 @@ void ControlWindow::LayoutControls(
     }
     else if (activePage_ == ControlPage::Playback)
     {
-        moveWindow(
-            playbackGroup_,
-            contentX,
-            pageY,
-            contentWidth,
-            pageHeight,
-            TRUE
-        );
-
-        const int innerX = contentX + 14;
-        const int innerY = pageY + 31;
-        const int innerWidth = contentWidth - 28;
-        const int innerHeight = pageHeight - 43;
-        const int columnGap = 12;
-        const int detailsWidth = std::clamp(
-            innerWidth * 38 / 100,
-            300,
-            410
-        );
-        const int listWidth = std::max(
-            260,
-            innerWidth - detailsWidth - columnGap
-        );
-
-        moveWindow(
-            playbackList_,
-            innerX,
-            innerY,
-            listWidth,
-            innerHeight,
-            TRUE
-        );
-
-        const int detailsX = innerX + listWidth + columnGap;
-        moveWindow(
-            playbackDetailsGroup_,
-            detailsX,
-            innerY,
-            detailsWidth,
-            innerHeight,
-            TRUE
-        );
-
-        const int detailsMargin = 14;
-        const int detailsContentX = detailsX + detailsMargin;
-        const int detailsContentWidth = detailsWidth - detailsMargin * 2;
-        const int labelWidth = 76;
-        int rowY = innerY + 35;
-
-        moveWindow(
-            playbackSoundCaption_,
-            detailsContentX, rowY + 2, labelWidth, 20, TRUE
-        );
-        moveWindow(
-            playbackSoundValue_,
-            detailsContentX + labelWidth, rowY + 2,
-            detailsContentWidth - labelWidth, 20, TRUE
-        );
-        rowY += 32;
-
-        moveWindow(
-            playbackStatusCaption_,
-            detailsContentX, rowY + 2, labelWidth, 20, TRUE
-        );
-        moveWindow(
-            playbackStatusValue_,
-            detailsContentX + labelWidth, rowY + 2,
-            detailsContentWidth - labelWidth, 20, TRUE
-        );
-        rowY += 36;
-
-        moveWindow(
-            playbackPositionCaption_,
-            detailsContentX, rowY, detailsContentWidth / 2, 20, TRUE
-        );
-        moveWindow(
-            playbackPositionValue_,
-            detailsContentX + detailsContentWidth / 2, rowY,
-            detailsContentWidth / 2, 20, TRUE
-        );
-        rowY += 23;
-        moveWindow(
-            playbackSeekSlider_,
-            detailsContentX, rowY, detailsContentWidth, 28, TRUE
-        );
-        rowY += 43;
-
-        moveWindow(
-            playbackVolumeCaption_,
-            detailsContentX, rowY + 3, labelWidth, 20, TRUE
-        );
-        moveWindow(
-            playbackVolumeSlider_,
-            detailsContentX + labelWidth, rowY,
-            detailsContentWidth - labelWidth - 46, 28, TRUE
-        );
-        moveWindow(
-            playbackVolumeValue_,
-            detailsContentX + detailsContentWidth - 42,
-            rowY + 3, 42, 20, TRUE
-        );
-
-        const int actionGap = 8;
-        const int actionWidth =
-            (detailsContentWidth - actionGap) / 2;
-        const int actionY = innerY + innerHeight - ButtonHeight - 14;
-
-        moveWindow(
-            playbackPauseResumeButton_,
-            detailsContentX, actionY, actionWidth, ButtonHeight, TRUE
-        );
-        moveWindow(
-            playbackStopButton_,
-            detailsContentX + actionWidth + actionGap,
-            actionY, actionWidth, ButtonHeight, TRUE
+        audioEditorWindow_.SetEmbeddedBounds(
+            Scale(contentX),
+            Scale(pageY),
+            Scale(contentWidth),
+            Scale(pageHeight)
         );
     }
     else if (activePage_ == ControlPage::Settings)
@@ -3569,7 +3490,11 @@ void ControlWindow::SetActivePage(const ControlPage page)
         activeTab = playbackTabButton_;
     }
 
-    if (activeTab != nullptr)
+    if (activePage_ == ControlPage::Playback)
+    {
+        audioEditorWindow_.Focus();
+    }
+    else if (activeTab != nullptr)
     {
         SetFocus(activeTab);
     }
@@ -3672,8 +3597,11 @@ void ControlWindow::UpdatePageVisibility()
     }
     for (const HWND control : playbackControls)
     {
-        setVisible(control, activePage_ == ControlPage::Playback);
+        setVisible(control, false);
     }
+    audioEditorWindow_.SetEmbeddedVisible(
+        activePage_ == ControlPage::Playback
+    );
     for (const HWND control : settingsControls)
     {
         setVisible(control, activePage_ == ControlPage::Settings);
@@ -4791,8 +4719,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         subtitleLabel_,
         Localization::Text(
-            L"Tek pencere • Ctrl+1/2/3/4/5: sekmeler • Ctrl+S: kaydet",
-            L"Single window • Ctrl+1/2/3/4/5: tabs • Ctrl+S: save"
+            L"Ctrl+1–5: sekmeler • Editör: Ctrl+X/C/V · Space · Ctrl+S",
+            L"Ctrl+1–5: tabs • Editor: Ctrl+X/C/V · Space · Ctrl+S"
         )
     );
     SetControlText(
@@ -4819,7 +4747,7 @@ void ControlWindow::RefreshLocalizedText()
     );
     SetControlText(
         playbackTabButton_,
-        Localization::Text(L"Oynatma", L"Playback")
+        Localization::Text(L"Ses editörü", L"Audio editor")
     );
 
     SetControlText(statusCaption_, Localization::Text(L"Durum:", L"Status:"));
@@ -5124,7 +5052,7 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(clearBindingButton_, Localization::Text(L"Alanları temizle", L"Clear fields"));
 
     SetControlText(reloadButton_, Localization::Text(L"Config'i yenile", L"Reload config"));
-    SetControlText(audioEditorButton_, Localization::Text(L"Ses editörü", L"Audio editor"));
+    SetControlText(audioEditorButton_, Localization::Text(L"Düzenle", L"Edit"));
     SetControlText(stopButton_, Localization::Text(L"Tümünü durdur", L"Stop all"));
     SetControlText(outputMuteButton_, Localization::Text(L"Ana çıkışı sustur/aç", L"Toggle main mute"));
     SetControlText(monitorMuteButton_, Localization::Text(L"Monitörü sustur/aç", L"Toggle monitor mute"));
@@ -7734,7 +7662,7 @@ void ControlWindow::OpenAudioEditor()
         }
     }
 
-    if (!audioEditorWindow_.Show(
+    if (!audioEditorWindow_.ShowEmbedded(
             instance_,
             window_,
             activeTheme_,
@@ -7743,29 +7671,18 @@ void ControlWindow::OpenAudioEditor()
             initialFile
         ))
     {
-        MessageBoxW(
-            window_,
-            Localization::Text(
-                L"Ses editörü penceresi açılamadı.",
-                L"The audio editor window could not be opened."
-            ),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONERROR
-        );
+        SetStatus(Localization::Text(
+            L"Ses editörü sekmesi hazırlanamadı.",
+            L"The audio editor tab could not be prepared."
+        ));
         return;
     }
 
-    SetStatus(
-        initialFile.has_value()
-            ? Localization::Text(
-                L"Seçili WAV ses editöründe açıldı.",
-                L"The selected WAV was opened in the audio editor."
-            )
-            : Localization::Text(
-                L"Ses editörü açıldı. Bir WAV dosyası seçebilirsin.",
-                L"The audio editor is open. You can select a WAV file."
-            )
-    );
+    SetActivePage(ControlPage::Playback);
+    SetStatus(Localization::Text(
+        L"Ses editörü sekmesi açıldı.",
+        L"The audio editor tab is open."
+    ));
 }
 
 void ControlWindow::BrowseForSoundFile()

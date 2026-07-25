@@ -14,6 +14,19 @@ struct AudioTimeParseResult final
     bool clamped = false;
 };
 
+enum class AudioSelectionBoundary
+{
+    Begin,
+    End
+};
+
+[[nodiscard]] std::optional<AudioFrameRange> SetAudioSelectionBoundary(
+    const std::optional<AudioFrameRange>& selection,
+    std::size_t playheadFrame,
+    std::size_t frameCount,
+    AudioSelectionBoundary boundary
+) noexcept;
+
 [[nodiscard]] std::string FormatAudioFrameTime(
     std::size_t frame,
     std::uint32_t sampleRate

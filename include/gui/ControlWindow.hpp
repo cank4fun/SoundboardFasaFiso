@@ -90,7 +90,7 @@ private:
 
     static constexpr int InitialClientWidth = 960;
     static constexpr int InitialClientHeight = 640;
-    static constexpr int MinimumClientWidth = 800;
+    static constexpr int MinimumClientWidth = 920;
     static constexpr int MinimumClientHeight = 540;
 
     static constexpr int IdApplySettings = 1000;
