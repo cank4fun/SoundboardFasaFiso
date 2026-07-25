@@ -101,6 +101,11 @@ private:
     static constexpr int IdFadeIn = 2124;
     static constexpr int IdFadeOut = 2125;
     static constexpr int IdConvertMono = 2126;
+    static constexpr int IdCut = 2127;
+    static constexpr int IdCopy = 2128;
+    static constexpr int IdPaste = 2129;
+    static constexpr int IdSilenceSelection = 2130;
+    static constexpr int IdTrimSilence = 2131;
     static constexpr UINT_PTR PlaybackTimerId = 1U;
     static constexpr UINT PlaybackTimerMilliseconds = 40U;
     static constexpr int ScrollRangeMaximum = 10000;
@@ -181,6 +186,20 @@ private:
     void SnapSelectionToZeroCrossings();
     void ZoomToSelection();
     void ApplySelectionEdit(SelectionEdit edit);
+    bool CopySelection();
+    void CutSelection();
+    void PasteClipboard();
+    void SilenceSelection();
+    void TrimBoundarySilence();
+    bool FinalizeDocumentEdit(
+        AudioDocument before,
+        std::uint64_t beforeState,
+        std::optional<AudioFrameRange> nextSelection,
+        std::size_t nextPlayheadFrame,
+        bool fitWaveform,
+        const wchar_t* turkishStatus,
+        const wchar_t* englishStatus
+    );
     void ToggleEffectScope();
     void ApplyAudioEffect(AudioEffect effect);
     void UndoEdit();
@@ -210,6 +229,11 @@ private:
     HWND redoButton_ = nullptr;
     HWND cropButton_ = nullptr;
     HWND deleteButton_ = nullptr;
+    HWND cutButton_ = nullptr;
+    HWND copyButton_ = nullptr;
+    HWND pasteButton_ = nullptr;
+    HWND silenceButton_ = nullptr;
+    HWND trimSilenceButton_ = nullptr;
     HWND selectionStartLabel_ = nullptr;
     HWND selectionStartEdit_ = nullptr;
     HWND selectionEndLabel_ = nullptr;
@@ -266,6 +290,7 @@ private:
     RECT waveformRectangle_{};
     std::filesystem::path loadedFile_;
     std::optional<AudioDocument> document_;
+    std::optional<AudioDocument> clipboard_;
     std::optional<AudioWaveformCache> waveformCache_;
     AudioEditHistory editHistory_;
     AudioEditorViewport viewport_;

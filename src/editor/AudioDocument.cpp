@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <new>
 #include <utility>
 
 namespace
@@ -134,6 +135,42 @@ bool AudioDocument::IsValidRange(
         range.endFrame <= FrameCount();
 }
 
+std::optional<AudioDocument> AudioDocument::CopyRange(
+    const AudioFrameRange range,
+    std::string& errorMessage
+) const
+{
+    errorMessage.clear();
+
+    if (!IsValidRange(range) || range.IsEmpty())
+    {
+        errorMessage = "The audio range is invalid or empty.";
+        return std::nullopt;
+    }
+
+    const std::size_t beginOffset = SampleOffset(range.beginFrame);
+    const std::size_t endOffset = SampleOffset(range.endFrame);
+    try
+    {
+        std::vector<float> copied{
+            samples_.begin() + static_cast<std::ptrdiff_t>(beginOffset),
+            samples_.begin() + static_cast<std::ptrdiff_t>(endOffset)
+        };
+
+        return Create(
+            sampleRate_,
+            channelCount_,
+            std::move(copied),
+            errorMessage
+        );
+    }
+    catch (const std::bad_alloc&)
+    {
+        errorMessage = "There is not enough memory to copy the audio range.";
+        return std::nullopt;
+    }
+}
+
 AudioEditResult AudioDocument::CropTo(
     const AudioFrameRange range
 )
@@ -183,6 +220,101 @@ AudioEditResult AudioDocument::Delete(
         samples_.begin() + static_cast<std::ptrdiff_t>(endOffset)
     );
 
+    MarkChanged();
+    return AudioEditResult::Applied;
+}
+
+AudioEditResult AudioDocument::Insert(
+    const std::size_t frame,
+    const AudioDocument& source
+)
+{
+    if (frame > FrameCount())
+    {
+        return AudioEditResult::InvalidRange;
+    }
+
+    if (source.sampleRate_ != sampleRate_ ||
+        source.channelCount_ != channelCount_)
+    {
+        return AudioEditResult::InvalidValue;
+    }
+
+    if (source.samples_.empty())
+    {
+        return AudioEditResult::NoChange;
+    }
+
+    if (source.samples_.size() > samples_.max_size() - samples_.size())
+    {
+        return AudioEditResult::InvalidValue;
+    }
+
+    const std::size_t offset = SampleOffset(frame);
+    std::vector<float> combined;
+    try
+    {
+        combined.reserve(samples_.size() + source.samples_.size());
+        combined.insert(
+            combined.end(),
+            samples_.begin(),
+            samples_.begin() + static_cast<std::ptrdiff_t>(offset)
+        );
+        combined.insert(
+            combined.end(),
+            source.samples_.begin(),
+            source.samples_.end()
+        );
+        combined.insert(
+            combined.end(),
+            samples_.begin() + static_cast<std::ptrdiff_t>(offset),
+            samples_.end()
+        );
+    }
+    catch (const std::bad_alloc&)
+    {
+        return AudioEditResult::InvalidValue;
+    }
+
+    samples_ = std::move(combined);
+    MarkChanged();
+    return AudioEditResult::Applied;
+}
+
+AudioEditResult AudioDocument::Silence(
+    const AudioFrameRange range
+)
+{
+    if (!IsValidRange(range))
+    {
+        return AudioEditResult::InvalidRange;
+    }
+
+    if (range.IsEmpty())
+    {
+        return AudioEditResult::NoChange;
+    }
+
+    const std::size_t beginOffset = SampleOffset(range.beginFrame);
+    const std::size_t endOffset = SampleOffset(range.endFrame);
+    const bool alreadySilent = std::all_of(
+        samples_.begin() + static_cast<std::ptrdiff_t>(beginOffset),
+        samples_.begin() + static_cast<std::ptrdiff_t>(endOffset),
+        [](const float sample)
+        {
+            return sample == 0.0f;
+        }
+    );
+    if (alreadySilent)
+    {
+        return AudioEditResult::NoChange;
+    }
+
+    std::fill(
+        samples_.begin() + static_cast<std::ptrdiff_t>(beginOffset),
+        samples_.begin() + static_cast<std::ptrdiff_t>(endOffset),
+        0.0f
+    );
     MarkChanged();
     return AudioEditResult::Applied;
 }

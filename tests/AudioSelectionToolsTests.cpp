@@ -104,12 +104,67 @@ namespace
         Expect(snapped.beginFrame == 3U && snapped.endFrame == 6U,
             "both selection boundaries snap independently");
     }
+
+    void TestAudibleRangeDetection()
+    {
+        std::string errorMessage;
+        AudioDocument document = RequireDocument(
+            AudioDocument::Create(
+                1000U,
+                2U,
+                {
+                    0.0f, 0.0f,
+                    0.001f, -0.001f,
+                    0.01f, 0.0f,
+                    0.5f, -0.25f,
+                    0.01f, 0.0f,
+                    0.001f, -0.001f,
+                    0.0f, 0.0f
+                },
+                errorMessage
+            ),
+            "audible range fixture is valid"
+        );
+
+        const auto range = FindAudibleAudioRange(document, -41.0f, 1U);
+        Expect(
+            range.has_value() && range->beginFrame == 1U &&
+                range->endFrame == 6U,
+            "audible range uses all channels and applies padding"
+        );
+
+        const auto strictRange = FindAudibleAudioRange(document, -7.0f, 0U);
+        Expect(
+            strictRange.has_value() && strictRange->beginFrame == 3U &&
+                strictRange->endFrame == 4U,
+            "higher threshold keeps only loud frames"
+        );
+
+        AudioDocument silence = RequireDocument(
+            AudioDocument::Create(
+                1000U,
+                1U,
+                {0.0f, 0.0f, 0.0f},
+                errorMessage
+            ),
+            "silence range fixture is valid"
+        );
+        Expect(
+            !FindAudibleAudioRange(silence).has_value(),
+            "fully silent audio has no audible range"
+        );
+        Expect(
+            !FindAudibleAudioRange(document, 1.0f).has_value(),
+            "invalid positive threshold is rejected"
+        );
+    }
 }
 
 int main()
 {
     TestFormattingAndParsing();
     TestZeroCrossingSnap();
+    TestAudibleRangeDetection();
 
     if (failureCount != 0)
     {

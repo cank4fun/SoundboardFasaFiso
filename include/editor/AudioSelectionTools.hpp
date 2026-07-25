@@ -36,3 +36,11 @@ struct AudioTimeParseResult final
     AudioFrameRange range,
     std::size_t maximumDistanceFrames
 ) noexcept;
+
+inline constexpr float DefaultSilenceTrimThresholdDecibels = -50.0f;
+
+[[nodiscard]] std::optional<AudioFrameRange> FindAudibleAudioRange(
+    const AudioDocument& document,
+    float thresholdDecibels = DefaultSilenceTrimThresholdDecibels,
+    std::size_t paddingFrames = 0U
+) noexcept;

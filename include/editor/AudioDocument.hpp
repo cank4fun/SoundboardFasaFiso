@@ -46,8 +46,18 @@ public:
         AudioFrameRange range
     ) const noexcept;
 
+    [[nodiscard]] std::optional<AudioDocument> CopyRange(
+        AudioFrameRange range,
+        std::string& errorMessage
+    ) const;
+
     AudioEditResult CropTo(AudioFrameRange range);
     AudioEditResult Delete(AudioFrameRange range);
+    AudioEditResult Insert(
+        std::size_t frame,
+        const AudioDocument& source
+    );
+    AudioEditResult Silence(AudioFrameRange range);
 
     AudioEditResult ApplyGainDecibels(
         AudioFrameRange range,

@@ -345,3 +345,63 @@ AudioFrameRange SnapAudioRangeToZeroCrossings(
 
     return range;
 }
+
+
+std::optional<AudioFrameRange> FindAudibleAudioRange(
+    const AudioDocument& document,
+    const float thresholdDecibels,
+    const std::size_t paddingFrames
+) noexcept
+{
+    if (document.Empty() || !std::isfinite(thresholdDecibels) ||
+        thresholdDecibels > 0.0f || thresholdDecibels < -160.0f)
+    {
+        return std::nullopt;
+    }
+
+    const double threshold = std::pow(
+        10.0,
+        static_cast<double>(thresholdDecibels) / 20.0
+    );
+    const std::size_t channelCount = static_cast<std::size_t>(
+        document.ChannelCount()
+    );
+    const std::size_t frameCount = document.FrameCount();
+    const std::span<const float> samples = document.Samples();
+
+    const auto frameIsAudible = [&](const std::size_t frame) noexcept
+    {
+        const std::size_t offset = frame * channelCount;
+        for (std::size_t channel = 0U; channel < channelCount; ++channel)
+        {
+            if (static_cast<double>(std::abs(samples[offset + channel])) >
+                threshold)
+            {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    std::size_t begin = 0U;
+    while (begin < frameCount && !frameIsAudible(begin))
+    {
+        ++begin;
+    }
+    if (begin == frameCount)
+    {
+        return std::nullopt;
+    }
+
+    std::size_t end = frameCount;
+    while (end > begin && !frameIsAudible(end - 1U))
+    {
+        --end;
+    }
+
+    begin = begin > paddingFrames ? begin - paddingFrames : 0U;
+    end = paddingFrames > frameCount - end
+        ? frameCount
+        : end + paddingFrames;
+    return AudioFrameRange{begin, end};
+}

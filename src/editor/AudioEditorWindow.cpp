@@ -33,6 +33,7 @@ namespace
     constexpr int HeaderRowHeight = 84;
     constexpr int TransportRowHeight = 38;
     constexpr int EditRowHeight = 38;
+    constexpr int ClipboardRowHeight = 40;
     constexpr int SelectionRowHeight = 40;
     constexpr int EffectsRowHeight = 40;
     constexpr int TransportButtonWidth = 88;
@@ -312,6 +313,11 @@ void AudioEditorWindow::RefreshLocalizedText()
     SetWindowTextW(redoButton_, Localization::Text(L"Yinele", L"Redo"));
     SetWindowTextW(cropButton_, Localization::Text(L"Seçimi kırp", L"Trim to selection"));
     SetWindowTextW(deleteButton_, Localization::Text(L"Seçimi sil", L"Delete selection"));
+    SetWindowTextW(cutButton_, Localization::Text(L"Kes", L"Cut"));
+    SetWindowTextW(copyButton_, Localization::Text(L"Kopyala", L"Copy"));
+    SetWindowTextW(pasteButton_, Localization::Text(L"Yapıştır", L"Paste"));
+    SetWindowTextW(silenceButton_, Localization::Text(L"Sessize al", L"Silence"));
+    SetWindowTextW(trimSilenceButton_, Localization::Text(L"Sessizliği kırp", L"Trim silence"));
     SetWindowTextW(selectionStartLabel_, Localization::Text(L"Başlangıç", L"Start"));
     SetWindowTextW(selectionEndLabel_, Localization::Text(L"Bitiş", L"End"));
     SetWindowTextW(applySelectionButton_, Localization::Text(L"Uygula", L"Apply"));
@@ -456,6 +462,11 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
                     case IdRedo: RedoEdit(); return 0;
                     case IdCrop: ApplySelectionEdit(SelectionEdit::Crop); return 0;
                     case IdDeleteSelection: ApplySelectionEdit(SelectionEdit::Delete); return 0;
+                    case IdCut: CutSelection(); return 0;
+                    case IdCopy: CopySelection(); return 0;
+                    case IdPaste: PasteClipboard(); return 0;
+                    case IdSilenceSelection: SilenceSelection(); return 0;
+                    case IdTrimSilence: TrimBoundarySilence(); return 0;
                     case IdApplySelectionTimes: ApplySelectionTimes(); return 0;
                     case IdSnapZeroCrossings: SnapSelectionToZeroCrossings(); return 0;
                     case IdZoomSelection: ZoomToSelection(); return 0;
@@ -540,6 +551,10 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             if (control && wParam == 'Z') { UndoEdit(); return 0; }
             if (control && wParam == 'Y') { RedoEdit(); return 0; }
             if (control && wParam == 'A') { SelectAllAudio(); return 0; }
+            if (control && wParam == 'C') { CopySelection(); return 0; }
+            if (control && wParam == 'X') { CutSelection(); return 0; }
+            if (control && wParam == 'V') { PasteClipboard(); return 0; }
+            if (control && wParam == 'L') { SilenceSelection(); return 0; }
             if (control && wParam == 'E') { ZoomToSelection(); return 0; }
             if (!control && wParam == 'Z') { SnapSelectionToZeroCrossings(); return 0; }
             if (control && wParam == 'S')
@@ -745,6 +760,11 @@ bool AudioEditorWindow::CreateControls()
     redoButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdRedo);
     cropButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdCrop);
     deleteButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdDeleteSelection);
+    cutButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdCut);
+    copyButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdCopy);
+    pasteButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdPaste);
+    silenceButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdSilenceSelection);
+    trimSilenceButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdTrimSilence);
     selectionStartLabel_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     selectionStartEdit_ = createControl(
         L"EDIT",
@@ -803,6 +823,9 @@ bool AudioEditorWindow::CreateControls()
         playPauseButton_ != nullptr && stopButton_ != nullptr &&
         undoButton_ != nullptr && redoButton_ != nullptr &&
         cropButton_ != nullptr && deleteButton_ != nullptr &&
+        cutButton_ != nullptr && copyButton_ != nullptr &&
+        pasteButton_ != nullptr && silenceButton_ != nullptr &&
+        trimSilenceButton_ != nullptr &&
         selectionStartLabel_ != nullptr && selectionStartEdit_ != nullptr &&
         selectionEndLabel_ != nullptr && selectionEndEdit_ != nullptr &&
         applySelectionButton_ != nullptr && snapZeroButton_ != nullptr &&
@@ -831,6 +854,7 @@ void AudioEditorWindow::LayoutControls(
     const int headerRowHeight = Scale(HeaderRowHeight);
     const int transportRowHeight = Scale(TransportRowHeight);
     const int editRowHeight = Scale(EditRowHeight);
+    const int clipboardRowHeight = Scale(ClipboardRowHeight);
     const int selectionRowHeight = Scale(SelectionRowHeight);
     const int effectsRowHeight = Scale(EffectsRowHeight);
     const int transportButtonWidth = Scale(TransportButtonWidth);
@@ -878,7 +902,19 @@ void AudioEditorWindow::LayoutControls(
     editX += Scale(108) + buttonGap;
     MoveWindow(deleteButton_, editX, editTop, Scale(108), buttonHeight, TRUE);
 
-    const int selectionTop = editTop + editRowHeight + Scale(6);
+    const int clipboardTop = editTop + editRowHeight + Scale(6);
+    int clipboardX = margin;
+    MoveWindow(cutButton_, clipboardX, clipboardTop, Scale(88), buttonHeight, TRUE);
+    clipboardX += Scale(88) + buttonGap;
+    MoveWindow(copyButton_, clipboardX, clipboardTop, Scale(96), buttonHeight, TRUE);
+    clipboardX += Scale(96) + buttonGap;
+    MoveWindow(pasteButton_, clipboardX, clipboardTop, Scale(96), buttonHeight, TRUE);
+    clipboardX += Scale(96) + Scale(18);
+    MoveWindow(silenceButton_, clipboardX, clipboardTop, Scale(112), buttonHeight, TRUE);
+    clipboardX += Scale(112) + buttonGap;
+    MoveWindow(trimSilenceButton_, clipboardX, clipboardTop, Scale(138), buttonHeight, TRUE);
+
+    const int selectionTop = clipboardTop + clipboardRowHeight + Scale(6);
     const int selectionLabelWidth = Scale(68);
     const int selectionEditWidth = Scale(112);
     const int selectionButtonWidth = Scale(104);
@@ -2028,6 +2064,11 @@ void AudioEditorWindow::ApplyFonts()
         redoButton_,
         cropButton_,
         deleteButton_,
+        cutButton_,
+        copyButton_,
+        pasteButton_,
+        silenceButton_,
+        trimSilenceButton_,
         applySelectionButton_,
         snapZeroButton_,
         zoomSelectionButton_,
@@ -2152,10 +2193,34 @@ void AudioEditorWindow::UpdateEditControls()
     if (undoButton_ != nullptr) EnableWindow(undoButton_, editHistory_.CanUndo() ? TRUE : FALSE);
     if (redoButton_ != nullptr) EnableWindow(redoButton_, editHistory_.CanRedo() ? TRUE : FALSE);
     if (cropButton_ != nullptr) EnableWindow(cropButton_, hasSelection ? TRUE : FALSE);
+    const bool canDelete = hasSelection &&
+        selection_->FrameCount() < document_->FrameCount();
     if (deleteButton_ != nullptr)
     {
-        const bool canDelete = hasSelection && selection_->FrameCount() < document_->FrameCount();
         EnableWindow(deleteButton_, canDelete ? TRUE : FALSE);
+    }
+    if (cutButton_ != nullptr)
+    {
+        EnableWindow(cutButton_, canDelete ? TRUE : FALSE);
+    }
+    if (copyButton_ != nullptr)
+    {
+        EnableWindow(copyButton_, hasSelection ? TRUE : FALSE);
+    }
+    if (pasteButton_ != nullptr)
+    {
+        const bool compatibleClipboard = hasDocument && clipboard_.has_value() &&
+            clipboard_->SampleRate() == document_->SampleRate() &&
+            clipboard_->ChannelCount() == document_->ChannelCount();
+        EnableWindow(pasteButton_, compatibleClipboard ? TRUE : FALSE);
+    }
+    if (silenceButton_ != nullptr)
+    {
+        EnableWindow(silenceButton_, hasSelection ? TRUE : FALSE);
+    }
+    if (trimSilenceButton_ != nullptr)
+    {
+        EnableWindow(trimSilenceButton_, hasDocument ? TRUE : FALSE);
     }
     if (selectionStartEdit_ != nullptr) EnableWindow(selectionStartEdit_, hasDocument ? TRUE : FALSE);
     if (selectionEndEdit_ != nullptr) EnableWindow(selectionEndEdit_, hasDocument ? TRUE : FALSE);
@@ -3178,6 +3243,403 @@ void AudioEditorWindow::ApplySelectionEdit(const SelectionEdit edit)
     }
     MarkWaveformBaseDirty();
     InvalidateRect(window_, nullptr, TRUE);
+}
+
+bool AudioEditorWindow::CopySelection()
+{
+    if (!document_.has_value() || !HasSelection())
+    {
+        return false;
+    }
+
+    std::string errorMessage;
+    std::optional<AudioDocument> copied = document_->CopyRange(
+        *selection_,
+        errorMessage
+    );
+    if (!copied.has_value())
+    {
+        const std::wstring detail = Utf8ToWide(errorMessage);
+        MessageBoxW(
+            window_,
+            detail.empty()
+                ? Localization::Text(
+                    L"Seçim kopyalanamadı.",
+                    L"The selection could not be copied."
+                )
+                : detail.c_str(),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return false;
+    }
+
+    clipboard_ = std::move(copied);
+    UpdateEditControls();
+    SetStatusText(Localization::Text(
+        L"Seçim editör panosuna kopyalandı.",
+        L"Selection copied to the editor clipboard."
+    ));
+    return true;
+}
+
+void AudioEditorWindow::CutSelection()
+{
+    if (!document_.has_value() || !HasSelection() ||
+        selection_->FrameCount() >= document_->FrameCount())
+    {
+        return;
+    }
+
+    if (!CopySelection())
+    {
+        return;
+    }
+
+    ApplySelectionEdit(SelectionEdit::Delete);
+    SetStatusText(Localization::Text(
+        L"Seçim kesildi ve editör panosuna kopyalandı.",
+        L"Selection cut to the editor clipboard."
+    ));
+}
+
+void AudioEditorWindow::PasteClipboard()
+{
+    if (!document_.has_value() || !clipboard_.has_value() ||
+        clipboard_->Empty())
+    {
+        return;
+    }
+
+    if (clipboard_->SampleRate() != document_->SampleRate() ||
+        clipboard_->ChannelCount() != document_->ChannelCount())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Panodaki sesin örnekleme hızı veya kanal sayısı açık dosyayla uyuşmuyor.",
+                L"The clipboard sample rate or channel count does not match the open file."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONINFORMATION
+        );
+        return;
+    }
+
+    if (!editHistory_.CanStore(*document_))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Bu dosya geri alma belleği sınırını aşıyor; yapıştırma uygulanmadı.",
+                L"This file exceeds the undo memory limit; paste was not applied."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return;
+    }
+
+    StopPlayback();
+    std::optional<AudioDocument> before;
+    try
+    {
+        before.emplace(*document_);
+    }
+    catch (const std::bad_alloc&)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Geri alma kopyası için yeterli bellek yok; yapıştırma uygulanmadı.",
+                L"There is not enough memory for the undo snapshot; paste was not applied."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return;
+    }
+
+    const std::uint64_t beforeState = currentStateIdentifier_;
+    const std::size_t insertionFrame = HasSelection()
+        ? selection_->beginFrame
+        : std::min(CurrentPlayheadFrame(), document_->FrameCount());
+
+    if (HasSelection())
+    {
+        const AudioEditResult deleteResult = document_->Delete(*selection_);
+        if (deleteResult != AudioEditResult::Applied)
+        {
+            return;
+        }
+    }
+
+    const AudioEditResult insertResult = document_->Insert(
+        insertionFrame,
+        *clipboard_
+    );
+    if (insertResult != AudioEditResult::Applied)
+    {
+        *document_ = std::move(*before);
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Ses yapıştırılamadı. Yeterli bellek olmayabilir.",
+                L"The audio could not be pasted. There may not be enough memory."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return;
+    }
+
+    const AudioFrameRange pastedRange{
+        insertionFrame,
+        insertionFrame + clipboard_->FrameCount()
+    };
+    FinalizeDocumentEdit(
+        std::move(*before),
+        beforeState,
+        pastedRange,
+        pastedRange.endFrame,
+        true,
+        L"Ses yapıştırıldı.",
+        L"Audio pasted."
+    );
+}
+
+void AudioEditorWindow::SilenceSelection()
+{
+    if (!document_.has_value() || !HasSelection())
+    {
+        return;
+    }
+
+    if (!editHistory_.CanStore(*document_))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Bu dosya geri alma belleği sınırını aşıyor; sessize alma uygulanmadı.",
+                L"This file exceeds the undo memory limit; silence was not applied."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return;
+    }
+
+    StopPlayback();
+    std::optional<AudioDocument> before;
+    try
+    {
+        before.emplace(*document_);
+    }
+    catch (const std::bad_alloc&)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Geri alma kopyası için yeterli bellek yok; sessize alma uygulanmadı.",
+                L"There is not enough memory for the undo snapshot; silence was not applied."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return;
+    }
+
+    const AudioFrameRange target = *selection_;
+    const std::uint64_t beforeState = currentStateIdentifier_;
+    const AudioEditResult result = document_->Silence(target);
+    if (result == AudioEditResult::NoChange)
+    {
+        SetStatusText(Localization::Text(
+            L"Seçim zaten sessiz.",
+            L"The selection is already silent."
+        ));
+        return;
+    }
+    if (result != AudioEditResult::Applied)
+    {
+        return;
+    }
+
+    FinalizeDocumentEdit(
+        std::move(*before),
+        beforeState,
+        target,
+        target.beginFrame,
+        false,
+        L"Seçili alan sessize alındı.",
+        L"Selected audio silenced."
+    );
+}
+
+void AudioEditorWindow::TrimBoundarySilence()
+{
+    if (!document_.has_value() || document_->Empty())
+    {
+        return;
+    }
+
+    const std::size_t paddingFrames = std::max<std::size_t>(
+        1U,
+        static_cast<std::size_t>(document_->SampleRate()) / 200U
+    );
+    const std::optional<AudioFrameRange> audibleRange = FindAudibleAudioRange(
+        *document_,
+        DefaultSilenceTrimThresholdDecibels,
+        paddingFrames
+    );
+    if (!audibleRange.has_value())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Dosyada -50 dBFS eşiğinin üzerinde ses bulunamadı.",
+                L"No audio above the -50 dBFS threshold was found."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONINFORMATION
+        );
+        return;
+    }
+
+    if (audibleRange->beginFrame == 0U &&
+        audibleRange->endFrame == document_->FrameCount())
+    {
+        SetStatusText(Localization::Text(
+            L"Kırpılacak başlangıç veya bitiş sessizliği bulunamadı.",
+            L"No leading or trailing silence was found to trim."
+        ));
+        return;
+    }
+
+    if (!editHistory_.CanStore(*document_))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Bu dosya geri alma belleği sınırını aşıyor; sessizlik kırpılmadı.",
+                L"This file exceeds the undo memory limit; silence was not trimmed."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return;
+    }
+
+    StopPlayback();
+    std::optional<AudioDocument> before;
+    try
+    {
+        before.emplace(*document_);
+    }
+    catch (const std::bad_alloc&)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Geri alma kopyası için yeterli bellek yok; sessizlik kırpılmadı.",
+                L"There is not enough memory for the undo snapshot; silence was not trimmed."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return;
+    }
+
+    const std::uint64_t beforeState = currentStateIdentifier_;
+    if (document_->CropTo(*audibleRange) != AudioEditResult::Applied)
+    {
+        return;
+    }
+
+    FinalizeDocumentEdit(
+        std::move(*before),
+        beforeState,
+        std::nullopt,
+        0U,
+        true,
+        L"Başlangıç ve bitiş sessizliği kırpıldı (-50 dBFS, 5 ms koruma).",
+        L"Leading and trailing silence trimmed (-50 dBFS, 5 ms padding)."
+    );
+}
+
+bool AudioEditorWindow::FinalizeDocumentEdit(
+    AudioDocument before,
+    const std::uint64_t beforeState,
+    std::optional<AudioFrameRange> nextSelection,
+    const std::size_t nextPlayheadFrame,
+    const bool fitWaveform,
+    const wchar_t* const turkishStatus,
+    const wchar_t* const englishStatus
+)
+{
+    if (!document_.has_value())
+    {
+        return false;
+    }
+
+    std::string cacheError;
+    std::optional<AudioWaveformCache> cache = AudioWaveformCache::Build(
+        *document_,
+        cacheError
+    );
+    if (!cache.has_value())
+    {
+        *document_ = std::move(before);
+        waveformCache_ = AudioWaveformCache::Build(*document_, cacheError);
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Düzenleme sonrası waveform oluşturulamadı; değişiklik geri alındı.",
+                L"The waveform could not be rebuilt after the edit; the change was rolled back."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return false;
+    }
+
+    const bool historyRecorded = editHistory_.Record(
+        std::move(before),
+        beforeState
+    );
+    currentStateIdentifier_ = nextStateIdentifier_++;
+    waveformCache_ = std::move(cache);
+    previewPlayer_.Shutdown();
+
+    if (nextSelection.has_value() &&
+        !document_->IsValidRange(*nextSelection))
+    {
+        nextSelection.reset();
+    }
+    selection_ = nextSelection;
+    playheadFrame_ = std::min(nextPlayheadFrame, document_->FrameCount());
+    if (fitWaveform)
+    {
+        viewport_.Reset(document_->FrameCount());
+    }
+
+    UpdateWindowTitle();
+    UpdateMetadataText();
+    UpdateTransportControls();
+    UpdateEditControls();
+    UpdatePlaybackTimeText();
+    UpdateWaveformScrollBar();
+    SetStatusText(
+        historyRecorded
+            ? Localization::Text(turkishStatus, englishStatus)
+            : Localization::Text(
+                L"Düzenleme uygulandı ancak geri alma kaydı oluşturulamadı.",
+                L"The edit was applied, but an undo record could not be created."
+            )
+    );
+    MarkWaveformBaseDirty();
+    InvalidateRect(window_, nullptr, TRUE);
+    return true;
 }
 
 void AudioEditorWindow::ToggleEffectScope()

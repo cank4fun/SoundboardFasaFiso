@@ -359,6 +359,92 @@ namespace
     }
 
 
+    void TestCopyInsertAndSilence()
+    {
+        AudioDocument source = CreateStereoDocument();
+        std::string errorMessage;
+        std::optional<AudioDocument> copied = source.CopyRange(
+            {1U, 3U},
+            errorMessage
+        );
+        Expect(copied.has_value(), "valid range copies into a document");
+        Expect(errorMessage.empty(), "copy range does not report an error");
+        if (!copied.has_value())
+        {
+            return;
+        }
+
+        Expect(copied->FrameCount() == 2U, "copied range keeps frame count");
+        const std::vector<float> expectedCopied{
+            0.2f, -0.2f,
+            0.3f, -0.3f
+        };
+        ExpectSamples(
+            copied->Samples(),
+            expectedCopied,
+            "copied range keeps interleaved samples"
+        );
+
+        AudioDocument destination = CreateStereoDocument();
+        Expect(
+            destination.Insert(1U, *copied) == AudioEditResult::Applied,
+            "compatible audio inserts at the requested frame"
+        );
+        const std::vector<float> expectedInserted{
+            0.1f, -0.1f,
+            0.2f, -0.2f,
+            0.3f, -0.3f,
+            0.2f, -0.2f,
+            0.3f, -0.3f,
+            0.4f, -0.4f
+        };
+        ExpectSamples(
+            destination.Samples(),
+            expectedInserted,
+            "insert preserves source and destination order"
+        );
+
+        Expect(
+            destination.Silence({1U, 3U}) == AudioEditResult::Applied,
+            "selected frames can be silenced"
+        );
+        const std::vector<float> expectedSilenced{
+            0.1f, -0.1f,
+            0.0f, 0.0f,
+            0.0f, 0.0f,
+            0.2f, -0.2f,
+            0.3f, -0.3f,
+            0.4f, -0.4f
+        };
+        ExpectSamples(
+            destination.Samples(),
+            expectedSilenced,
+            "silence clears every channel in the range"
+        );
+        Expect(
+            destination.Silence({1U, 3U}) == AudioEditResult::NoChange,
+            "silencing an already-silent range is a no-op"
+        );
+
+        AudioDocument mono = RequireDocument(
+            AudioDocument::Create(48000U, 1U, {0.25f}, errorMessage),
+            "mono insert fixture is valid"
+        );
+        Expect(
+            destination.Insert(0U, mono) == AudioEditResult::InvalidValue,
+            "channel-mismatched insert is rejected"
+        );
+        Expect(
+            destination.Insert(destination.FrameCount() + 1U, *copied) ==
+                AudioEditResult::InvalidRange,
+            "out-of-range insert is rejected"
+        );
+        Expect(
+            !source.CopyRange({2U, 2U}, errorMessage).has_value(),
+            "empty copy range is rejected"
+        );
+    }
+
     void TestEdgeCases()
     {
         AudioDocument document = CreateStereoDocument();
@@ -450,6 +536,7 @@ int main()
     TestGainAndNormalize();
     TestFades();
     TestMonoConversion();
+    TestCopyInsertAndSilence();
     TestEdgeCases();
     TestInvalidRangeDoesNotMutate();
 
