@@ -39,6 +39,7 @@ public:
     [[nodiscard]] std::size_t FrameCount() const noexcept;
     [[nodiscard]] double DurationSeconds() const noexcept;
     [[nodiscard]] bool Empty() const noexcept;
+    [[nodiscard]] std::uint64_t Revision() const noexcept;
     [[nodiscard]] std::span<const float> Samples() const noexcept;
 
     [[nodiscard]] bool IsValidRange(
@@ -78,7 +79,10 @@ private:
         bool fadeIn
     );
 
+    void MarkChanged() noexcept;
+
     std::uint32_t sampleRate_ = 0;
     std::uint32_t channelCount_ = 0;
     std::vector<float> samples_;
+    std::uint64_t revision_ = 0U;
 };

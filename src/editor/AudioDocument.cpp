@@ -116,6 +116,11 @@ bool AudioDocument::Empty() const noexcept
     return samples_.empty();
 }
 
+std::uint64_t AudioDocument::Revision() const noexcept
+{
+    return revision_;
+}
+
 std::span<const float> AudioDocument::Samples() const noexcept
 {
     return samples_;
@@ -152,6 +157,7 @@ AudioEditResult AudioDocument::CropTo(
     };
 
     samples_ = std::move(cropped);
+    MarkChanged();
     return AudioEditResult::Applied;
 }
 
@@ -177,6 +183,7 @@ AudioEditResult AudioDocument::Delete(
         samples_.begin() + static_cast<std::ptrdiff_t>(endOffset)
     );
 
+    MarkChanged();
     return AudioEditResult::Applied;
 }
 
@@ -240,6 +247,7 @@ AudioEditResult AudioDocument::ApplyGainDecibels(
         samples_[index] = ScaleSample(samples_[index], scale);
     }
 
+    MarkChanged();
     return AudioEditResult::Applied;
 }
 
@@ -292,6 +300,7 @@ AudioEditResult AudioDocument::NormalizePeak(
         samples_[index] = ScaleSample(samples_[index], scale);
     }
 
+    MarkChanged();
     return AudioEditResult::Applied;
 }
 
@@ -339,6 +348,7 @@ AudioEditResult AudioDocument::ConvertToMono()
 
     samples_ = std::move(monoSamples);
     channelCount_ = 1U;
+    MarkChanged();
     return AudioEditResult::Applied;
 }
 
@@ -399,5 +409,11 @@ AudioEditResult AudioDocument::ApplyFade(
         }
     }
 
+    MarkChanged();
     return AudioEditResult::Applied;
+}
+
+void AudioDocument::MarkChanged() noexcept
+{
+    ++revision_;
 }
