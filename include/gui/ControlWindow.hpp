@@ -10,6 +10,7 @@
 
 #include "audio/PlaybackState.hpp"
 #include "config/Config.hpp"
+#include "editor/AudioEditorWindow.hpp"
 #include "import/LocalMediaImportService.hpp"
 #include "import/UrlImportService.hpp"
 #include "platform/MediaToolManager.hpp"
@@ -133,6 +134,7 @@ private:
     static constexpr int IdBindingFadeInEdit = 1038;
     static constexpr int IdBindingFadeOutEdit = 1039;
     static constexpr int IdImportUrl = 1040;
+    static constexpr int IdAudioEditor = 1041;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -220,6 +222,7 @@ private:
     bool AddOrUpdateBinding(bool updateExisting);
     bool RemoveSelectedBinding(bool requireConfirmation = true);
     void BrowseForSoundFile();
+    void OpenAudioEditor();
     void BeginHotkeyCapture();
     bool CaptureHotkeyFromMessage(WPARAM virtualKey);
 
@@ -407,6 +410,7 @@ private:
     HWND clearBindingButton_ = nullptr;
 
     HWND reloadButton_ = nullptr;
+    HWND audioEditorButton_ = nullptr;
     HWND stopButton_ = nullptr;
     HWND outputMuteButton_ = nullptr;
     HWND monitorMuteButton_ = nullptr;
@@ -462,6 +466,8 @@ private:
     PlaybackId pendingPlaybackSeekId_ = InvalidPlaybackId;
     float pendingPlaybackSeekSeconds_ = 0.0f;
     ULONGLONG pendingPlaybackSeekTick_ = 0;
+
+    AudioEditorWindow audioEditorWindow_;
 
     std::jthread updateCheckThread_;
     std::mutex updateCheckMutex_;

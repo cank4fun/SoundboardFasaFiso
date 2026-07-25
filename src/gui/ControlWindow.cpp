@@ -525,6 +525,7 @@ bool ControlWindow::Initialize(
 
 void ControlWindow::Shutdown()
 {
+    audioEditorWindow_.Shutdown();
     StopMicrophoneTestMonitor();
 
     localMediaImportCancellationRequested_.store(true);
@@ -742,6 +743,7 @@ void ControlWindow::Shutdown()
     removeBindingButton_ = nullptr;
     clearBindingButton_ = nullptr;
     reloadButton_ = nullptr;
+    audioEditorButton_ = nullptr;
     stopButton_ = nullptr;
     outputMuteButton_ = nullptr;
     monitorMuteButton_ = nullptr;
@@ -1426,6 +1428,10 @@ LRESULT ControlWindow::HandleWindowMessage(
 
                 case IdImportUrl:
                     ToggleUrlImport();
+                    return 0;
+
+                case IdAudioEditor:
+                    OpenAudioEditor();
                     return 0;
 
                 case IdCaptureHotkey:
@@ -2245,6 +2251,9 @@ bool ControlWindow::CreateControls()
     reloadButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdReload
     );
+    audioEditorButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdAudioEditor
+    );
     stopButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdStopAll
     );
@@ -2348,8 +2357,8 @@ bool ControlWindow::CreateControls()
         bindingFadeInCaption_, bindingFadeInEdit_,
         bindingFadeOutCaption_, bindingFadeOutEdit_,
         addBindingButton_, updateBindingButton_, removeBindingButton_,
-        clearBindingButton_, reloadButton_, stopButton_, outputMuteButton_,
-        monitorMuteButton_, openConfigButton_, openSoundsButton_,
+        clearBindingButton_, reloadButton_, audioEditorButton_, stopButton_,
+        outputMuteButton_, monitorMuteButton_, openConfigButton_, openSoundsButton_,
         openLogsButton_, checkUpdatesButton_, consoleButton_, exitButton_,
         settingsToolsGroup_
     };
@@ -2800,11 +2809,11 @@ void ControlWindow::LayoutControls(
 
         const HWND quickButtons[]{
             stopButton_, outputMuteButton_, monitorMuteButton_,
-            reloadButton_, applySettingsButton_
+            reloadButton_, audioEditorButton_, applySettingsButton_
         };
         const int quickButtonGap = 6;
         const int quickButtonWidth =
-            (quickInnerWidth - quickButtonGap * 4) / 5;
+            (quickInnerWidth - quickButtonGap * 5) / 6;
 
         for (std::size_t index = 0;
             index < std::size(quickButtons);
@@ -3585,7 +3594,8 @@ void ControlWindow::UpdatePageVisibility()
         bindingFadeInEdit_, bindingFadeOutCaption_, bindingFadeOutEdit_,
         addBindingButton_,
         updateBindingButton_, removeBindingButton_, clearBindingButton_,
-        reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_
+        reloadButton_, audioEditorButton_, stopButton_, outputMuteButton_,
+        monitorMuteButton_
     };
 
     const HWND playbackControls[]{
@@ -3718,6 +3728,7 @@ void ControlWindow::ApplyTheme()
     }
 
     UpdateWindowChrome();
+    audioEditorWindow_.SetTheme(activeTheme_);
 
     const bool dark = activeTheme_ == AppTheme::Dark;
     const wchar_t* explorerTheme = dark
@@ -3933,7 +3944,8 @@ void ControlWindow::ApplyFonts()
         captureHotkeyButton_, browseSoundButton_, importUrlButton_,
         addBindingButton_, updateBindingButton_, removeBindingButton_,
         clearBindingButton_,
-        reloadButton_, stopButton_, outputMuteButton_, monitorMuteButton_,
+        reloadButton_, audioEditorButton_, stopButton_, outputMuteButton_,
+        monitorMuteButton_,
         openConfigButton_, openSoundsButton_, openLogsButton_,
         checkUpdatesButton_, consoleButton_, exitButton_,
         playbackPauseResumeButton_, playbackStopButton_
@@ -5108,6 +5120,7 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(clearBindingButton_, Localization::Text(L"Alanları temizle", L"Clear fields"));
 
     SetControlText(reloadButton_, Localization::Text(L"Config'i yenile", L"Reload config"));
+    SetControlText(audioEditorButton_, Localization::Text(L"Ses editörü", L"Audio editor"));
     SetControlText(stopButton_, Localization::Text(L"Tümünü durdur", L"Stop all"));
     SetControlText(outputMuteButton_, Localization::Text(L"Ana çıkışı sustur/aç", L"Toggle main mute"));
     SetControlText(monitorMuteButton_, Localization::Text(L"Monitörü sustur/aç", L"Toggle monitor mute"));
@@ -5118,6 +5131,7 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(consoleButton_, Localization::Text(L"Hata ayıklama konsolunu aç/gizle", L"Open/hide debug console"));
     SetControlText(exitButton_, Localization::Text(L"Programı kapat", L"Exit"));
     LoadSelectedPlaybackIntoControls();
+    audioEditorWindow_.RefreshLocalizedText();
 }
 
 void ControlWindow::PopulateBindings()
@@ -7666,6 +7680,86 @@ bool ControlWindow::RemoveSelectedBinding(
         L"Sound binding removed. It will take effect after Save and apply."
     ));
     return true;
+}
+
+void ControlWindow::OpenAudioEditor()
+{
+    std::optional<std::filesystem::path> initialFile;
+    std::wstring fileText = GetControlText(bindingFileEdit_);
+    const std::size_t first = fileText.find_first_not_of(L" \t\r\n");
+
+    if (first != std::wstring::npos)
+    {
+        const std::size_t last = fileText.find_last_not_of(L" \t\r\n");
+        std::filesystem::path relativePath{
+            fileText.substr(first, last - first + 1)
+        };
+        bool leavesSoundsFolder = relativePath.has_root_path();
+
+        for (const std::filesystem::path& component : relativePath)
+        {
+            if (component == L"..")
+            {
+                leavesSoundsFolder = true;
+                break;
+            }
+        }
+
+        std::wstring extension = relativePath.extension().wstring();
+        std::transform(
+            extension.begin(),
+            extension.end(),
+            extension.begin(),
+            [](const wchar_t character)
+            {
+                return static_cast<wchar_t>(std::towlower(character));
+            }
+        );
+
+        if (!leavesSoundsFolder && extension == L".wav")
+        {
+            std::error_code fileError;
+            const std::filesystem::path fullPath =
+                (soundsFolder_ / relativePath).lexically_normal();
+
+            if (std::filesystem::is_regular_file(fullPath, fileError) &&
+                !fileError)
+            {
+                initialFile = fullPath;
+            }
+        }
+    }
+
+    if (!audioEditorWindow_.Show(
+            instance_,
+            window_,
+            activeTheme_,
+            initialFile
+        ))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Ses editörü penceresi açılamadı.",
+                L"The audio editor window could not be opened."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return;
+    }
+
+    SetStatus(
+        initialFile.has_value()
+            ? Localization::Text(
+                L"Seçili WAV ses editöründe açıldı.",
+                L"The selected WAV was opened in the audio editor."
+            )
+            : Localization::Text(
+                L"Ses editörü açıldı. Bir WAV dosyası seçebilirsin.",
+                L"The audio editor is open. You can select a WAV file."
+            )
+    );
 }
 
 void ControlWindow::BrowseForSoundFile()

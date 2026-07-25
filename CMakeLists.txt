@@ -177,6 +177,7 @@ add_executable(
     src/diagnostics/Logger.cpp
     src/editor/AudioDocument.cpp
     src/editor/AudioDocumentWav.cpp
+    src/editor/AudioEditorWindow.cpp
     src/editor/AudioWaveformCache.cpp
     src/gui/ControlWindow.cpp
     src/gui/ControlWindowLocalMediaImport.cpp
