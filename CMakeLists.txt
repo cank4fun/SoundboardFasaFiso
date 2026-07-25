@@ -177,6 +177,7 @@ add_executable(
     src/diagnostics/Logger.cpp
     src/editor/AudioDocument.cpp
     src/editor/AudioEditHistory.cpp
+    src/editor/AudioEditorEffects.cpp
     src/editor/AudioDocumentWav.cpp
     src/editor/AudioEditorViewport.cpp
     src/editor/AudioEditorWindow.cpp
@@ -849,6 +850,50 @@ if(BUILD_TESTING)
     add_test(
         NAME AudioSelectionTools
         COMMAND SoundBoardFasaFisoAudioSelectionToolsTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoAudioEditorEffectsTests
+        EXCLUDE_FROM_ALL
+        tests/AudioEditorEffectsTests.cpp
+        src/editor/AudioDocument.cpp
+        src/editor/AudioEditorEffects.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoAudioEditorEffectsTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoAudioEditorEffectsTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoAudioEditorEffectsTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoAudioEditorEffectsTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME AudioEditorEffects
+        COMMAND SoundBoardFasaFisoAudioEditorEffectsTests
     )
 
     add_executable(

@@ -11,6 +11,7 @@
 #include "config/Config.hpp"
 #include "editor/AudioDocument.hpp"
 #include "editor/AudioEditHistory.hpp"
+#include "editor/AudioEditorEffects.hpp"
 #include "editor/AudioEditorViewport.hpp"
 #include "editor/AudioPreviewPlayer.hpp"
 #include "editor/AudioSelectionTools.hpp"
@@ -52,6 +53,15 @@ private:
         Delete
     };
 
+    enum class AudioEffect
+    {
+        Gain,
+        Normalize,
+        FadeIn,
+        FadeOut,
+        ConvertToMono
+    };
+
     enum class SelectionDragMode
     {
         None,
@@ -61,9 +71,9 @@ private:
     };
 
     static constexpr int InitialClientWidth = 1080;
-    static constexpr int InitialClientHeight = 760;
+    static constexpr int InitialClientHeight = 820;
     static constexpr int MinimumClientWidth = 900;
-    static constexpr int MinimumClientHeight = 620;
+    static constexpr int MinimumClientHeight = 680;
     static constexpr int IdOpenFile = 2100;
     static constexpr int IdClose = 2101;
     static constexpr int IdPlayPause = 2102;
@@ -84,8 +94,15 @@ private:
     static constexpr int IdSnapZeroCrossings = 2117;
     static constexpr int IdZoomSelection = 2118;
     static constexpr int IdSelectAll = 2119;
+    static constexpr int IdEffectScope = 2120;
+    static constexpr int IdGainEdit = 2121;
+    static constexpr int IdApplyGain = 2122;
+    static constexpr int IdNormalize = 2123;
+    static constexpr int IdFadeIn = 2124;
+    static constexpr int IdFadeOut = 2125;
+    static constexpr int IdConvertMono = 2126;
     static constexpr UINT_PTR PlaybackTimerId = 1U;
-    static constexpr UINT PlaybackTimerMilliseconds = 33U;
+    static constexpr UINT PlaybackTimerMilliseconds = 40U;
     static constexpr int ScrollRangeMaximum = 10000;
 
     static LRESULT CALLBACK WindowProcedure(
@@ -118,6 +135,13 @@ private:
     void ClearDocument();
     void Paint();
     void DrawWaveform(HDC deviceContext, const RECT& rectangle);
+    bool EnsureWaveformBuffer(HDC referenceDeviceContext, int width, int height);
+    void ReleaseWaveformBuffer() noexcept;
+    void InvalidatePlayheadTransition(
+        std::size_t previousFrame,
+        std::size_t currentFrame,
+        bool viewportChanged
+    );
     void DrawButton(const DRAWITEMSTRUCT& item) const;
     void ApplyTheme();
     void ApplyFonts();
@@ -126,6 +150,7 @@ private:
     void UpdateTransportControls();
     void UpdateEditControls();
     void UpdateSelectionControls();
+    void UpdateEffectControls();
     void UpdatePlaybackTimeText();
     void UpdateWaveformScrollBar();
     void UpdateWindowTitle();
@@ -149,6 +174,8 @@ private:
     void SnapSelectionToZeroCrossings();
     void ZoomToSelection();
     void ApplySelectionEdit(SelectionEdit edit);
+    void ToggleEffectScope();
+    void ApplyAudioEffect(AudioEffect effect);
     void UndoEdit();
     void RedoEdit();
     bool RebuildAfterDocumentChange(bool fitWaveform);
@@ -184,6 +211,14 @@ private:
     HWND snapZeroButton_ = nullptr;
     HWND zoomSelectionButton_ = nullptr;
     HWND selectAllButton_ = nullptr;
+    HWND effectScopeButton_ = nullptr;
+    HWND gainLabel_ = nullptr;
+    HWND gainEdit_ = nullptr;
+    HWND applyGainButton_ = nullptr;
+    HWND normalizeButton_ = nullptr;
+    HWND fadeInButton_ = nullptr;
+    HWND fadeOutButton_ = nullptr;
+    HWND convertMonoButton_ = nullptr;
     HWND zoomOutButton_ = nullptr;
     HWND zoomFitButton_ = nullptr;
     HWND zoomInButton_ = nullptr;
@@ -196,6 +231,11 @@ private:
     HFONT buttonFont_ = nullptr;
     HBRUSH backgroundBrush_ = nullptr;
     HBRUSH panelBrush_ = nullptr;
+    HDC waveformBufferDeviceContext_ = nullptr;
+    HBITMAP waveformBufferBitmap_ = nullptr;
+    HGDIOBJ waveformBufferOriginalBitmap_ = nullptr;
+    int waveformBufferWidth_ = 0;
+    int waveformBufferHeight_ = 0;
     UINT currentDpi_ = USER_DEFAULT_SCREEN_DPI;
     AppTheme theme_ = AppTheme::Dark;
     bool classRegistered_ = false;
@@ -226,6 +266,7 @@ private:
     bool selectionDragged_ = false;
     bool updatingSelectionFields_ = false;
     SelectionDragMode selectionDragMode_ = SelectionDragMode::None;
+    AudioEffectScope effectScope_ = AudioEffectScope::Selection;
     std::size_t playheadFrame_ = 0U;
     std::uint64_t currentStateIdentifier_ = 0U;
     std::uint64_t savedStateIdentifier_ = 0U;

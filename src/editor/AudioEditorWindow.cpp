@@ -34,11 +34,14 @@ namespace
     constexpr int TransportRowHeight = 38;
     constexpr int EditRowHeight = 38;
     constexpr int SelectionRowHeight = 40;
+    constexpr int EffectsRowHeight = 40;
     constexpr int TransportButtonWidth = 88;
     constexpr int CompactButtonWidth = 58;
     constexpr int ScrollBarHeight = 18;
     constexpr int StatusRowHeight = 24;
     constexpr int PanelRadius = 12;
+    constexpr DWORD AudioEditorWindowStyle =
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN;
 
     void FillRoundedRectangle(
         const HDC deviceContext,
@@ -182,6 +185,14 @@ void AudioEditorWindow::Shutdown()
     snapZeroButton_ = nullptr;
     zoomSelectionButton_ = nullptr;
     selectAllButton_ = nullptr;
+    effectScopeButton_ = nullptr;
+    gainLabel_ = nullptr;
+    gainEdit_ = nullptr;
+    applyGainButton_ = nullptr;
+    normalizeButton_ = nullptr;
+    fadeInButton_ = nullptr;
+    fadeOutButton_ = nullptr;
+    convertMonoButton_ = nullptr;
     zoomOutButton_ = nullptr;
     zoomFitButton_ = nullptr;
     zoomInButton_ = nullptr;
@@ -228,6 +239,12 @@ void AudioEditorWindow::RefreshLocalizedText()
     SetWindowTextW(snapZeroButton_, Localization::Text(L"Sıfır geçiş", L"Zero crossing"));
     SetWindowTextW(zoomSelectionButton_, Localization::Text(L"Seçime zoom", L"Zoom selection"));
     SetWindowTextW(selectAllButton_, Localization::Text(L"Tümünü seç", L"Select all"));
+    SetWindowTextW(gainLabel_, Localization::Text(L"Kazanç (dB)", L"Gain (dB)"));
+    SetWindowTextW(applyGainButton_, Localization::Text(L"Kazanç uygula", L"Apply gain"));
+    SetWindowTextW(normalizeButton_, Localization::Text(L"Normalize", L"Normalize"));
+    SetWindowTextW(fadeInButton_, Localization::Text(L"Fade-in", L"Fade in"));
+    SetWindowTextW(fadeOutButton_, Localization::Text(L"Fade-out", L"Fade out"));
+    SetWindowTextW(convertMonoButton_, Localization::Text(L"Mono yap", L"Convert to mono"));
     SetWindowTextW(zoomOutButton_, L"−");
     SetWindowTextW(zoomFitButton_, Localization::Text(L"Sığdır", L"Fit"));
     SetWindowTextW(zoomInButton_, L"+");
@@ -363,6 +380,12 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
                     case IdSnapZeroCrossings: SnapSelectionToZeroCrossings(); return 0;
                     case IdZoomSelection: ZoomToSelection(); return 0;
                     case IdSelectAll: SelectAllAudio(); return 0;
+                    case IdEffectScope: ToggleEffectScope(); return 0;
+                    case IdApplyGain: ApplyAudioEffect(AudioEffect::Gain); return 0;
+                    case IdNormalize: ApplyAudioEffect(AudioEffect::Normalize); return 0;
+                    case IdFadeIn: ApplyAudioEffect(AudioEffect::FadeIn); return 0;
+                    case IdFadeOut: ApplyAudioEffect(AudioEffect::FadeOut); return 0;
+                    case IdConvertMono: ApplyAudioEffect(AudioEffect::ConvertToMono); return 0;
                     case IdZoomOut:
                         if (document_.has_value())
                         {
@@ -465,7 +488,12 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             {
                 auto* minimumMaximum = reinterpret_cast<MINMAXINFO*>(lParam);
                 RECT minimumRectangle{0, 0, Scale(MinimumClientWidth), Scale(MinimumClientHeight)};
-                AdjustWindowRectEx(&minimumRectangle, WS_OVERLAPPEDWINDOW, FALSE, 0);
+                AdjustWindowRectEx(
+                    &minimumRectangle,
+                    AudioEditorWindowStyle,
+                    FALSE,
+                    0
+                );
                 minimumMaximum->ptMinTrackSize.x = minimumRectangle.right - minimumRectangle.left;
                 minimumMaximum->ptMinTrackSize.y = minimumRectangle.bottom - minimumRectangle.top;
                 return 0;
@@ -568,7 +596,7 @@ bool AudioEditorWindow::EnsureWindow(
     };
     AdjustWindowRectEx(
         &windowRectangle,
-        WS_OVERLAPPEDWINDOW,
+        AudioEditorWindowStyle,
         FALSE,
         0
     );
@@ -577,7 +605,7 @@ bool AudioEditorWindow::EnsureWindow(
         0,
         AudioEditorWindowClassName,
         L"SoundBoardFasaFiso Audio Editor",
-        WS_OVERLAPPEDWINDOW,
+        AudioEditorWindowStyle,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
         windowRectangle.right - windowRectangle.left,
@@ -655,6 +683,19 @@ bool AudioEditorWindow::CreateControls()
     snapZeroButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdSnapZeroCrossings);
     zoomSelectionButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomSelection);
     selectAllButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdSelectAll);
+    effectScopeButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdEffectScope);
+    gainLabel_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    gainEdit_ = createControl(
+        L"EDIT",
+        L"0.0",
+        WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL | ES_RIGHT,
+        IdGainEdit
+    );
+    applyGainButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdApplyGain);
+    normalizeButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdNormalize);
+    fadeInButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdFadeIn);
+    fadeOutButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdFadeOut);
+    convertMonoButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdConvertMono);
     zoomOutButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomOut);
     zoomFitButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomFit);
     zoomInButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomIn);
@@ -672,6 +713,10 @@ bool AudioEditorWindow::CreateControls()
     {
         SendMessageW(selectionEndEdit_, EM_SETLIMITTEXT, 48U, 0);
     }
+    if (gainEdit_ != nullptr)
+    {
+        SendMessageW(gainEdit_, EM_SETLIMITTEXT, 16U, 0);
+    }
 
     return openButton_ != nullptr && saveAsButton_ != nullptr &&
         overwriteButton_ != nullptr && closeButton_ != nullptr &&
@@ -682,6 +727,10 @@ bool AudioEditorWindow::CreateControls()
         selectionEndLabel_ != nullptr && selectionEndEdit_ != nullptr &&
         applySelectionButton_ != nullptr && snapZeroButton_ != nullptr &&
         zoomSelectionButton_ != nullptr && selectAllButton_ != nullptr &&
+        effectScopeButton_ != nullptr && gainLabel_ != nullptr &&
+        gainEdit_ != nullptr && applyGainButton_ != nullptr &&
+        normalizeButton_ != nullptr && fadeInButton_ != nullptr &&
+        fadeOutButton_ != nullptr && convertMonoButton_ != nullptr &&
         zoomOutButton_ != nullptr && zoomFitButton_ != nullptr &&
         zoomInButton_ != nullptr && waveformScrollBar_ != nullptr &&
         fileLabel_ != nullptr && metadataLabel_ != nullptr &&
@@ -703,6 +752,7 @@ void AudioEditorWindow::LayoutControls(
     const int transportRowHeight = Scale(TransportRowHeight);
     const int editRowHeight = Scale(EditRowHeight);
     const int selectionRowHeight = Scale(SelectionRowHeight);
+    const int effectsRowHeight = Scale(EffectsRowHeight);
     const int transportButtonWidth = Scale(TransportButtonWidth);
     const int compactButtonWidth = Scale(CompactButtonWidth);
     const int scrollBarHeight = Scale(ScrollBarHeight);
@@ -777,7 +827,32 @@ void AudioEditorWindow::LayoutControls(
     MoveWindow(selectAllButton_, selectionX, selectionTop,
         Scale(92), buttonHeight, TRUE);
 
-    const int waveformTop = selectionTop + selectionRowHeight + Scale(8);
+    const int effectsTop = selectionTop + selectionRowHeight + Scale(6);
+    int effectsX = margin;
+    MoveWindow(gainLabel_, effectsX, effectsTop + Scale(8),
+        Scale(82), Scale(22), TRUE);
+    effectsX += Scale(82) + Scale(4);
+    MoveWindow(gainEdit_, effectsX, effectsTop + Scale(2),
+        Scale(72), buttonHeight - Scale(4), TRUE);
+    effectsX += Scale(72) + buttonGap;
+    MoveWindow(applyGainButton_, effectsX, effectsTop,
+        Scale(116), buttonHeight, TRUE);
+    effectsX += Scale(116) + buttonGap;
+    MoveWindow(normalizeButton_, effectsX, effectsTop,
+        Scale(98), buttonHeight, TRUE);
+    effectsX += Scale(98) + buttonGap;
+    MoveWindow(fadeInButton_, effectsX, effectsTop,
+        Scale(88), buttonHeight, TRUE);
+    effectsX += Scale(88) + buttonGap;
+    MoveWindow(fadeOutButton_, effectsX, effectsTop,
+        Scale(88), buttonHeight, TRUE);
+    effectsX += Scale(88) + buttonGap;
+    MoveWindow(convertMonoButton_, effectsX, effectsTop,
+        Scale(96), buttonHeight, TRUE);
+    MoveWindow(effectScopeButton_, clientWidth - margin - Scale(150), effectsTop,
+        Scale(150), buttonHeight, TRUE);
+
+    const int waveformTop = effectsTop + effectsRowHeight + Scale(8);
     const int statusTop = std::max(waveformTop, clientHeight - margin - statusRowHeight);
     const int scrollTop = std::max(waveformTop, statusTop - Scale(8) - scrollBarHeight);
     waveformRectangle_ = RECT{margin, waveformTop, std::max(margin + 1, clientWidth - margin),
@@ -964,6 +1039,7 @@ bool AudioEditorWindow::LoadFile(
     currentStateIdentifier_ = nextStateIdentifier_++;
     savedStateIdentifier_ = currentStateIdentifier_;
     selection_.reset();
+    effectScope_ = AudioEffectScope::Selection;
     viewport_.Reset(document_->FrameCount());
     playheadFrame_ = 0U;
     UpdateWindowTitle();
@@ -993,6 +1069,7 @@ void AudioEditorWindow::ClearDocument()
     selectionDragged_ = false;
     selectionDragMode_ = SelectionDragMode::None;
     updatingSelectionFields_ = false;
+    effectScope_ = AudioEffectScope::Selection;
     viewport_.Reset(0U);
     playheadFrame_ = 0U;
     currentStateIdentifier_ = 0U;
@@ -1015,23 +1092,247 @@ void AudioEditorWindow::Paint()
     if (waveformRectangle_.right > waveformRectangle_.left &&
         waveformRectangle_.bottom > waveformRectangle_.top)
     {
-        FillRoundedRectangle(
-            deviceContext,
-            waveformRectangle_,
-            panelColor_,
-            Scale(PanelRadius)
-        );
-        DrawRoundedBorder(
-            deviceContext,
-            waveformRectangle_,
-            borderColor_,
-            Scale(PanelRadius)
-        );
+        RECT intersection{};
+        if (IntersectRect(
+                &intersection,
+                &paint.rcPaint,
+                &waveformRectangle_
+            ) != FALSE)
+        {
+            const int width = waveformRectangle_.right - waveformRectangle_.left;
+            const int height = waveformRectangle_.bottom - waveformRectangle_.top;
 
-        DrawWaveform(deviceContext, WaveformInnerRectangle());
+            if (EnsureWaveformBuffer(deviceContext, width, height))
+            {
+                const RECT localRectangle{0, 0, width, height};
+                FillRect(
+                    waveformBufferDeviceContext_,
+                    &localRectangle,
+                    backgroundBrush_
+                );
+
+                POINT previousOrigin{};
+                SetViewportOrgEx(
+                    waveformBufferDeviceContext_,
+                    -waveformRectangle_.left,
+                    -waveformRectangle_.top,
+                    &previousOrigin
+                );
+
+                FillRoundedRectangle(
+                    waveformBufferDeviceContext_,
+                    waveformRectangle_,
+                    panelColor_,
+                    Scale(PanelRadius)
+                );
+                DrawRoundedBorder(
+                    waveformBufferDeviceContext_,
+                    waveformRectangle_,
+                    borderColor_,
+                    Scale(PanelRadius)
+                );
+                DrawWaveform(
+                    waveformBufferDeviceContext_,
+                    WaveformInnerRectangle()
+                );
+
+                SetViewportOrgEx(
+                    waveformBufferDeviceContext_,
+                    previousOrigin.x,
+                    previousOrigin.y,
+                    nullptr
+                );
+                BitBlt(
+                    deviceContext,
+                    waveformRectangle_.left,
+                    waveformRectangle_.top,
+                    width,
+                    height,
+                    waveformBufferDeviceContext_,
+                    0,
+                    0,
+                    SRCCOPY
+                );
+            }
+            else
+            {
+                FillRoundedRectangle(
+                    deviceContext,
+                    waveformRectangle_,
+                    panelColor_,
+                    Scale(PanelRadius)
+                );
+                DrawRoundedBorder(
+                    deviceContext,
+                    waveformRectangle_,
+                    borderColor_,
+                    Scale(PanelRadius)
+                );
+                DrawWaveform(deviceContext, WaveformInnerRectangle());
+            }
+        }
     }
 
     EndPaint(window_, &paint);
+}
+
+bool AudioEditorWindow::EnsureWaveformBuffer(
+    const HDC referenceDeviceContext,
+    const int width,
+    const int height
+)
+{
+    if (referenceDeviceContext == nullptr || width <= 0 || height <= 0)
+    {
+        return false;
+    }
+
+    if (waveformBufferDeviceContext_ != nullptr &&
+        waveformBufferBitmap_ != nullptr &&
+        waveformBufferWidth_ == width && waveformBufferHeight_ == height)
+    {
+        return true;
+    }
+
+    if (waveformBufferDeviceContext_ == nullptr)
+    {
+        waveformBufferDeviceContext_ = CreateCompatibleDC(
+            referenceDeviceContext
+        );
+        if (waveformBufferDeviceContext_ == nullptr)
+        {
+            return false;
+        }
+    }
+
+    if (waveformBufferBitmap_ != nullptr)
+    {
+        if (waveformBufferOriginalBitmap_ != nullptr)
+        {
+            SelectObject(
+                waveformBufferDeviceContext_,
+                waveformBufferOriginalBitmap_
+            );
+        }
+        DeleteObject(waveformBufferBitmap_);
+        waveformBufferBitmap_ = nullptr;
+    }
+
+    HBITMAP bitmap = CreateCompatibleBitmap(
+        referenceDeviceContext,
+        width,
+        height
+    );
+    if (bitmap == nullptr)
+    {
+        waveformBufferWidth_ = 0;
+        waveformBufferHeight_ = 0;
+        return false;
+    }
+
+    const HGDIOBJ previousBitmap = SelectObject(
+        waveformBufferDeviceContext_,
+        bitmap
+    );
+    if (previousBitmap == nullptr || previousBitmap == HGDI_ERROR)
+    {
+        DeleteObject(bitmap);
+        waveformBufferWidth_ = 0;
+        waveformBufferHeight_ = 0;
+        return false;
+    }
+
+    if (waveformBufferOriginalBitmap_ == nullptr)
+    {
+        waveformBufferOriginalBitmap_ = previousBitmap;
+    }
+
+    waveformBufferBitmap_ = bitmap;
+    waveformBufferWidth_ = width;
+    waveformBufferHeight_ = height;
+    return true;
+}
+
+void AudioEditorWindow::ReleaseWaveformBuffer() noexcept
+{
+    if (waveformBufferDeviceContext_ != nullptr &&
+        waveformBufferOriginalBitmap_ != nullptr)
+    {
+        SelectObject(
+            waveformBufferDeviceContext_,
+            waveformBufferOriginalBitmap_
+        );
+    }
+
+    if (waveformBufferBitmap_ != nullptr)
+    {
+        DeleteObject(waveformBufferBitmap_);
+        waveformBufferBitmap_ = nullptr;
+    }
+
+    if (waveformBufferDeviceContext_ != nullptr)
+    {
+        DeleteDC(waveformBufferDeviceContext_);
+        waveformBufferDeviceContext_ = nullptr;
+    }
+
+    waveformBufferOriginalBitmap_ = nullptr;
+    waveformBufferWidth_ = 0;
+    waveformBufferHeight_ = 0;
+}
+
+void AudioEditorWindow::InvalidatePlayheadTransition(
+    const std::size_t previousFrame,
+    const std::size_t currentFrame,
+    const bool viewportChanged
+)
+{
+    if (window_ == nullptr)
+    {
+        return;
+    }
+
+    if (viewportChanged || !document_.has_value())
+    {
+        InvalidateRect(window_, &waveformRectangle_, FALSE);
+        return;
+    }
+
+    const RECT inner = WaveformInnerRectangle();
+    const int width = inner.right - inner.left;
+    if (width <= 0)
+    {
+        return;
+    }
+
+    const AudioFrameRange visibleRange = viewport_.VisibleRange();
+    const auto invalidateFrame = [this, &inner, width, visibleRange](
+        const std::size_t frame
+    )
+    {
+        if (visibleRange.IsEmpty() || frame < visibleRange.beginFrame ||
+            frame > visibleRange.endFrame)
+        {
+            return;
+        }
+
+        const int x = inner.left + viewport_.PixelForFrame(frame, width);
+        const int padding = std::max(Scale(4), 3);
+        RECT dirty{
+            x - padding,
+            waveformRectangle_.top,
+            x + padding + 1,
+            waveformRectangle_.bottom
+        };
+        IntersectRect(&dirty, &dirty, &waveformRectangle_);
+        if (dirty.right > dirty.left && dirty.bottom > dirty.top)
+        {
+            InvalidateRect(window_, &dirty, FALSE);
+        }
+    };
+
+    invalidateFrame(previousFrame);
+    invalidateFrame(currentFrame);
 }
 
 void AudioEditorWindow::DrawWaveform(
@@ -1402,7 +1703,9 @@ void AudioEditorWindow::ApplyFonts()
         selectionStartLabel_,
         selectionEndLabel_,
         selectionStartEdit_,
-        selectionEndEdit_
+        selectionEndEdit_,
+        gainLabel_,
+        gainEdit_
     };
     for (const HWND label : labels)
     {
@@ -1432,6 +1735,12 @@ void AudioEditorWindow::ApplyFonts()
         snapZeroButton_,
         zoomSelectionButton_,
         selectAllButton_,
+        effectScopeButton_,
+        applyGainButton_,
+        normalizeButton_,
+        fadeInButton_,
+        fadeOutButton_,
+        convertMonoButton_,
         zoomOutButton_,
         zoomFitButton_,
         zoomInButton_
@@ -1452,6 +1761,7 @@ void AudioEditorWindow::ApplyFonts()
 
 void AudioEditorWindow::ReleaseResources()
 {
+    ReleaseWaveformBuffer();
     if (backgroundBrush_ != nullptr)
     {
         DeleteObject(backgroundBrush_);
@@ -1557,6 +1867,7 @@ void AudioEditorWindow::UpdateEditControls()
     if (zoomSelectionButton_ != nullptr) EnableWindow(zoomSelectionButton_, hasSelection ? TRUE : FALSE);
     if (selectAllButton_ != nullptr) EnableWindow(selectAllButton_, hasDocument ? TRUE : FALSE);
     UpdateSelectionControls();
+    UpdateEffectControls();
 }
 
 void AudioEditorWindow::UpdateSelectionControls()
@@ -1613,6 +1924,53 @@ void AudioEditorWindow::UpdateWindowTitle()
     );
     if (IsModified()) title.append(L" *");
     SetWindowTextW(window_, title.c_str());
+}
+
+void AudioEditorWindow::UpdateEffectControls()
+{
+    const bool hasDocument = document_.has_value() && !document_->Empty();
+    const bool hasSelection = HasSelection();
+    const bool selectionScope = effectScope_ == AudioEffectScope::Selection &&
+        hasSelection;
+
+    if (effectScopeButton_ != nullptr)
+    {
+        SetWindowTextW(
+            effectScopeButton_,
+            selectionScope
+                ? Localization::Text(L"Hedef: Seçim", L"Target: Selection")
+                : Localization::Text(L"Hedef: Tüm ses", L"Target: Whole audio")
+        );
+        EnableWindow(effectScopeButton_, hasSelection ? TRUE : FALSE);
+    }
+
+    if (gainEdit_ != nullptr)
+    {
+        EnableWindow(gainEdit_, hasDocument ? TRUE : FALSE);
+    }
+    if (applyGainButton_ != nullptr)
+    {
+        EnableWindow(applyGainButton_, hasDocument ? TRUE : FALSE);
+    }
+    if (normalizeButton_ != nullptr)
+    {
+        EnableWindow(normalizeButton_, hasDocument ? TRUE : FALSE);
+    }
+    if (fadeInButton_ != nullptr)
+    {
+        EnableWindow(fadeInButton_, hasDocument ? TRUE : FALSE);
+    }
+    if (fadeOutButton_ != nullptr)
+    {
+        EnableWindow(fadeOutButton_, hasDocument ? TRUE : FALSE);
+    }
+    if (convertMonoButton_ != nullptr)
+    {
+        EnableWindow(
+            convertMonoButton_,
+            hasDocument && document_->ChannelCount() > 1U ? TRUE : FALSE
+        );
+    }
 }
 
 void AudioEditorWindow::UpdatePlaybackTimeText()
@@ -1687,6 +2045,7 @@ void AudioEditorWindow::TogglePlayback()
         return;
     }
 
+    const std::size_t previousPlayheadFrame = CurrentPlayheadFrame();
     std::string errorMessage;
     if (!previewPlayer_.Matches(*document_) &&
         !previewPlayer_.Prepare(*document_, errorMessage))
@@ -1763,11 +2122,17 @@ void AudioEditorWindow::TogglePlayback()
 
     UpdateTransportControls();
     UpdatePlaybackTimeText();
-    InvalidateRect(window_, &waveformRectangle_, FALSE);
+    InvalidatePlayheadTransition(
+        previousPlayheadFrame,
+        CurrentPlayheadFrame(),
+        false
+    );
 }
 
 void AudioEditorWindow::StopPlayback()
 {
+    const std::size_t previousPlayheadFrame = CurrentPlayheadFrame();
+
     if (window_ != nullptr)
     {
         KillTimer(window_, PlaybackTimerId);
@@ -1791,10 +2156,11 @@ void AudioEditorWindow::StopPlayback()
     playheadFrame_ = 0U;
     UpdateTransportControls();
     UpdatePlaybackTimeText();
-    if (window_ != nullptr)
-    {
-        InvalidateRect(window_, &waveformRectangle_, FALSE);
-    }
+    InvalidatePlayheadTransition(
+        previousPlayheadFrame,
+        playheadFrame_,
+        false
+    );
 }
 
 void AudioEditorWindow::SeekToFrame(const std::size_t frame)
@@ -1804,6 +2170,7 @@ void AudioEditorWindow::SeekToFrame(const std::size_t frame)
         return;
     }
 
+    const std::size_t previousPlayheadFrame = CurrentPlayheadFrame();
     const std::size_t clampedFrame = std::min(frame, document_->FrameCount());
     playheadFrame_ = clampedFrame;
 
@@ -1824,7 +2191,11 @@ void AudioEditorWindow::SeekToFrame(const std::size_t frame)
 
     UpdateTransportControls();
     UpdatePlaybackTimeText();
-    InvalidateRect(window_, &waveformRectangle_, FALSE);
+    InvalidatePlayheadTransition(
+        previousPlayheadFrame,
+        playheadFrame_,
+        false
+    );
 }
 
 void AudioEditorWindow::HandlePlaybackTimer()
@@ -1835,6 +2206,8 @@ void AudioEditorWindow::HandlePlaybackTimer()
         return;
     }
 
+    const std::size_t previousPlayheadFrame = playheadFrame_;
+    bool viewportChanged = false;
     playheadFrame_ = previewPlayer_.CurrentFrame();
     const AudioFrameRange visibleRange = viewport_.VisibleRange();
     if (!visibleRange.IsEmpty() && !viewport_.IsFit())
@@ -1871,6 +2244,7 @@ void AudioEditorWindow::HandlePlaybackTimer()
                     )
                 );
             viewport_.PanFrames(delta);
+            viewportChanged = true;
             UpdateWaveformScrollBar();
         }
     }
@@ -1889,7 +2263,11 @@ void AudioEditorWindow::HandlePlaybackTimer()
 
     UpdateTransportControls();
     UpdatePlaybackTimeText();
-    InvalidateRect(window_, &waveformRectangle_, FALSE);
+    InvalidatePlayheadTransition(
+        previousPlayheadFrame,
+        playheadFrame_,
+        viewportChanged
+    );
 }
 
 void AudioEditorWindow::ZoomAtFrame(
@@ -2494,6 +2872,237 @@ void AudioEditorWindow::ApplySelectionEdit(const SelectionEdit edit)
                 L"Selected audio was deleted."
             ));
     }
+    InvalidateRect(window_, nullptr, TRUE);
+}
+
+void AudioEditorWindow::ToggleEffectScope()
+{
+    if (!HasSelection())
+    {
+        effectScope_ = AudioEffectScope::WholeDocument;
+        UpdateEffectControls();
+        return;
+    }
+
+    effectScope_ = effectScope_ == AudioEffectScope::Selection
+        ? AudioEffectScope::WholeDocument
+        : AudioEffectScope::Selection;
+    UpdateEffectControls();
+}
+
+void AudioEditorWindow::ApplyAudioEffect(const AudioEffect effect)
+{
+    if (!document_.has_value() || document_->Empty())
+    {
+        return;
+    }
+
+    const std::optional<AudioFrameRange> targetRange = ResolveAudioEffectRange(
+        document_->FrameCount(),
+        selection_,
+        effectScope_
+    );
+    if (!targetRange.has_value())
+    {
+        return;
+    }
+
+    float gainDecibels = 0.0f;
+    bool gainWouldClip = false;
+    if (effect == AudioEffect::Gain)
+    {
+        wchar_t buffer[32]{};
+        GetWindowTextW(
+            gainEdit_,
+            buffer,
+            static_cast<int>(std::size(buffer))
+        );
+        const std::optional<float> parsed = ParseAudioEffectGainDecibels(
+            WideToUtf8(buffer)
+        );
+        if (!parsed.has_value())
+        {
+            MessageBoxW(
+                window_,
+                Localization::Text(
+                    L"Kazancı -60 ile +24 dB arasında gir. Nokta veya virgül kullanabilirsin.",
+                    L"Enter gain between -60 and +24 dB. You can use a dot or comma."
+                ),
+                L"SoundBoardFasaFiso",
+                MB_OK | MB_ICONINFORMATION
+            );
+            return;
+        }
+        gainDecibels = *parsed;
+        gainWouldClip = WouldAudioEffectGainExceedUnitPeak(
+            *document_,
+            *targetRange,
+            gainDecibels
+        );
+    }
+
+    if (!editHistory_.CanStore(*document_))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Bu dosya geri alma belleği sınırını aşıyor; efekt uygulanmadı.",
+                L"This file exceeds the undo memory limit; the effect was not applied."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return;
+    }
+
+    StopPlayback();
+    std::optional<AudioDocument> before;
+    try
+    {
+        before.emplace(*document_);
+    }
+    catch (const std::bad_alloc&)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Geri alma kopyası için yeterli bellek yok; efekt uygulanmadı.",
+                L"There is not enough memory for the undo snapshot; the effect was not applied."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return;
+    }
+
+    const std::uint64_t beforeState = currentStateIdentifier_;
+    AudioEditResult result = AudioEditResult::NoChange;
+    switch (effect)
+    {
+        case AudioEffect::Gain:
+            result = document_->ApplyGainDecibels(
+                *targetRange,
+                gainDecibels
+            );
+            break;
+        case AudioEffect::Normalize:
+            result = document_->NormalizePeak(*targetRange);
+            break;
+        case AudioEffect::FadeIn:
+            result = document_->FadeIn(*targetRange);
+            break;
+        case AudioEffect::FadeOut:
+            result = document_->FadeOut(*targetRange);
+            break;
+        case AudioEffect::ConvertToMono:
+            result = document_->ConvertToMono();
+            break;
+    }
+
+    if (result != AudioEditResult::Applied)
+    {
+        SetStatusText(
+            result == AudioEditResult::NoChange
+                ? Localization::Text(
+                    L"Efekt ses üzerinde bir değişiklik oluşturmadı.",
+                    L"The effect did not change the audio."
+                )
+                : Localization::Text(
+                    L"Efekt uygulanamadı.",
+                    L"The effect could not be applied."
+                )
+        );
+        return;
+    }
+
+    std::string cacheError;
+    std::optional<AudioWaveformCache> cache = AudioWaveformCache::Build(
+        *document_,
+        cacheError
+    );
+    if (!cache.has_value())
+    {
+        *document_ = std::move(*before);
+        waveformCache_ = AudioWaveformCache::Build(*document_, cacheError);
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Efekt sonrası waveform oluşturulamadı; değişiklik geri alındı.",
+                L"The waveform could not be rebuilt after the effect; the change was rolled back."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return;
+    }
+
+    const bool historyRecorded = editHistory_.Record(
+        std::move(*before),
+        beforeState
+    );
+    currentStateIdentifier_ = nextStateIdentifier_++;
+    waveformCache_ = std::move(cache);
+    previewPlayer_.Shutdown();
+    playheadFrame_ = std::min(playheadFrame_, document_->FrameCount());
+
+    UpdateWindowTitle();
+    UpdateMetadataText();
+    UpdateTransportControls();
+    UpdateEditControls();
+    UpdatePlaybackTimeText();
+    UpdateWaveformScrollBar();
+
+    if (!historyRecorded)
+    {
+        SetStatusText(Localization::Text(
+            L"Efekt uygulandı ancak geri alma kaydı oluşturulamadı.",
+            L"The effect was applied, but an undo record could not be created."
+        ));
+    }
+    else
+    {
+        switch (effect)
+        {
+            case AudioEffect::Gain:
+                SetStatusText(
+                    gainWouldClip
+                        ? Localization::Text(
+                            L"Kazanç uygulandı. 0 dBFS üstü örnekler PCM16 kaydında kırpılır.",
+                            L"Gain applied. Samples above 0 dBFS will clip when saved as PCM16."
+                        )
+                        : Localization::Text(
+                            L"Kazanç uygulandı.",
+                            L"Gain applied."
+                        )
+                );
+                break;
+            case AudioEffect::Normalize:
+                SetStatusText(Localization::Text(
+                    L"Ses tepe seviyesine göre normalize edildi.",
+                    L"Audio normalized by peak level."
+                ));
+                break;
+            case AudioEffect::FadeIn:
+                SetStatusText(Localization::Text(
+                    L"Fade-in uygulandı.",
+                    L"Fade in applied."
+                ));
+                break;
+            case AudioEffect::FadeOut:
+                SetStatusText(Localization::Text(
+                    L"Fade-out uygulandı.",
+                    L"Fade out applied."
+                ));
+                break;
+            case AudioEffect::ConvertToMono:
+                SetStatusText(Localization::Text(
+                    L"Ses mono biçimine dönüştürüldü.",
+                    L"Audio converted to mono."
+                ));
+                break;
+        }
+    }
+
     InvalidateRect(window_, nullptr, TRUE);
 }
 
