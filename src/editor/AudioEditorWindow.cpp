@@ -1,6 +1,7 @@
 #include "editor/AudioEditorWindow.hpp"
 
 #include "editor/AudioDocumentWav.hpp"
+#include "editor/AudioPreviewDeviceSelection.hpp"
 #include "localization/Localization.hpp"
 #include "ResourceIds.h"
 
@@ -193,10 +194,13 @@ bool AudioEditorWindow::Show(
     const HINSTANCE instance,
     const HWND owner,
     const AppTheme theme,
+    std::string previewDevice,
+    const float previewVolume,
     const std::optional<std::filesystem::path>& initialFile
 )
 {
     theme_ = theme;
+    SetPreviewRoute(std::move(previewDevice), previewVolume);
 
     if (!EnsureWindow(instance, owner))
     {
@@ -296,6 +300,41 @@ void AudioEditorWindow::Shutdown()
     viewport_.Reset(0U);
 }
 
+
+
+void AudioEditorWindow::SetPreviewRoute(
+    std::string previewDevice,
+    const float previewVolume
+)
+{
+    const std::string nextKey =
+        NormalizeAudioPreviewDeviceRequest(previewDevice);
+    const std::string currentKey =
+        NormalizeAudioPreviewDeviceRequest(previewDeviceRequest_);
+    const bool deviceChanged = nextKey != currentKey;
+
+    previewVolume_ = std::isfinite(previewVolume)
+        ? std::clamp(previewVolume, 0.0f, 1.0f)
+        : 1.0f;
+    previewPlayer_.SetVolume(previewVolume_);
+
+    if (!deviceChanged)
+    {
+        return;
+    }
+
+    StopPlayback();
+    previewPlayer_.Shutdown();
+    previewDeviceRequest_ = std::move(previewDevice);
+
+    if (window_ != nullptr)
+    {
+        SetStatusText(Localization::Text(
+            L"Önizleme çıkışı monitör ayarına güncellendi.",
+            L"Preview output was updated to the monitor setting."
+        ));
+    }
+}
 
 void AudioEditorWindow::SetTheme(const AppTheme theme)
 {
@@ -3102,8 +3141,12 @@ void AudioEditorWindow::TogglePlayback()
 
     const std::size_t previousPlayheadFrame = CurrentPlayheadFrame();
     std::string errorMessage;
-    if (!previewPlayer_.Matches(*document_) &&
-        !previewPlayer_.Prepare(*document_, errorMessage))
+    if (!previewPlayer_.Matches(*document_, previewDeviceRequest_) &&
+        !previewPlayer_.Prepare(
+            *document_,
+            previewDeviceRequest_,
+            errorMessage
+        ))
     {
         const std::wstring detail = Utf8ToWide(errorMessage);
         MessageBoxW(
@@ -3230,7 +3273,7 @@ void AudioEditorWindow::SeekToFrame(const std::size_t frame)
     playheadFrame_ = clampedFrame;
 
     std::string errorMessage;
-    if (previewPlayer_.Matches(*document_) &&
+    if (previewPlayer_.Matches(*document_, previewDeviceRequest_) &&
         !previewPlayer_.Seek(clampedFrame, errorMessage))
     {
         const std::wstring detail = Utf8ToWide(errorMessage);

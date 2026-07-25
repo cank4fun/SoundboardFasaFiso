@@ -857,6 +857,10 @@ void ControlWindow::UpdateConfig(const Config& config)
 
     currentConfig_ = config;
     activeTheme_ = config.GetTheme();
+    audioEditorWindow_.SetPreviewRoute(
+        config.GetMonitorDevice(),
+        config.GetMonitorVolume()
+    );
     pendingBindings_ = config.GetBindings();
     selectedBindingIndex_ = -1;
     capturingBindingHotkey_ = false;
@@ -7734,6 +7738,8 @@ void ControlWindow::OpenAudioEditor()
             instance_,
             window_,
             activeTheme_,
+            currentConfig_.GetMonitorDevice(),
+            currentConfig_.GetMonitorVolume(),
             initialFile
         ))
     {

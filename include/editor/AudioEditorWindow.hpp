@@ -40,10 +40,13 @@ public:
         HINSTANCE instance,
         HWND owner,
         AppTheme theme,
+        std::string previewDevice,
+        float previewVolume,
         const std::optional<std::filesystem::path>& initialFile = std::nullopt
     );
 
     void Shutdown();
+    void SetPreviewRoute(std::string previewDevice, float previewVolume);
     void SetTheme(AppTheme theme);
     void RefreshLocalizedText();
 
@@ -340,6 +343,8 @@ private:
     AudioEditHistory editHistory_;
     AudioEditorViewport viewport_;
     AudioPreviewPlayer previewPlayer_;
+    std::string previewDeviceRequest_ = "default";
+    float previewVolume_ = 1.0f;
     std::optional<AudioFrameRange> selection_;
     std::size_t selectionAnchorFrame_ = 0U;
     int selectionAnchorX_ = 0;

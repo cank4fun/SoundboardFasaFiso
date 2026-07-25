@@ -181,6 +181,7 @@ add_executable(
     src/editor/AudioDocumentWav.cpp
     src/editor/AudioEditorViewport.cpp
     src/editor/AudioEditorWindow.cpp
+    src/editor/AudioPreviewDeviceSelection.cpp
     src/editor/AudioPreviewPlayer.cpp
     src/editor/AudioSelectionTools.cpp
     src/editor/AudioWaveformCache.cpp
@@ -894,6 +895,49 @@ if(BUILD_TESTING)
     add_test(
         NAME AudioEditorEffects
         COMMAND SoundBoardFasaFisoAudioEditorEffectsTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoAudioPreviewDeviceSelectionTests
+        EXCLUDE_FROM_ALL
+        tests/AudioPreviewDeviceSelectionTests.cpp
+        src/editor/AudioPreviewDeviceSelection.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoAudioPreviewDeviceSelectionTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoAudioPreviewDeviceSelectionTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoAudioPreviewDeviceSelectionTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoAudioPreviewDeviceSelectionTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME AudioPreviewDeviceSelection
+        COMMAND SoundBoardFasaFisoAudioPreviewDeviceSelectionTests
     )
 
     add_executable(
