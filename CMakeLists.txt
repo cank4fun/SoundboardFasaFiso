@@ -175,6 +175,7 @@ add_executable(
     $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
     src/config/Config.cpp
     src/diagnostics/Logger.cpp
+    src/editor/AudioDocument.cpp
     src/gui/ControlWindow.cpp
     src/gui/ControlWindowLocalMediaImport.cpp
     src/gui/ControlWindowUrlImport.cpp
@@ -710,6 +711,49 @@ if(BUILD_TESTING)
     add_test(
         NAME MicrophoneProcessingSettings
         COMMAND SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoAudioDocumentTests
+        EXCLUDE_FROM_ALL
+        tests/AudioDocumentTests.cpp
+        src/editor/AudioDocument.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoAudioDocumentTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoAudioDocumentTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoAudioDocumentTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoAudioDocumentTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME AudioDocument
+        COMMAND SoundBoardFasaFisoAudioDocumentTests
     )
 
     add_executable(
