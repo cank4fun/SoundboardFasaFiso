@@ -185,6 +185,94 @@ namespace
         );
     }
 
+    void TestLocalAppDataRejectsConfigDirectoryCollision(
+        const TemporaryDirectory& directory
+    )
+    {
+        const auto program =
+            directory.Path() / "installed-config-collision";
+        const auto localAppData =
+            directory.Path() / "local-app-data-config-collision";
+        const auto executable = program / "SoundBoardFasaFiso.exe";
+        WriteFile(executable, "exe");
+        WriteFile(program / "config.txt", "language=tr\n");
+        WriteFile(program / "sounds" / "example.wav", "sound");
+
+        const ApplicationPathResolution resolution =
+            ResolveApplicationPaths(executable, localAppData);
+
+        Expect(
+            resolution.paths.has_value(),
+            "config-collision paths resolve"
+        );
+
+        if (!resolution.paths.has_value())
+        {
+            return;
+        }
+
+        std::filesystem::create_directories(
+            resolution.paths->configPath
+        );
+
+        std::wstring errorMessage;
+        Expect(
+            !PrepareApplicationStorage(
+                *resolution.paths,
+                errorMessage
+            ),
+            "a config directory collision is rejected"
+        );
+        Expect(
+            errorMessage.find(L"config.txt") != std::wstring::npos,
+            "the config collision error identifies config.txt"
+        );
+    }
+
+    void TestLocalAppDataRejectsSoundDirectoryCollision(
+        const TemporaryDirectory& directory
+    )
+    {
+        const auto program =
+            directory.Path() / "installed-sound-collision";
+        const auto localAppData =
+            directory.Path() / "local-app-data-sound-collision";
+        const auto executable = program / "SoundBoardFasaFiso.exe";
+        WriteFile(executable, "exe");
+        WriteFile(program / "config.txt", "language=tr\n");
+        WriteFile(program / "sounds" / "example.wav", "sound");
+
+        const ApplicationPathResolution resolution =
+            ResolveApplicationPaths(executable, localAppData);
+
+        Expect(
+            resolution.paths.has_value(),
+            "sound-collision paths resolve"
+        );
+
+        if (!resolution.paths.has_value())
+        {
+            return;
+        }
+
+        std::filesystem::create_directories(
+            resolution.paths->soundsFolder / "example.wav"
+        );
+
+        std::wstring errorMessage;
+        Expect(
+            !PrepareApplicationStorage(
+                *resolution.paths,
+                errorMessage
+            ),
+            "a packaged-sound directory collision is rejected"
+        );
+        Expect(
+            errorMessage.find(L"example.wav") != std::wstring::npos,
+            "the sound collision error identifies the destination"
+        );
+    }
+
     void TestIncompletePortableFolderFailsClearly(
         const TemporaryDirectory& directory
     )
@@ -223,6 +311,8 @@ int main()
 
     TestPortableModeStaysBesideExecutable(directory);
     TestLocalAppDataModeBootstrapsPackagedDefaults(directory);
+    TestLocalAppDataRejectsConfigDirectoryCollision(directory);
+    TestLocalAppDataRejectsSoundDirectoryCollision(directory);
     TestIncompletePortableFolderFailsClearly(directory);
 
     if (failureCount != 0)

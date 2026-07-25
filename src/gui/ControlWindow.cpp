@@ -389,7 +389,7 @@ bool ControlWindow::Initialize(
         IMAGE_ICON,
         GetSystemMetrics(SM_CXICON),
         GetSystemMetrics(SM_CYICON),
-        LR_DEFAULTCOLOR
+        LR_DEFAULTCOLOR | LR_SHARED
     ));
     windowClass.hIconSm = static_cast<HICON>(LoadImageW(
         instance_,
@@ -397,7 +397,7 @@ bool ControlWindow::Initialize(
         IMAGE_ICON,
         GetSystemMetrics(SM_CXSMICON),
         GetSystemMetrics(SM_CYSMICON),
-        LR_DEFAULTCOLOR
+        LR_DEFAULTCOLOR | LR_SHARED
     ));
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     windowClass.hbrBackground = nullptr;

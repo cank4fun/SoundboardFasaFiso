@@ -88,16 +88,30 @@ namespace
     )
     {
         std::error_code error;
-        if (std::filesystem::exists(destination, error))
-        {
-            return !error;
-        }
+        const bool destinationExists =
+            std::filesystem::exists(destination, error);
 
         if (error)
         {
             errorMessage = L"The destination path could not be inspected: " +
                 destination.wstring();
             return false;
+        }
+
+        if (destinationExists)
+        {
+            error.clear();
+
+            if (!std::filesystem::is_regular_file(destination, error) ||
+                error)
+            {
+                errorMessage =
+                    L"The existing destination is not a regular file: " +
+                    destination.wstring();
+                return false;
+            }
+
+            return true;
         }
 
         error.clear();
@@ -182,7 +196,27 @@ namespace
                 if (entry.is_regular_file(error) && !error)
                 {
                     error.clear();
-                    if (!std::filesystem::exists(destination, error) && !error)
+                    const bool destinationExists =
+                        std::filesystem::exists(destination, error);
+
+                    if (!error && destinationExists)
+                    {
+                        error.clear();
+
+                        if (!std::filesystem::is_regular_file(
+                                destination,
+                                error
+                            ) ||
+                            error)
+                        {
+                            errorMessage =
+                                L"An existing packaged-sound destination "
+                                L"is not a regular file: " +
+                                destination.wstring();
+                            return false;
+                        }
+                    }
+                    else if (!error)
                     {
                         std::filesystem::create_directories(
                             destination.parent_path(),
