@@ -176,6 +176,7 @@ add_executable(
     src/config/Config.cpp
     src/diagnostics/Logger.cpp
     src/editor/AudioDocument.cpp
+    src/editor/AudioDocumentWav.cpp
     src/gui/ControlWindow.cpp
     src/gui/ControlWindowLocalMediaImport.cpp
     src/gui/ControlWindowUrlImport.cpp
@@ -754,6 +755,64 @@ if(BUILD_TESTING)
     add_test(
         NAME AudioDocument
         COMMAND SoundBoardFasaFisoAudioDocumentTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoAudioDocumentWavTests
+        EXCLUDE_FROM_ALL
+        tests/AudioDocumentWavTests.cpp
+        src/editor/AudioDocument.cpp
+        src/editor/AudioDocumentWav.cpp
+        $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoAudioDocumentWavTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoAudioDocumentWavTests
+        SYSTEM PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
+    )
+
+    target_compile_definitions(
+        SoundBoardFasaFisoAudioDocumentWavTests
+        PRIVATE
+            WIN32_LEAN_AND_MEAN
+            NOMINMAX
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoAudioDocumentWavTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoAudioDocumentWavTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoAudioDocumentWavTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME AudioDocumentWav
+        COMMAND SoundBoardFasaFisoAudioDocumentWavTests
     )
 
     add_executable(
