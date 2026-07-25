@@ -1,6 +1,7 @@
 #include "editor/AudioDocumentWav.hpp"
 
 #include <array>
+#include <atomic>
 #include <bit>
 #include <chrono>
 #include <cmath>
@@ -385,6 +386,51 @@ namespace
         }
     }
 
+    void TestChunkedDecode()
+    {
+        TemporaryDirectory directory;
+        std::vector<float> samples(20001U, 0.0f);
+
+        for (std::size_t index = 0U; index < samples.size(); ++index)
+        {
+            samples[index] = static_cast<float>(
+                static_cast<int>(index % 201U) - 100
+            ) / 100.0f;
+        }
+
+        std::string errorMessage;
+        AudioDocument document = RequireDocument(
+            AudioDocument::Create(48000U, 1U, samples, errorMessage),
+            "chunked decode fixture is valid"
+        );
+        const auto path = directory.Path() / "chunked.wav";
+        Expect(
+            AudioDocumentWav::SavePcm16(document, path).Succeeded(),
+            "chunked decode fixture saves"
+        );
+
+        AudioWavLoadResult result = AudioDocumentWav::Load(path);
+        Expect(result.Succeeded(), "multi-chunk WAV loads");
+
+        if (!result.document.has_value())
+        {
+            return;
+        }
+
+        Expect(
+            result.document->FrameCount() == samples.size(),
+            "multi-chunk load retains every frame"
+        );
+        Expect(
+            NearlyEqual(result.document->Samples()[16383U], samples[16383U]),
+            "sample before the decode boundary is retained"
+        );
+        Expect(
+            NearlyEqual(result.document->Samples()[16384U], samples[16384U]),
+            "sample after the decode boundary is retained"
+        );
+    }
+
     void TestSaveModes()
     {
         TemporaryDirectory directory;
@@ -657,6 +703,26 @@ namespace
         );
     }
 
+    void TestLoadCancellation()
+    {
+        TemporaryDirectory directory;
+        const auto missing = directory.Path() / "cancelled.wav";
+        std::atomic_bool cancellationRequested{true};
+        const AudioWavLoadResult result = AudioDocumentWav::Load(
+            missing,
+            &cancellationRequested
+        );
+
+        Expect(
+            result.error == AudioWavFileError::Cancelled,
+            "pre-cancelled WAV load reports cancellation"
+        );
+        Expect(
+            !result.document.has_value(),
+            "cancelled WAV load returns no document"
+        );
+    }
+
     void TestEmptyDocumentAndInvalidSavePaths()
     {
         TemporaryDirectory directory;
@@ -703,10 +769,12 @@ namespace
 int main()
 {
     TestPcm16SaveAndLoad();
+    TestChunkedDecode();
     TestSaveModes();
     TestPcmVariantsAndChunkPadding();
     TestExtensibleFloat();
     TestInvalidInputs();
+    TestLoadCancellation();
     TestEmptyDocumentAndInvalidSavePaths();
 
     if (failureCount != 0)

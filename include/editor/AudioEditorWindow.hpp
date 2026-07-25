@@ -19,10 +19,13 @@
 
 #include <Windows.h>
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 
 class AudioEditorWindow final
 {
@@ -70,6 +73,15 @@ private:
         AdjustEnd
     };
 
+    struct AudioLoadJobResult final
+    {
+        std::filesystem::path filePath;
+        std::optional<AudioDocument> document;
+        std::optional<AudioWaveformCache> waveformCache;
+        std::string errorMessage;
+        bool cancelled = false;
+    };
+
     static constexpr int InitialClientWidth = 1080;
     static constexpr int InitialClientHeight = 820;
     static constexpr int MinimumClientWidth = 900;
@@ -106,6 +118,7 @@ private:
     static constexpr int IdPaste = 2129;
     static constexpr int IdSilenceSelection = 2130;
     static constexpr int IdTrimSilence = 2131;
+    static constexpr UINT LoadJobCompletedMessage = WM_APP + 80U;
     static constexpr UINT_PTR PlaybackTimerId = 1U;
     static constexpr UINT PlaybackTimerMilliseconds = 40U;
     static constexpr int ScrollRangeMaximum = 10000;
@@ -131,6 +144,10 @@ private:
     void BrowseForWav();
     void BrowseSaveAs();
     bool LoadFile(const std::filesystem::path& filePath);
+    void RequestLoadCancellation();
+    void HandleLoadJobCompleted();
+    void StopLoadJob(bool waitForCompletion);
+    void UpdateLoadControls();
     bool SaveOverCurrent();
     bool SaveToFile(
         const std::filesystem::path& filePath,
@@ -210,6 +227,7 @@ private:
     [[nodiscard]] std::size_t CurrentPlayheadFrame() const noexcept;
     [[nodiscard]] bool HasSelection() const noexcept;
     [[nodiscard]] bool IsModified() const noexcept;
+    [[nodiscard]] bool IsLoadRunning() const noexcept;
     [[nodiscard]] int Scale(int value) const noexcept;
 
     static std::wstring Utf8ToWide(const std::string& value);
@@ -290,6 +308,11 @@ private:
     RECT waveformRectangle_{};
     std::filesystem::path loadedFile_;
     std::optional<AudioDocument> document_;
+    std::jthread loadThread_;
+    std::atomic_bool loadRunning_{false};
+    std::atomic_bool loadCancellationRequested_{false};
+    std::mutex loadResultMutex_;
+    std::optional<AudioLoadJobResult> pendingLoadResult_;
     std::optional<AudioDocument> clipboard_;
     std::optional<AudioWaveformCache> waveformCache_;
     AudioEditHistory editHistory_;

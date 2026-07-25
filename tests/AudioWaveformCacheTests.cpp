@@ -1,5 +1,6 @@
 #include "editor/AudioWaveformCache.hpp"
 
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -240,6 +241,29 @@ namespace
         Expect(rebuilt.Matches(document), "rebuilt cache matches edited document");
     }
 
+    void TestBuildCancellation()
+    {
+        AudioDocument document = CreateDocument(
+            1U,
+            {0.0f, 0.5f, -0.5f, 1.0f}
+        );
+        std::atomic_bool cancellationRequested{true};
+        std::string errorMessage;
+
+        Expect(
+            !AudioWaveformCache::Build(
+                document,
+                errorMessage,
+                &cancellationRequested
+            ).has_value(),
+            "pre-cancelled waveform build is rejected"
+        );
+        Expect(
+            errorMessage == "The waveform cache build was cancelled.",
+            "waveform cancellation is reported"
+        );
+    }
+
     void TestValidationAndEmptyDocument()
     {
         AudioDocument empty = CreateDocument(1U, {});
@@ -287,6 +311,7 @@ int main()
     TestChannelSeparationAndColumnClamp();
     TestCachedFarZoomAndUnalignedRange();
     TestCacheInvalidation();
+    TestBuildCancellation();
     TestValidationAndEmptyDocument();
 
     if (failureCount != 0)

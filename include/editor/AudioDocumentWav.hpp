@@ -2,6 +2,7 @@
 
 #include "editor/AudioDocument.hpp"
 
+#include <atomic>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -9,6 +10,7 @@
 enum class AudioWavFileError
 {
     None,
+    Cancelled,
     InvalidPath,
     FileNotFound,
     OpenFailed,
@@ -49,7 +51,8 @@ class AudioDocumentWav final
 {
 public:
     static AudioWavLoadResult Load(
-        const std::filesystem::path& filePath
+        const std::filesystem::path& filePath,
+        const std::atomic_bool* cancellationRequested = nullptr
     );
 
     static AudioWavSaveResult SavePcm16(

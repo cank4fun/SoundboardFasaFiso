@@ -2,6 +2,7 @@
 
 #include "editor/AudioDocument.hpp"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -43,7 +44,8 @@ public:
 
     static std::optional<AudioWaveformCache> Build(
         const AudioDocument& document,
-        std::string& errorMessage
+        std::string& errorMessage,
+        const std::atomic_bool* cancellationRequested = nullptr
     );
 
     [[nodiscard]] bool Matches(

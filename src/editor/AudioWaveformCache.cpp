@@ -5,6 +5,14 @@
 
 namespace
 {
+    bool IsCancellationRequested(
+        const std::atomic_bool* cancellationRequested
+    ) noexcept
+    {
+        return cancellationRequested != nullptr &&
+            cancellationRequested->load(std::memory_order_relaxed);
+    }
+
     std::size_t DivideRoundingUp(
         const std::size_t value,
         const std::size_t divisor
@@ -115,10 +123,17 @@ std::span<const AudioWaveformPeak> AudioWaveformView::PeaksForChannel(
 
 std::optional<AudioWaveformCache> AudioWaveformCache::Build(
     const AudioDocument& document,
-    std::string& errorMessage
+    std::string& errorMessage,
+    const std::atomic_bool* cancellationRequested
 )
 {
     errorMessage.clear();
+
+    if (IsCancellationRequested(cancellationRequested))
+    {
+        errorMessage = "The waveform cache build was cancelled.";
+        return std::nullopt;
+    }
 
     AudioWaveformCache cache;
     cache.sampleRate_ = document.SampleRate();
@@ -160,6 +175,12 @@ std::optional<AudioWaveformCache> AudioWaveformCache::Build(
              peakIndex < basePeakCount;
              ++peakIndex)
         {
+            if ((peakIndex & 1023U) == 0U &&
+                IsCancellationRequested(cancellationRequested))
+            {
+                errorMessage = "The waveform cache build was cancelled.";
+                return std::nullopt;
+            }
             const std::size_t beginFrame = peakIndex * BaseFramesPerPeak;
             const std::size_t endFrame = std::min(
                 beginFrame + BaseFramesPerPeak,
@@ -187,6 +208,11 @@ std::optional<AudioWaveformCache> AudioWaveformCache::Build(
 
     while (cache.levels_.back().peakCount > 1U)
     {
+        if (IsCancellationRequested(cancellationRequested))
+        {
+            errorMessage = "The waveform cache build was cancelled.";
+            return std::nullopt;
+        }
         const Level& previous = cache.levels_.back();
         Level next;
         next.framesPerPeak = previous.framesPerPeak * 2U;
@@ -214,6 +240,12 @@ std::optional<AudioWaveformCache> AudioWaveformCache::Build(
                  peakIndex < next.peakCount;
                  ++peakIndex)
             {
+                if ((peakIndex & 4095U) == 0U &&
+                    IsCancellationRequested(cancellationRequested))
+                {
+                    errorMessage = "The waveform cache build was cancelled.";
+                    return std::nullopt;
+                }
                 const std::size_t firstChild = peakIndex * 2U;
                 AudioWaveformPeak peak = previous.channelMajorPeaks[
                     previousChannelOffset + firstChild

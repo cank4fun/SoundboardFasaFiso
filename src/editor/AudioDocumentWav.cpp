@@ -30,6 +30,15 @@ namespace
     constexpr std::uint64_t MaximumDecodedBytes = 1ULL << 30U;
     constexpr std::uint32_t MaximumRiffDataBytes =
         std::numeric_limits<std::uint32_t>::max() - 36U;
+    constexpr ma_uint64 DecodeChunkFrames = 16384U;
+
+    bool IsCancellationRequested(
+        const std::atomic_bool* cancellationRequested
+    ) noexcept
+    {
+        return cancellationRequested != nullptr &&
+            cancellationRequested->load(std::memory_order_relaxed);
+    }
 
     struct WaveInspectionResult final
     {
@@ -79,7 +88,8 @@ namespace
     }
 
     WaveInspectionResult InspectWaveContainer(
-        const std::filesystem::path& filePath
+        const std::filesystem::path& filePath,
+        const std::atomic_bool* cancellationRequested
     )
     {
         std::error_code error;
@@ -139,6 +149,13 @@ namespace
 
         while (position + 8U <= riffEnd)
         {
+            if (IsCancellationRequested(cancellationRequested))
+            {
+                return {
+                    AudioWavFileError::Cancelled,
+                    "The WAV load was cancelled."
+                };
+            }
             if (!ReadExact(file, bytes.data(), 8U))
             {
                 return {
@@ -476,9 +493,18 @@ bool AudioWavSaveResult::Succeeded() const noexcept
 }
 
 AudioWavLoadResult AudioDocumentWav::Load(
-    const std::filesystem::path& filePath
+    const std::filesystem::path& filePath,
+    const std::atomic_bool* cancellationRequested
 )
 {
+    if (IsCancellationRequested(cancellationRequested))
+    {
+        return LoadFailure(
+            AudioWavFileError::Cancelled,
+            "The WAV load was cancelled."
+        );
+    }
+
     if (filePath.empty())
     {
         return LoadFailure(
@@ -506,13 +532,21 @@ AudioWavLoadResult AudioDocumentWav::Load(
     }
 
     const WaveInspectionResult inspection =
-        InspectWaveContainer(filePath);
+        InspectWaveContainer(filePath, cancellationRequested);
 
     if (!inspection.Succeeded())
     {
         return LoadFailure(
             inspection.error,
             inspection.errorMessage
+        );
+    }
+
+    if (IsCancellationRequested(cancellationRequested))
+    {
+        return LoadFailure(
+            AudioWavFileError::Cancelled,
+            "The WAV load was cancelled."
         );
     }
 
@@ -617,26 +651,60 @@ AudioWavLoadResult AudioDocumentWav::Load(
         static_cast<std::size_t>(sampleCount),
         0.0f
     );
-    ma_uint64 framesRead = 0U;
+    ma_uint64 totalFramesRead = 0U;
     ma_result readResult = MA_SUCCESS;
 
-    if (frameCount != 0U)
+    while (totalFramesRead < frameCount)
     {
+        if (IsCancellationRequested(cancellationRequested))
+        {
+            ma_decoder_uninit(&decoder);
+            return LoadFailure(
+                AudioWavFileError::Cancelled,
+                "The WAV load was cancelled."
+            );
+        }
+
+        const ma_uint64 requestedFrames = std::min(
+            DecodeChunkFrames,
+            frameCount - totalFramesRead
+        );
+        ma_uint64 chunkFramesRead = 0U;
+        float* destination = samples.data() +
+            static_cast<std::size_t>(totalFramesRead) *
+                static_cast<std::size_t>(channelCount);
+
         readResult = ma_decoder_read_pcm_frames(
             &decoder,
-            samples.data(),
-            frameCount,
-            &framesRead
+            destination,
+            requestedFrames,
+            &chunkFramesRead
         );
+        totalFramesRead += chunkFramesRead;
+
+        if ((readResult != MA_SUCCESS && readResult != MA_AT_END) ||
+            chunkFramesRead == 0U)
+        {
+            break;
+        }
     }
 
     ma_decoder_uninit(&decoder);
 
-    if (readResult != MA_SUCCESS || framesRead != frameCount)
+    if ((readResult != MA_SUCCESS && readResult != MA_AT_END) ||
+        totalFramesRead != frameCount)
     {
         return LoadFailure(
             AudioWavFileError::ReadFailed,
             "The WAV sample data could not be read completely."
+        );
+    }
+
+    if (IsCancellationRequested(cancellationRequested))
+    {
+        return LoadFailure(
+            AudioWavFileError::Cancelled,
+            "The WAV load was cancelled."
         );
     }
 
