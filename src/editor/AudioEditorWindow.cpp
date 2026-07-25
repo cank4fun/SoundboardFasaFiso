@@ -33,6 +33,7 @@ namespace
     constexpr int HeaderRowHeight = 84;
     constexpr int TransportRowHeight = 38;
     constexpr int EditRowHeight = 38;
+    constexpr int SelectionRowHeight = 40;
     constexpr int TransportButtonWidth = 88;
     constexpr int CompactButtonWidth = 58;
     constexpr int ScrollBarHeight = 18;
@@ -173,6 +174,14 @@ void AudioEditorWindow::Shutdown()
     redoButton_ = nullptr;
     cropButton_ = nullptr;
     deleteButton_ = nullptr;
+    selectionStartLabel_ = nullptr;
+    selectionStartEdit_ = nullptr;
+    selectionEndLabel_ = nullptr;
+    selectionEndEdit_ = nullptr;
+    applySelectionButton_ = nullptr;
+    snapZeroButton_ = nullptr;
+    zoomSelectionButton_ = nullptr;
+    selectAllButton_ = nullptr;
     zoomOutButton_ = nullptr;
     zoomFitButton_ = nullptr;
     zoomInButton_ = nullptr;
@@ -211,8 +220,14 @@ void AudioEditorWindow::RefreshLocalizedText()
     SetWindowTextW(stopButton_, Localization::Text(L"Durdur", L"Stop"));
     SetWindowTextW(undoButton_, Localization::Text(L"Geri al", L"Undo"));
     SetWindowTextW(redoButton_, Localization::Text(L"Yinele", L"Redo"));
-    SetWindowTextW(cropButton_, Localization::Text(L"Seçimi kırp", L"Crop"));
-    SetWindowTextW(deleteButton_, Localization::Text(L"Seçimi sil", L"Delete"));
+    SetWindowTextW(cropButton_, Localization::Text(L"Seçimi kırp", L"Trim to selection"));
+    SetWindowTextW(deleteButton_, Localization::Text(L"Seçimi sil", L"Delete selection"));
+    SetWindowTextW(selectionStartLabel_, Localization::Text(L"Başlangıç", L"Start"));
+    SetWindowTextW(selectionEndLabel_, Localization::Text(L"Bitiş", L"End"));
+    SetWindowTextW(applySelectionButton_, Localization::Text(L"Uygula", L"Apply"));
+    SetWindowTextW(snapZeroButton_, Localization::Text(L"Sıfır geçiş", L"Zero crossing"));
+    SetWindowTextW(zoomSelectionButton_, Localization::Text(L"Seçime zoom", L"Zoom selection"));
+    SetWindowTextW(selectAllButton_, Localization::Text(L"Tümünü seç", L"Select all"));
     SetWindowTextW(zoomOutButton_, L"−");
     SetWindowTextW(zoomFitButton_, Localization::Text(L"Sığdır", L"Fit"));
     SetWindowTextW(zoomInButton_, L"+");
@@ -241,6 +256,7 @@ void AudioEditorWindow::RefreshLocalizedText()
 
     UpdateTransportControls();
     UpdateEditControls();
+    UpdateSelectionControls();
     UpdatePlaybackTimeText();
     InvalidateRect(window_, nullptr, TRUE);
 }
@@ -314,6 +330,14 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             return reinterpret_cast<LRESULT>(backgroundBrush_);
         }
 
+        case WM_CTLCOLOREDIT:
+        {
+            const HDC deviceContext = reinterpret_cast<HDC>(wParam);
+            SetBkColor(deviceContext, panelColor_);
+            SetTextColor(deviceContext, textColor_);
+            return reinterpret_cast<LRESULT>(panelBrush_);
+        }
+
         case WM_CTLCOLORSCROLLBAR:
             return reinterpret_cast<LRESULT>(panelBrush_);
 
@@ -335,6 +359,10 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
                     case IdRedo: RedoEdit(); return 0;
                     case IdCrop: ApplySelectionEdit(SelectionEdit::Crop); return 0;
                     case IdDeleteSelection: ApplySelectionEdit(SelectionEdit::Delete); return 0;
+                    case IdApplySelectionTimes: ApplySelectionTimes(); return 0;
+                    case IdSnapZeroCrossings: SnapSelectionToZeroCrossings(); return 0;
+                    case IdZoomSelection: ZoomToSelection(); return 0;
+                    case IdSelectAll: SelectAllAudio(); return 0;
                     case IdZoomOut:
                         if (document_.has_value())
                         {
@@ -379,8 +407,20 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             HandleWaveformMouseUp(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             return 0;
 
+        case WM_LBUTTONDBLCLK:
+            HandleWaveformMouseDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            if (selecting_)
+            {
+                selecting_ = false;
+                selectionDragMode_ = SelectionDragMode::None;
+                if (GetCapture() == window_) ReleaseCapture();
+                SelectAllAudio();
+            }
+            return 0;
+
         case WM_CAPTURECHANGED:
             selecting_ = false;
+            selectionDragMode_ = SelectionDragMode::None;
             return 0;
 
         case WM_TIMER:
@@ -396,6 +436,9 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             const bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
             if (control && wParam == 'Z') { UndoEdit(); return 0; }
             if (control && wParam == 'Y') { RedoEdit(); return 0; }
+            if (control && wParam == 'A') { SelectAllAudio(); return 0; }
+            if (control && wParam == 'E') { ZoomToSelection(); return 0; }
+            if (!control && wParam == 'Z') { SnapSelectionToZeroCrossings(); return 0; }
             if (control && wParam == 'S')
             {
                 if ((GetKeyState(VK_SHIFT) & 0x8000) != 0) BrowseSaveAs();
@@ -481,6 +524,7 @@ bool AudioEditorWindow::EnsureWindow(
 
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(windowClass);
+    windowClass.style = CS_DBLCLKS;
     windowClass.lpfnWndProc = &AudioEditorWindow::WindowProcedure;
     windowClass.hInstance = instance_;
     windowClass.hIcon = static_cast<HICON>(LoadImageW(
@@ -593,6 +637,24 @@ bool AudioEditorWindow::CreateControls()
     redoButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdRedo);
     cropButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdCrop);
     deleteButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdDeleteSelection);
+    selectionStartLabel_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    selectionStartEdit_ = createControl(
+        L"EDIT",
+        L"",
+        WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL | ES_RIGHT,
+        IdSelectionStart
+    );
+    selectionEndLabel_ = createControl(L"STATIC", L"", SS_LEFT, 0);
+    selectionEndEdit_ = createControl(
+        L"EDIT",
+        L"",
+        WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL | ES_RIGHT,
+        IdSelectionEnd
+    );
+    applySelectionButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdApplySelectionTimes);
+    snapZeroButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdSnapZeroCrossings);
+    zoomSelectionButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomSelection);
+    selectAllButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdSelectAll);
     zoomOutButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomOut);
     zoomFitButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomFit);
     zoomInButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomIn);
@@ -602,11 +664,24 @@ bool AudioEditorWindow::CreateControls()
     timeLabel_ = createControl(L"STATIC", L"", SS_RIGHT | SS_PATHELLIPSIS, 0);
     statusLabel_ = createControl(L"STATIC", L"", SS_LEFT | SS_PATHELLIPSIS, 0);
 
+    if (selectionStartEdit_ != nullptr)
+    {
+        SendMessageW(selectionStartEdit_, EM_SETLIMITTEXT, 48U, 0);
+    }
+    if (selectionEndEdit_ != nullptr)
+    {
+        SendMessageW(selectionEndEdit_, EM_SETLIMITTEXT, 48U, 0);
+    }
+
     return openButton_ != nullptr && saveAsButton_ != nullptr &&
         overwriteButton_ != nullptr && closeButton_ != nullptr &&
         playPauseButton_ != nullptr && stopButton_ != nullptr &&
         undoButton_ != nullptr && redoButton_ != nullptr &&
         cropButton_ != nullptr && deleteButton_ != nullptr &&
+        selectionStartLabel_ != nullptr && selectionStartEdit_ != nullptr &&
+        selectionEndLabel_ != nullptr && selectionEndEdit_ != nullptr &&
+        applySelectionButton_ != nullptr && snapZeroButton_ != nullptr &&
+        zoomSelectionButton_ != nullptr && selectAllButton_ != nullptr &&
         zoomOutButton_ != nullptr && zoomFitButton_ != nullptr &&
         zoomInButton_ != nullptr && waveformScrollBar_ != nullptr &&
         fileLabel_ != nullptr && metadataLabel_ != nullptr &&
@@ -627,6 +702,7 @@ void AudioEditorWindow::LayoutControls(
     const int headerRowHeight = Scale(HeaderRowHeight);
     const int transportRowHeight = Scale(TransportRowHeight);
     const int editRowHeight = Scale(EditRowHeight);
+    const int selectionRowHeight = Scale(SelectionRowHeight);
     const int transportButtonWidth = Scale(TransportButtonWidth);
     const int compactButtonWidth = Scale(CompactButtonWidth);
     const int scrollBarHeight = Scale(ScrollBarHeight);
@@ -672,7 +748,36 @@ void AudioEditorWindow::LayoutControls(
     editX += Scale(108) + buttonGap;
     MoveWindow(deleteButton_, editX, editTop, Scale(108), buttonHeight, TRUE);
 
-    const int waveformTop = editTop + editRowHeight + Scale(8);
+    const int selectionTop = editTop + editRowHeight + Scale(6);
+    const int selectionLabelWidth = Scale(68);
+    const int selectionEditWidth = Scale(112);
+    const int selectionButtonWidth = Scale(104);
+    int selectionX = margin;
+    MoveWindow(selectionStartLabel_, selectionX, selectionTop + Scale(8),
+        selectionLabelWidth, Scale(22), TRUE);
+    selectionX += selectionLabelWidth + Scale(4);
+    MoveWindow(selectionStartEdit_, selectionX, selectionTop + Scale(2),
+        selectionEditWidth, buttonHeight - Scale(4), TRUE);
+    selectionX += selectionEditWidth + buttonGap;
+    MoveWindow(selectionEndLabel_, selectionX, selectionTop + Scale(8),
+        Scale(42), Scale(22), TRUE);
+    selectionX += Scale(42) + Scale(4);
+    MoveWindow(selectionEndEdit_, selectionX, selectionTop + Scale(2),
+        selectionEditWidth, buttonHeight - Scale(4), TRUE);
+    selectionX += selectionEditWidth + buttonGap;
+    MoveWindow(applySelectionButton_, selectionX, selectionTop,
+        Scale(78), buttonHeight, TRUE);
+    selectionX += Scale(78) + buttonGap;
+    MoveWindow(snapZeroButton_, selectionX, selectionTop,
+        selectionButtonWidth, buttonHeight, TRUE);
+    selectionX += selectionButtonWidth + buttonGap;
+    MoveWindow(zoomSelectionButton_, selectionX, selectionTop,
+        selectionButtonWidth, buttonHeight, TRUE);
+    selectionX += selectionButtonWidth + buttonGap;
+    MoveWindow(selectAllButton_, selectionX, selectionTop,
+        Scale(92), buttonHeight, TRUE);
+
+    const int waveformTop = selectionTop + selectionRowHeight + Scale(8);
     const int statusTop = std::max(waveformTop, clientHeight - margin - statusRowHeight);
     const int scrollTop = std::max(waveformTop, statusTop - Scale(8) - scrollBarHeight);
     waveformRectangle_ = RECT{margin, waveformTop, std::max(margin + 1, clientWidth - margin),
@@ -868,8 +973,8 @@ bool AudioEditorWindow::LoadFile(
     UpdatePlaybackTimeText();
     UpdateWaveformScrollBar();
     SetStatusText(Localization::Text(
-        L"WAV yüklendi. Waveform üzerinde sürükleyerek seçim yap.",
-        L"WAV loaded. Drag on the waveform to select audio."
+        L"WAV yüklendi. Seçim yap; kenarları sürükleyerek hassaslaştır.",
+        L"WAV loaded. Select audio and drag the edges for precision."
     ));
     InvalidateRect(window_, nullptr, TRUE);
     return true;
@@ -885,6 +990,9 @@ void AudioEditorWindow::ClearDocument()
     editHistory_.Clear();
     selection_.reset();
     selecting_ = false;
+    selectionDragged_ = false;
+    selectionDragMode_ = SelectionDragMode::None;
+    updatingSelectionFields_ = false;
     viewport_.Reset(0U);
     playheadFrame_ = 0U;
     currentStateIdentifier_ = 0U;
@@ -1015,6 +1123,25 @@ void AudioEditorWindow::DrawWaveform(
         LineTo(deviceContext, selectionRectangle.right - 1, rectangle.bottom);
         SelectObject(deviceContext, previousPen);
         DeleteObject(selectionPen);
+
+        HBRUSH handleBrush = CreateSolidBrush(selectionBorderColor_);
+        const int handleHalfWidth = Scale(3);
+        const int handleHeight = Scale(9);
+        RECT beginHandle{
+            selectionRectangle.left - handleHalfWidth,
+            rectangle.top,
+            selectionRectangle.left + handleHalfWidth + 1,
+            std::min(rectangle.bottom, rectangle.top + handleHeight)
+        };
+        RECT endHandle{
+            selectionRectangle.right - 1 - handleHalfWidth,
+            rectangle.top,
+            selectionRectangle.right + handleHalfWidth,
+            std::min(rectangle.bottom, rectangle.top + handleHeight)
+        };
+        FillRect(deviceContext, &beginHandle, handleBrush);
+        FillRect(deviceContext, &endHandle, handleBrush);
+        DeleteObject(handleBrush);
     }
 
     HPEN waveformPen = CreatePen(PS_SOLID, 1, waveformColor_);
@@ -1267,7 +1394,16 @@ void AudioEditorWindow::ApplyFonts()
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
     );
 
-    const HWND labels[]{fileLabel_, metadataLabel_, timeLabel_, statusLabel_};
+    const HWND labels[]{
+        fileLabel_,
+        metadataLabel_,
+        timeLabel_,
+        statusLabel_,
+        selectionStartLabel_,
+        selectionEndLabel_,
+        selectionStartEdit_,
+        selectionEndEdit_
+    };
     for (const HWND label : labels)
     {
         if (label != nullptr)
@@ -1292,6 +1428,10 @@ void AudioEditorWindow::ApplyFonts()
         redoButton_,
         cropButton_,
         deleteButton_,
+        applySelectionButton_,
+        snapZeroButton_,
+        zoomSelectionButton_,
+        selectAllButton_,
         zoomOutButton_,
         zoomFitButton_,
         zoomInButton_
@@ -1410,6 +1550,58 @@ void AudioEditorWindow::UpdateEditControls()
         const bool canDelete = hasSelection && selection_->FrameCount() < document_->FrameCount();
         EnableWindow(deleteButton_, canDelete ? TRUE : FALSE);
     }
+    if (selectionStartEdit_ != nullptr) EnableWindow(selectionStartEdit_, hasDocument ? TRUE : FALSE);
+    if (selectionEndEdit_ != nullptr) EnableWindow(selectionEndEdit_, hasDocument ? TRUE : FALSE);
+    if (applySelectionButton_ != nullptr) EnableWindow(applySelectionButton_, hasDocument ? TRUE : FALSE);
+    if (snapZeroButton_ != nullptr) EnableWindow(snapZeroButton_, hasSelection ? TRUE : FALSE);
+    if (zoomSelectionButton_ != nullptr) EnableWindow(zoomSelectionButton_, hasSelection ? TRUE : FALSE);
+    if (selectAllButton_ != nullptr) EnableWindow(selectAllButton_, hasDocument ? TRUE : FALSE);
+    UpdateSelectionControls();
+}
+
+void AudioEditorWindow::UpdateSelectionControls()
+{
+    if (selectionStartEdit_ == nullptr || selectionEndEdit_ == nullptr ||
+        updatingSelectionFields_)
+    {
+        return;
+    }
+
+    if (GetFocus() == selectionStartEdit_ || GetFocus() == selectionEndEdit_)
+    {
+        return;
+    }
+
+    std::size_t startFrame = 0U;
+    std::size_t endFrame = 0U;
+    std::uint32_t sampleRate = 1U;
+
+    if (document_.has_value())
+    {
+        sampleRate = document_->SampleRate();
+        if (HasSelection())
+        {
+            startFrame = selection_->beginFrame;
+            endFrame = selection_->endFrame;
+        }
+        else
+        {
+            startFrame = CurrentPlayheadFrame();
+            endFrame = startFrame;
+        }
+    }
+
+    const std::wstring startText = Utf8ToWide(
+        FormatAudioFrameTime(startFrame, sampleRate)
+    );
+    const std::wstring endText = Utf8ToWide(
+        FormatAudioFrameTime(endFrame, sampleRate)
+    );
+
+    updatingSelectionFields_ = true;
+    SetWindowTextW(selectionStartEdit_, startText.c_str());
+    SetWindowTextW(selectionEndEdit_, endText.c_str());
+    updatingSelectionFields_ = false;
 }
 
 void AudioEditorWindow::UpdateWindowTitle()
@@ -1442,6 +1634,7 @@ void AudioEditorWindow::UpdatePlaybackTimeText()
     text.append(L" / ");
     text.append(FormatDuration(document_->DurationSeconds()));
     SetWindowTextW(timeLabel_, text.c_str());
+    UpdateSelectionControls();
 }
 
 void AudioEditorWindow::UpdateWaveformScrollBar()
@@ -1870,18 +2063,76 @@ void AudioEditorWindow::HandleMouseWheel(
 
 void AudioEditorWindow::HandleWaveformMouseDown(const int x, const int y)
 {
-    if (!document_.has_value()) return;
+    if (!document_.has_value())
+    {
+        return;
+    }
+
     const RECT inner = WaveformInnerRectangle();
     const POINT point{x, y};
-    if (PtInRect(&inner, point) == FALSE) return;
+    if (PtInRect(&inner, point) == FALSE)
+    {
+        return;
+    }
+
+    const int width = inner.right - inner.left;
+    const std::size_t clickedFrame = viewport_.FrameAtPixel(
+        x - inner.left,
+        width
+    );
+    const bool extendSelection =
+        (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+    const int edgeTolerance = Scale(7);
+
+    selectionDragMode_ = SelectionDragMode::NewSelection;
+    selectionAnchorFrame_ = clickedFrame;
+
+    if (HasSelection())
+    {
+        const int beginX = inner.left + viewport_.PixelForFrame(
+            selection_->beginFrame,
+            width
+        );
+        const int endX = inner.left + viewport_.PixelForFrame(
+            selection_->endFrame,
+            width
+        );
+        const bool nearBegin = std::abs(x - beginX) <= edgeTolerance;
+        const bool nearEnd = std::abs(x - endX) <= edgeTolerance;
+
+        if (nearBegin || nearEnd || extendSelection)
+        {
+            const bool adjustBegin = nearBegin ||
+                (!nearEnd && extendSelection &&
+                 clickedFrame <= selection_->beginFrame +
+                    selection_->FrameCount() / 2U);
+            selectionDragMode_ = adjustBegin
+                ? SelectionDragMode::AdjustBegin
+                : SelectionDragMode::AdjustEnd;
+            selectionAnchorFrame_ = adjustBegin
+                ? selection_->endFrame
+                : selection_->beginFrame;
+        }
+    }
 
     SetFocus(window_);
     SetCapture(window_);
     selecting_ = true;
-    selectionDragged_ = false;
+    selectionDragged_ = selectionDragMode_ != SelectionDragMode::NewSelection;
     selectionAnchorX_ = x;
-    selectionAnchorFrame_ = viewport_.FrameAtPixel(x - inner.left, inner.right - inner.left);
-    selection_ = AudioFrameRange{selectionAnchorFrame_, std::min(document_->FrameCount(), selectionAnchorFrame_ + 1U)};
+
+    if (selectionDragMode_ == SelectionDragMode::NewSelection)
+    {
+        selection_ = AudioFrameRange{
+            clickedFrame,
+            std::min(document_->FrameCount(), clickedFrame + 1U)
+        };
+    }
+    else
+    {
+        UpdateSelectionFromPoint(x);
+    }
+
     UpdateEditControls();
     InvalidateRect(window_, &waveformRectangle_, FALSE);
 }
@@ -1892,25 +2143,46 @@ void AudioEditorWindow::HandleWaveformMouseMove(
     const WPARAM keyState
 )
 {
-    if (!selecting_ || (keyState & MK_LBUTTON) == 0) return;
-    if (std::abs(x - selectionAnchorX_) >= Scale(3)) selectionDragged_ = true;
+    if (!selecting_ || (keyState & MK_LBUTTON) == 0)
+    {
+        return;
+    }
+
+    if (std::abs(x - selectionAnchorX_) >= Scale(3))
+    {
+        selectionDragged_ = true;
+    }
     UpdateSelectionFromPoint(x);
 }
 
 void AudioEditorWindow::HandleWaveformMouseUp(const int x, const int y)
 {
-    if (!selecting_) return;
-    UpdateSelectionFromPoint(x);
-    selecting_ = false;
-    if (GetCapture() == window_) ReleaseCapture();
+    if (!selecting_)
+    {
+        return;
+    }
 
-    if (!selectionDragged_)
+    UpdateSelectionFromPoint(x);
+    const SelectionDragMode completedMode = selectionDragMode_;
+    selecting_ = false;
+    selectionDragMode_ = SelectionDragMode::None;
+    if (GetCapture() == window_)
+    {
+        ReleaseCapture();
+    }
+
+    if (!selectionDragged_ && completedMode == SelectionDragMode::NewSelection)
     {
         ClearSelection();
         const RECT inner = WaveformInnerRectangle();
         const POINT point{x, y};
         if (PtInRect(&inner, point) != FALSE)
-            SeekToFrame(viewport_.FrameAtPixel(x - inner.left, inner.right - inner.left));
+        {
+            SeekToFrame(viewport_.FrameAtPixel(
+                x - inner.left,
+                inner.right - inner.left
+            ));
+        }
         return;
     }
 
@@ -1928,17 +2200,41 @@ void AudioEditorWindow::HandleWaveformMouseUp(const int x, const int y)
 
 void AudioEditorWindow::UpdateSelectionFromPoint(const int x)
 {
-    if (!document_.has_value()) return;
+    if (!document_.has_value())
+    {
+        return;
+    }
+
     const RECT inner = WaveformInnerRectangle();
     const int clampedX = std::clamp(
         x,
         static_cast<int>(inner.left),
         static_cast<int>(inner.right) - 1
     );
-    const std::size_t frame = viewport_.FrameAtPixel(clampedX - inner.left, inner.right - inner.left);
+    std::size_t frame = viewport_.FrameAtPixel(
+        clampedX - inner.left,
+        inner.right - inner.left
+    );
+    if (selectionDragMode_ != SelectionDragMode::NewSelection &&
+        clampedX == inner.right - 1)
+    {
+        frame = viewport_.VisibleRange().endFrame;
+    }
+
     const std::size_t begin = std::min(selectionAnchorFrame_, frame);
-    const std::size_t endInclusive = std::max(selectionAnchorFrame_, frame);
-    selection_ = AudioFrameRange{begin, std::min(document_->FrameCount(), endInclusive + 1U)};
+    const std::size_t end = std::max(selectionAnchorFrame_, frame);
+    const std::size_t boundedEnd = std::min(
+        document_->FrameCount(),
+        end + (selectionDragMode_ == SelectionDragMode::NewSelection
+            ? 1U
+            : 0U)
+    );
+
+    selection_ = AudioFrameRange{begin, boundedEnd};
+    if (selection_->IsEmpty())
+    {
+        selection_.reset();
+    }
     UpdateEditControls();
     InvalidateRect(window_, &waveformRectangle_, FALSE);
 }
@@ -1951,8 +2247,169 @@ void AudioEditorWindow::ClearSelection()
     }
     selection_.reset();
     selecting_ = false;
+    selectionDragMode_ = SelectionDragMode::None;
     UpdateEditControls();
-    if (window_ != nullptr) InvalidateRect(window_, &waveformRectangle_, FALSE);
+    if (window_ != nullptr)
+    {
+        InvalidateRect(window_, &waveformRectangle_, FALSE);
+    }
+}
+
+void AudioEditorWindow::SelectAllAudio()
+{
+    if (!document_.has_value() || document_->Empty())
+    {
+        return;
+    }
+
+    selection_ = AudioFrameRange{0U, document_->FrameCount()};
+    playheadFrame_ = 0U;
+    UpdateEditControls();
+    UpdatePlaybackTimeText();
+    SetStatusText(Localization::Text(
+        L"Tüm ses seçildi.",
+        L"All audio selected."
+    ));
+    InvalidateRect(window_, &waveformRectangle_, FALSE);
+}
+
+void AudioEditorWindow::ApplySelectionTimes()
+{
+    if (!document_.has_value())
+    {
+        return;
+    }
+
+    wchar_t startBuffer[64]{};
+    wchar_t endBuffer[64]{};
+    GetWindowTextW(selectionStartEdit_, startBuffer, static_cast<int>(std::size(startBuffer)));
+    GetWindowTextW(selectionEndEdit_, endBuffer, static_cast<int>(std::size(endBuffer)));
+
+    const auto start = ParseAudioFrameTime(
+        WideToUtf8(startBuffer),
+        document_->SampleRate(),
+        document_->FrameCount()
+    );
+    const auto end = ParseAudioFrameTime(
+        WideToUtf8(endBuffer),
+        document_->SampleRate(),
+        document_->FrameCount()
+    );
+
+    if (!start.has_value() || !end.has_value())
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Zamanı saniye, dk:sn.msn veya sa:dk:sn.msn biçiminde gir.",
+                L"Enter time as seconds, mm:ss.mmm, or hh:mm:ss.mmm."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONINFORMATION
+        );
+        UpdateSelectionControls();
+        return;
+    }
+
+    if (end->frame < start->frame)
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Bitiş zamanı başlangıçtan önce olamaz.",
+                L"The end time cannot be before the start time."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONINFORMATION
+        );
+        UpdateSelectionControls();
+        return;
+    }
+
+    StopPlayback();
+    playheadFrame_ = start->frame;
+    if (start->frame == end->frame)
+    {
+        selection_.reset();
+        SetStatusText(Localization::Text(
+            L"Oynatma imleci ayarlandı.",
+            L"The playhead was positioned."
+        ));
+    }
+    else
+    {
+        selection_ = AudioFrameRange{start->frame, end->frame};
+        SetStatusText(Localization::Text(
+            L"Hassas seçim uygulandı.",
+            L"Precise selection applied."
+        ));
+    }
+
+    UpdateEditControls();
+    UpdatePlaybackTimeText();
+    InvalidateRect(window_, &waveformRectangle_, FALSE);
+}
+
+void AudioEditorWindow::SnapSelectionToZeroCrossings()
+{
+    if (!document_.has_value() || !HasSelection())
+    {
+        return;
+    }
+
+    const std::size_t searchFrames = std::max<std::size_t>(
+        1U,
+        static_cast<std::size_t>(document_->SampleRate()) / 100U
+    );
+    const AudioFrameRange snapped = SnapAudioRangeToZeroCrossings(
+        *document_,
+        *selection_,
+        searchFrames
+    );
+
+    if (snapped.IsEmpty() || !document_->IsValidRange(snapped))
+    {
+        return;
+    }
+
+    selection_ = snapped;
+    playheadFrame_ = snapped.beginFrame;
+    UpdateEditControls();
+    UpdatePlaybackTimeText();
+    SetStatusText(Localization::Text(
+        L"Seçim sınırları en yakın sıfır geçişlerine taşındı.",
+        L"Selection boundaries snapped to nearby zero crossings."
+    ));
+    InvalidateRect(window_, &waveformRectangle_, FALSE);
+}
+
+void AudioEditorWindow::ZoomToSelection()
+{
+    if (!document_.has_value() || !HasSelection())
+    {
+        return;
+    }
+
+    const std::size_t padding = std::max<std::size_t>(
+        1U,
+        selection_->FrameCount() / 20U
+    );
+    const AudioFrameRange padded{
+        selection_->beginFrame > padding
+            ? selection_->beginFrame - padding
+            : 0U,
+        selection_->endFrame > document_->FrameCount() -
+            std::min(padding, document_->FrameCount())
+            ? document_->FrameCount()
+            : selection_->endFrame + padding
+    };
+
+    if (viewport_.SetVisibleRange(padded))
+    {
+        UpdateWaveformScrollBar();
+        UpdateTransportControls();
+        InvalidateRect(window_, &waveformRectangle_, FALSE);
+    }
 }
 
 void AudioEditorWindow::ApplySelectionEdit(const SelectionEdit edit)
@@ -2166,6 +2623,42 @@ std::wstring AudioEditorWindow::Utf8ToWide(const std::string& value)
         static_cast<int>(value.size()),
         result.data(),
         required
+    );
+    return result;
+}
+
+std::string AudioEditorWindow::WideToUtf8(const std::wstring& value)
+{
+    if (value.empty())
+    {
+        return {};
+    }
+
+    const int required = WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        value.data(),
+        static_cast<int>(value.size()),
+        nullptr,
+        0,
+        nullptr,
+        nullptr
+    );
+    if (required <= 0)
+    {
+        return {};
+    }
+
+    std::string result(static_cast<std::size_t>(required), '\0');
+    WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        value.data(),
+        static_cast<int>(value.size()),
+        result.data(),
+        required,
+        nullptr,
+        nullptr
     );
     return result;
 }

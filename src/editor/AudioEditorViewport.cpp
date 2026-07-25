@@ -118,6 +118,48 @@ bool AudioEditorViewport::ZoomAt(
     return true;
 }
 
+bool AudioEditorViewport::SetVisibleRange(
+    const AudioFrameRange range
+) noexcept
+{
+    if (totalFrames_ == 0U || range.beginFrame >= range.endFrame ||
+        range.endFrame > totalFrames_)
+    {
+        return false;
+    }
+
+    const std::size_t minimumFrames = std::min(
+        totalFrames_,
+        MinimumVisibleFrames
+    );
+    const std::size_t desiredFrames = std::max(
+        minimumFrames,
+        range.FrameCount()
+    );
+    const std::size_t centerFrame = range.beginFrame +
+        range.FrameCount() / 2U;
+    const std::size_t halfFrames = desiredFrames / 2U;
+    std::size_t beginFrame = centerFrame > halfFrames
+        ? centerFrame - halfFrames
+        : 0U;
+
+    if (beginFrame + desiredFrames > totalFrames_)
+    {
+        beginFrame = totalFrames_ - desiredFrames;
+    }
+
+    const std::size_t endFrame = beginFrame + desiredFrames;
+    if (beginFrame == beginFrame_ && endFrame == endFrame_)
+    {
+        return false;
+    }
+
+    beginFrame_ = beginFrame;
+    endFrame_ = endFrame;
+    ClampRange();
+    return true;
+}
+
 bool AudioEditorViewport::PanFrames(const std::int64_t deltaFrames) noexcept
 {
     const std::size_t visibleFrames = endFrame_ - beginFrame_;

@@ -13,6 +13,7 @@
 #include "editor/AudioEditHistory.hpp"
 #include "editor/AudioEditorViewport.hpp"
 #include "editor/AudioPreviewPlayer.hpp"
+#include "editor/AudioSelectionTools.hpp"
 #include "editor/AudioWaveformCache.hpp"
 
 #include <Windows.h>
@@ -51,10 +52,18 @@ private:
         Delete
     };
 
+    enum class SelectionDragMode
+    {
+        None,
+        NewSelection,
+        AdjustBegin,
+        AdjustEnd
+    };
+
     static constexpr int InitialClientWidth = 1080;
-    static constexpr int InitialClientHeight = 700;
-    static constexpr int MinimumClientWidth = 840;
-    static constexpr int MinimumClientHeight = 560;
+    static constexpr int InitialClientHeight = 760;
+    static constexpr int MinimumClientWidth = 900;
+    static constexpr int MinimumClientHeight = 620;
     static constexpr int IdOpenFile = 2100;
     static constexpr int IdClose = 2101;
     static constexpr int IdPlayPause = 2102;
@@ -69,6 +78,12 @@ private:
     static constexpr int IdRedo = 2111;
     static constexpr int IdCrop = 2112;
     static constexpr int IdDeleteSelection = 2113;
+    static constexpr int IdSelectionStart = 2114;
+    static constexpr int IdSelectionEnd = 2115;
+    static constexpr int IdApplySelectionTimes = 2116;
+    static constexpr int IdSnapZeroCrossings = 2117;
+    static constexpr int IdZoomSelection = 2118;
+    static constexpr int IdSelectAll = 2119;
     static constexpr UINT_PTR PlaybackTimerId = 1U;
     static constexpr UINT PlaybackTimerMilliseconds = 33U;
     static constexpr int ScrollRangeMaximum = 10000;
@@ -110,6 +125,7 @@ private:
     void UpdateMetadataText();
     void UpdateTransportControls();
     void UpdateEditControls();
+    void UpdateSelectionControls();
     void UpdatePlaybackTimeText();
     void UpdateWaveformScrollBar();
     void UpdateWindowTitle();
@@ -128,6 +144,10 @@ private:
     void HandleWaveformMouseUp(int x, int y);
     void UpdateSelectionFromPoint(int x);
     void ClearSelection();
+    void SelectAllAudio();
+    void ApplySelectionTimes();
+    void SnapSelectionToZeroCrossings();
+    void ZoomToSelection();
     void ApplySelectionEdit(SelectionEdit edit);
     void UndoEdit();
     void RedoEdit();
@@ -140,6 +160,7 @@ private:
     [[nodiscard]] int Scale(int value) const noexcept;
 
     static std::wstring Utf8ToWide(const std::string& value);
+    static std::string WideToUtf8(const std::wstring& value);
     static std::wstring FormatDuration(double seconds);
 
     HINSTANCE instance_ = nullptr;
@@ -155,6 +176,14 @@ private:
     HWND redoButton_ = nullptr;
     HWND cropButton_ = nullptr;
     HWND deleteButton_ = nullptr;
+    HWND selectionStartLabel_ = nullptr;
+    HWND selectionStartEdit_ = nullptr;
+    HWND selectionEndLabel_ = nullptr;
+    HWND selectionEndEdit_ = nullptr;
+    HWND applySelectionButton_ = nullptr;
+    HWND snapZeroButton_ = nullptr;
+    HWND zoomSelectionButton_ = nullptr;
+    HWND selectAllButton_ = nullptr;
     HWND zoomOutButton_ = nullptr;
     HWND zoomFitButton_ = nullptr;
     HWND zoomInButton_ = nullptr;
@@ -195,6 +224,8 @@ private:
     int selectionAnchorX_ = 0;
     bool selecting_ = false;
     bool selectionDragged_ = false;
+    bool updatingSelectionFields_ = false;
+    SelectionDragMode selectionDragMode_ = SelectionDragMode::None;
     std::size_t playheadFrame_ = 0U;
     std::uint64_t currentStateIdentifier_ = 0U;
     std::uint64_t savedStateIdentifier_ = 0U;

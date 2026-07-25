@@ -20,6 +20,7 @@ public:
     [[nodiscard]] bool IsFit() const noexcept;
 
     bool ZoomAt(std::size_t anchorFrame, double magnification) noexcept;
+    bool SetVisibleRange(AudioFrameRange range) noexcept;
     bool PanFrames(std::int64_t deltaFrames) noexcept;
     bool SetScrollRatio(double ratio) noexcept;
 

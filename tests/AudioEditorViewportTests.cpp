@@ -129,6 +129,43 @@ namespace
         );
     }
 
+
+    void TestVisibleRangeSelection()
+    {
+        AudioEditorViewport viewport;
+        viewport.Reset(1000U);
+
+        Expect(
+            viewport.SetVisibleRange({200U, 400U}),
+            "selection range changes the viewport"
+        );
+        Expect(
+            viewport.VisibleRange().beginFrame == 200U &&
+                viewport.VisibleRange().endFrame == 400U,
+            "selection range is shown exactly when large enough"
+        );
+
+        Expect(
+            viewport.SetVisibleRange({980U, 990U}),
+            "small range near the end is accepted"
+        );
+        Expect(
+            viewport.VisibleRange().endFrame == 1000U &&
+                viewport.VisibleRange().FrameCount() ==
+                    AudioEditorViewport::MinimumVisibleFrames,
+            "small range expands to the minimum window and clamps"
+        );
+
+        Expect(
+            !viewport.SetVisibleRange({500U, 500U}),
+            "empty visible range is rejected"
+        );
+        Expect(
+            !viewport.SetVisibleRange({900U, 1100U}),
+            "out-of-bounds visible range is rejected"
+        );
+    }
+
     void TestInvalidAndSmallInputs()
     {
         AudioEditorViewport viewport;
@@ -172,6 +209,7 @@ int main()
     TestResetAndMapping();
     TestAnchoredZoom();
     TestPanAndScrollRatio();
+    TestVisibleRangeSelection();
     TestInvalidAndSmallInputs();
 
     if (failureCount != 0)
