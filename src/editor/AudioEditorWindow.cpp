@@ -99,6 +99,85 @@ namespace
         SelectObject(deviceContext, oldPen);
         DeleteObject(pen);
     }
+
+    bool EnsureBitmapSurface(
+        const HDC referenceDeviceContext,
+        const int width,
+        const int height,
+        HDC& surfaceDeviceContext,
+        HBITMAP& surfaceBitmap,
+        HGDIOBJ& originalBitmap
+    )
+    {
+        if (surfaceDeviceContext == nullptr)
+        {
+            surfaceDeviceContext = CreateCompatibleDC(referenceDeviceContext);
+            if (surfaceDeviceContext == nullptr)
+            {
+                return false;
+            }
+        }
+
+        if (surfaceBitmap != nullptr)
+        {
+            if (originalBitmap != nullptr)
+            {
+                SelectObject(surfaceDeviceContext, originalBitmap);
+            }
+            DeleteObject(surfaceBitmap);
+            surfaceBitmap = nullptr;
+        }
+
+        HBITMAP bitmap = CreateCompatibleBitmap(
+            referenceDeviceContext,
+            width,
+            height
+        );
+        if (bitmap == nullptr)
+        {
+            return false;
+        }
+
+        const HGDIOBJ previousBitmap = SelectObject(
+            surfaceDeviceContext,
+            bitmap
+        );
+        if (previousBitmap == nullptr || previousBitmap == HGDI_ERROR)
+        {
+            DeleteObject(bitmap);
+            return false;
+        }
+
+        if (originalBitmap == nullptr)
+        {
+            originalBitmap = previousBitmap;
+        }
+        surfaceBitmap = bitmap;
+        return true;
+    }
+
+    void ReleaseBitmapSurface(
+        HDC& surfaceDeviceContext,
+        HBITMAP& surfaceBitmap,
+        HGDIOBJ& originalBitmap
+    ) noexcept
+    {
+        if (surfaceDeviceContext != nullptr && originalBitmap != nullptr)
+        {
+            SelectObject(surfaceDeviceContext, originalBitmap);
+        }
+        if (surfaceBitmap != nullptr)
+        {
+            DeleteObject(surfaceBitmap);
+            surfaceBitmap = nullptr;
+        }
+        if (surfaceDeviceContext != nullptr)
+        {
+            DeleteDC(surfaceDeviceContext);
+            surfaceDeviceContext = nullptr;
+        }
+        originalBitmap = nullptr;
+    }
 }
 
 AudioEditorWindow::~AudioEditorWindow()
@@ -275,6 +354,7 @@ void AudioEditorWindow::RefreshLocalizedText()
     UpdateEditControls();
     UpdateSelectionControls();
     UpdatePlaybackTimeText();
+    MarkWaveformBaseDirty();
     InvalidateRect(window_, nullptr, TRUE);
 }
 
@@ -863,6 +943,7 @@ void AudioEditorWindow::LayoutControls(
     MoveWindow(statusLabel_, margin, statusTop, std::max(1, clientWidth - margin * 2), statusRowHeight, TRUE);
 
     UpdateWaveformScrollBar();
+    MarkWaveformBaseDirty();
     InvalidateRect(window_, nullptr, TRUE);
 }
 
@@ -1052,6 +1133,7 @@ bool AudioEditorWindow::LoadFile(
         L"WAV yüklendi. Seçim yap; kenarları sürükleyerek hassaslaştır.",
         L"WAV loaded. Select audio and drag the edges for precision."
     ));
+    MarkWaveformBaseDirty();
     InvalidateRect(window_, nullptr, TRUE);
     return true;
 }
@@ -1074,6 +1156,7 @@ void AudioEditorWindow::ClearDocument()
     playheadFrame_ = 0U;
     currentStateIdentifier_ = 0U;
     savedStateIdentifier_ = 0U;
+    MarkWaveformBaseDirty();
 }
 
 void AudioEditorWindow::Paint()
@@ -1102,15 +1185,28 @@ void AudioEditorWindow::Paint()
             const int width = waveformRectangle_.right - waveformRectangle_.left;
             const int height = waveformRectangle_.bottom - waveformRectangle_.top;
 
-            if (EnsureWaveformBuffer(deviceContext, width, height))
+            if (EnsureWaveformBuffers(deviceContext, width, height) &&
+                RebuildWaveformBase())
             {
-                const RECT localRectangle{0, 0, width, height};
-                FillRect(
+                const int sourceX = intersection.left - waveformRectangle_.left;
+                const int sourceY = intersection.top - waveformRectangle_.top;
+                const int dirtyWidth = intersection.right - intersection.left;
+                const int dirtyHeight = intersection.bottom - intersection.top;
+                BitBlt(
                     waveformBufferDeviceContext_,
-                    &localRectangle,
-                    backgroundBrush_
+                    sourceX,
+                    sourceY,
+                    dirtyWidth,
+                    dirtyHeight,
+                    waveformBaseDeviceContext_,
+                    sourceX,
+                    sourceY,
+                    SRCCOPY
                 );
 
+                const int savedDeviceContext = SaveDC(
+                    waveformBufferDeviceContext_
+                );
                 POINT previousOrigin{};
                 SetViewportOrgEx(
                     waveformBufferDeviceContext_,
@@ -1118,39 +1214,46 @@ void AudioEditorWindow::Paint()
                     -waveformRectangle_.top,
                     &previousOrigin
                 );
-
-                FillRoundedRectangle(
-                    waveformBufferDeviceContext_,
-                    waveformRectangle_,
-                    panelColor_,
-                    Scale(PanelRadius)
-                );
-                DrawRoundedBorder(
-                    waveformBufferDeviceContext_,
-                    waveformRectangle_,
-                    borderColor_,
-                    Scale(PanelRadius)
-                );
-                DrawWaveform(
+                if (savedDeviceContext != 0)
+                {
+                    IntersectClipRect(
+                        waveformBufferDeviceContext_,
+                        intersection.left,
+                        intersection.top,
+                        intersection.right,
+                        intersection.bottom
+                    );
+                }
+                DrawWaveformOverlays(
                     waveformBufferDeviceContext_,
                     WaveformInnerRectangle()
                 );
+                if (savedDeviceContext != 0)
+                {
+                    RestoreDC(
+                        waveformBufferDeviceContext_,
+                        savedDeviceContext
+                    );
+                }
+                else
+                {
+                    SetViewportOrgEx(
+                        waveformBufferDeviceContext_,
+                        previousOrigin.x,
+                        previousOrigin.y,
+                        nullptr
+                    );
+                }
 
-                SetViewportOrgEx(
-                    waveformBufferDeviceContext_,
-                    previousOrigin.x,
-                    previousOrigin.y,
-                    nullptr
-                );
                 BitBlt(
                     deviceContext,
-                    waveformRectangle_.left,
-                    waveformRectangle_.top,
-                    width,
-                    height,
+                    intersection.left,
+                    intersection.top,
+                    dirtyWidth,
+                    dirtyHeight,
                     waveformBufferDeviceContext_,
-                    0,
-                    0,
+                    sourceX,
+                    sourceY,
                     SRCCOPY
                 );
             }
@@ -1168,7 +1271,8 @@ void AudioEditorWindow::Paint()
                     borderColor_,
                     Scale(PanelRadius)
                 );
-                DrawWaveform(deviceContext, WaveformInnerRectangle());
+                DrawWaveformBase(deviceContext, WaveformInnerRectangle());
+                DrawWaveformOverlays(deviceContext, WaveformInnerRectangle());
             }
         }
     }
@@ -1176,7 +1280,7 @@ void AudioEditorWindow::Paint()
     EndPaint(window_, &paint);
 }
 
-bool AudioEditorWindow::EnsureWaveformBuffer(
+bool AudioEditorWindow::EnsureWaveformBuffers(
     const HDC referenceDeviceContext,
     const int width,
     const int height
@@ -1187,98 +1291,121 @@ bool AudioEditorWindow::EnsureWaveformBuffer(
         return false;
     }
 
-    if (waveformBufferDeviceContext_ != nullptr &&
+    if (waveformBaseDeviceContext_ != nullptr &&
+        waveformBaseBitmap_ != nullptr &&
+        waveformBufferDeviceContext_ != nullptr &&
         waveformBufferBitmap_ != nullptr &&
         waveformBufferWidth_ == width && waveformBufferHeight_ == height)
     {
         return true;
     }
 
-    if (waveformBufferDeviceContext_ == nullptr)
+    ReleaseWaveformBuffers();
+    if (!EnsureBitmapSurface(
+            referenceDeviceContext,
+            width,
+            height,
+            waveformBaseDeviceContext_,
+            waveformBaseBitmap_,
+            waveformBaseOriginalBitmap_
+        ) ||
+        !EnsureBitmapSurface(
+            referenceDeviceContext,
+            width,
+            height,
+            waveformBufferDeviceContext_,
+            waveformBufferBitmap_,
+            waveformBufferOriginalBitmap_
+        ))
     {
-        waveformBufferDeviceContext_ = CreateCompatibleDC(
-            referenceDeviceContext
-        );
-        if (waveformBufferDeviceContext_ == nullptr)
-        {
-            return false;
-        }
-    }
-
-    if (waveformBufferBitmap_ != nullptr)
-    {
-        if (waveformBufferOriginalBitmap_ != nullptr)
-        {
-            SelectObject(
-                waveformBufferDeviceContext_,
-                waveformBufferOriginalBitmap_
-            );
-        }
-        DeleteObject(waveformBufferBitmap_);
-        waveformBufferBitmap_ = nullptr;
-    }
-
-    HBITMAP bitmap = CreateCompatibleBitmap(
-        referenceDeviceContext,
-        width,
-        height
-    );
-    if (bitmap == nullptr)
-    {
-        waveformBufferWidth_ = 0;
-        waveformBufferHeight_ = 0;
+        ReleaseWaveformBuffers();
         return false;
     }
 
-    const HGDIOBJ previousBitmap = SelectObject(
-        waveformBufferDeviceContext_,
-        bitmap
-    );
-    if (previousBitmap == nullptr || previousBitmap == HGDI_ERROR)
-    {
-        DeleteObject(bitmap);
-        waveformBufferWidth_ = 0;
-        waveformBufferHeight_ = 0;
-        return false;
-    }
-
-    if (waveformBufferOriginalBitmap_ == nullptr)
-    {
-        waveformBufferOriginalBitmap_ = previousBitmap;
-    }
-
-    waveformBufferBitmap_ = bitmap;
     waveformBufferWidth_ = width;
     waveformBufferHeight_ = height;
+    waveformBaseDirty_ = true;
     return true;
 }
 
-void AudioEditorWindow::ReleaseWaveformBuffer() noexcept
+bool AudioEditorWindow::RebuildWaveformBase()
 {
-    if (waveformBufferDeviceContext_ != nullptr &&
-        waveformBufferOriginalBitmap_ != nullptr)
+    if (!waveformBaseDirty_)
     {
-        SelectObject(
-            waveformBufferDeviceContext_,
-            waveformBufferOriginalBitmap_
-        );
+        return true;
+    }
+    if (waveformBaseDeviceContext_ == nullptr ||
+        waveformBufferWidth_ <= 0 || waveformBufferHeight_ <= 0)
+    {
+        return false;
     }
 
-    if (waveformBufferBitmap_ != nullptr)
-    {
-        DeleteObject(waveformBufferBitmap_);
-        waveformBufferBitmap_ = nullptr;
-    }
+    const RECT localRectangle{
+        0,
+        0,
+        waveformBufferWidth_,
+        waveformBufferHeight_
+    };
+    FillRect(
+        waveformBaseDeviceContext_,
+        &localRectangle,
+        backgroundBrush_
+    );
 
-    if (waveformBufferDeviceContext_ != nullptr)
-    {
-        DeleteDC(waveformBufferDeviceContext_);
-        waveformBufferDeviceContext_ = nullptr;
-    }
+    POINT previousOrigin{};
+    SetViewportOrgEx(
+        waveformBaseDeviceContext_,
+        -waveformRectangle_.left,
+        -waveformRectangle_.top,
+        &previousOrigin
+    );
+    FillRoundedRectangle(
+        waveformBaseDeviceContext_,
+        waveformRectangle_,
+        panelColor_,
+        Scale(PanelRadius)
+    );
+    DrawRoundedBorder(
+        waveformBaseDeviceContext_,
+        waveformRectangle_,
+        borderColor_,
+        Scale(PanelRadius)
+    );
+    DrawWaveformBase(
+        waveformBaseDeviceContext_,
+        WaveformInnerRectangle()
+    );
+    SetViewportOrgEx(
+        waveformBaseDeviceContext_,
+        previousOrigin.x,
+        previousOrigin.y,
+        nullptr
+    );
 
-    waveformBufferOriginalBitmap_ = nullptr;
+    waveformBaseDirty_ = false;
+    return true;
+}
+
+void AudioEditorWindow::ReleaseWaveformBuffers() noexcept
+{
+    ReleaseBitmapSurface(
+        waveformBaseDeviceContext_,
+        waveformBaseBitmap_,
+        waveformBaseOriginalBitmap_
+    );
+    ReleaseBitmapSurface(
+        waveformBufferDeviceContext_,
+        waveformBufferBitmap_,
+        waveformBufferOriginalBitmap_
+    );
     waveformBufferWidth_ = 0;
     waveformBufferHeight_ = 0;
+    waveformBaseDirty_ = true;
+}
+
+void AudioEditorWindow::MarkWaveformBaseDirty() noexcept
+{
+    waveformBaseDirty_ = true;
 }
 
 void AudioEditorWindow::InvalidatePlayheadTransition(
@@ -1294,6 +1421,10 @@ void AudioEditorWindow::InvalidatePlayheadTransition(
 
     if (viewportChanged || !document_.has_value())
     {
+        if (viewportChanged)
+        {
+            MarkWaveformBaseDirty();
+        }
         InvalidateRect(window_, &waveformRectangle_, FALSE);
         return;
     }
@@ -1335,7 +1466,108 @@ void AudioEditorWindow::InvalidatePlayheadTransition(
     invalidateFrame(currentFrame);
 }
 
-void AudioEditorWindow::DrawWaveform(
+void AudioEditorWindow::InvalidateSelectionTransition(
+    const std::optional<AudioFrameRange>& previousSelection,
+    const std::optional<AudioFrameRange>& currentSelection
+)
+{
+    if (window_ == nullptr || !document_.has_value())
+    {
+        return;
+    }
+
+    const RECT inner = WaveformInnerRectangle();
+    const int width = inner.right - inner.left;
+    if (width <= 0)
+    {
+        return;
+    }
+
+    const AudioFrameRange visibleRange = viewport_.VisibleRange();
+    const auto visibleSelectionRectangle = [this, &inner, width, visibleRange](
+        const std::optional<AudioFrameRange>& selection
+    ) -> std::optional<RECT>
+    {
+        if (!selection.has_value() || selection->IsEmpty() ||
+            selection->endFrame <= visibleRange.beginFrame ||
+            selection->beginFrame >= visibleRange.endFrame)
+        {
+            return std::nullopt;
+        }
+
+        const std::size_t beginFrame = std::max(
+            selection->beginFrame,
+            visibleRange.beginFrame
+        );
+        const std::size_t endFrame = std::min(
+            selection->endFrame,
+            visibleRange.endFrame
+        );
+        const int left = inner.left + viewport_.PixelForFrame(
+            beginFrame,
+            width
+        );
+        const LONG right = std::min(
+            inner.right,
+            static_cast<LONG>(
+                inner.left + viewport_.PixelForFrame(endFrame, width) + 1
+            )
+        );
+        return RECT{
+            left,
+            waveformRectangle_.top,
+            right,
+            waveformRectangle_.bottom
+        };
+    };
+
+    const std::optional<RECT> previousRectangle =
+        visibleSelectionRectangle(previousSelection);
+    const std::optional<RECT> currentRectangle =
+        visibleSelectionRectangle(currentSelection);
+    if (!previousRectangle.has_value() && !currentRectangle.has_value())
+    {
+        return;
+    }
+
+    if (previousRectangle.has_value() && currentRectangle.has_value() &&
+        EqualRect(&*previousRectangle, &*currentRectangle) != FALSE)
+    {
+        return;
+    }
+
+    RECT dirtyRectangle{};
+    if (previousRectangle.has_value() && currentRectangle.has_value())
+    {
+        UnionRect(
+            &dirtyRectangle,
+            &*previousRectangle,
+            &*currentRectangle
+        );
+    }
+    else
+    {
+        dirtyRectangle = previousRectangle.has_value()
+            ? *previousRectangle
+            : *currentRectangle;
+    }
+
+    const int padding = std::max(Scale(5), 4);
+    dirtyRectangle.left -= padding;
+    dirtyRectangle.right += padding;
+    IntersectRect(
+        &dirtyRectangle,
+        &dirtyRectangle,
+        &waveformRectangle_
+    );
+    if (dirtyRectangle.right > dirtyRectangle.left &&
+        dirtyRectangle.bottom > dirtyRectangle.top)
+    {
+        InvalidateRect(window_, &dirtyRectangle, FALSE);
+    }
+}
+
+void AudioEditorWindow::DrawWaveformBase(
     const HDC deviceContext,
     const RECT& rectangle
 )
@@ -1401,48 +1633,6 @@ void AudioEditorWindow::DrawWaveform(
     if (channelCount == 0U)
     {
         return;
-    }
-
-    const AudioFrameRange visibleRange = viewport_.VisibleRange();
-    if (selection_.has_value() && !selection_->IsEmpty() &&
-        selection_->endFrame > visibleRange.beginFrame &&
-        selection_->beginFrame < visibleRange.endFrame)
-    {
-        const std::size_t beginFrame = std::max(selection_->beginFrame, visibleRange.beginFrame);
-        const std::size_t endFrame = std::min(selection_->endFrame, visibleRange.endFrame);
-        RECT selectionRectangle = rectangle;
-        selectionRectangle.left += viewport_.PixelForFrame(beginFrame, availableWidth);
-        selectionRectangle.right = rectangle.left + viewport_.PixelForFrame(endFrame, availableWidth) + 1;
-        HBRUSH selectionBrush = CreateSolidBrush(selectionColor_);
-        FillRect(deviceContext, &selectionRectangle, selectionBrush);
-        DeleteObject(selectionBrush);
-        HPEN selectionPen = CreatePen(PS_SOLID, 1, selectionBorderColor_);
-        const HGDIOBJ previousPen = SelectObject(deviceContext, selectionPen);
-        MoveToEx(deviceContext, selectionRectangle.left, rectangle.top, nullptr);
-        LineTo(deviceContext, selectionRectangle.left, rectangle.bottom);
-        MoveToEx(deviceContext, selectionRectangle.right - 1, rectangle.top, nullptr);
-        LineTo(deviceContext, selectionRectangle.right - 1, rectangle.bottom);
-        SelectObject(deviceContext, previousPen);
-        DeleteObject(selectionPen);
-
-        HBRUSH handleBrush = CreateSolidBrush(selectionBorderColor_);
-        const int handleHalfWidth = Scale(3);
-        const int handleHeight = Scale(9);
-        RECT beginHandle{
-            selectionRectangle.left - handleHalfWidth,
-            rectangle.top,
-            selectionRectangle.left + handleHalfWidth + 1,
-            std::min(rectangle.bottom, rectangle.top + handleHeight)
-        };
-        RECT endHandle{
-            selectionRectangle.right - 1 - handleHalfWidth,
-            rectangle.top,
-            selectionRectangle.right + handleHalfWidth,
-            std::min(rectangle.bottom, rectangle.top + handleHeight)
-        };
-        FillRect(deviceContext, &beginHandle, handleBrush);
-        FillRect(deviceContext, &endHandle, handleBrush);
-        DeleteObject(handleBrush);
     }
 
     HPEN waveformPen = CreatePen(PS_SOLID, 1, waveformColor_);
@@ -1518,6 +1708,112 @@ void AudioEditorWindow::DrawWaveform(
     SelectObject(deviceContext, oldPen);
     DeleteObject(centerPen);
     DeleteObject(waveformPen);
+}
+
+void AudioEditorWindow::DrawWaveformOverlays(
+    const HDC deviceContext,
+    const RECT& rectangle
+)
+{
+    if (!document_.has_value() || document_->Empty())
+    {
+        return;
+    }
+
+    const int availableWidth = rectangle.right - rectangle.left;
+    const int availableHeight = rectangle.bottom - rectangle.top;
+    if (availableWidth <= 0 || availableHeight <= 0)
+    {
+        return;
+    }
+
+    const AudioFrameRange visibleRange = viewport_.VisibleRange();
+    if (selection_.has_value() && !selection_->IsEmpty() &&
+        selection_->endFrame > visibleRange.beginFrame &&
+        selection_->beginFrame < visibleRange.endFrame)
+    {
+        const std::size_t beginFrame = std::max(
+            selection_->beginFrame,
+            visibleRange.beginFrame
+        );
+        const std::size_t endFrame = std::min(
+            selection_->endFrame,
+            visibleRange.endFrame
+        );
+        RECT selectionRectangle = rectangle;
+        selectionRectangle.left += viewport_.PixelForFrame(
+            beginFrame,
+            availableWidth
+        );
+        selectionRectangle.right = std::min(
+            rectangle.right,
+            static_cast<LONG>(
+                rectangle.left +
+                    viewport_.PixelForFrame(endFrame, availableWidth) + 1
+            )
+        );
+
+        HPEN shadePen = CreatePen(PS_SOLID, 1, selectionColor_);
+        const HGDIOBJ previousPen = SelectObject(deviceContext, shadePen);
+        const int shadeSpacing = std::max(2, Scale(3));
+        int firstShadeX = selectionRectangle.left;
+        const int shadeOffset =
+            (firstShadeX - rectangle.left) % shadeSpacing;
+        if (shadeOffset != 0)
+        {
+            firstShadeX += shadeSpacing - shadeOffset;
+        }
+        for (int x = firstShadeX;
+             x < selectionRectangle.right;
+             x += shadeSpacing)
+        {
+            MoveToEx(deviceContext, x, rectangle.top, nullptr);
+            LineTo(deviceContext, x, rectangle.bottom);
+        }
+        SelectObject(deviceContext, previousPen);
+        DeleteObject(shadePen);
+
+        HPEN selectionPen = CreatePen(PS_SOLID, 1, selectionBorderColor_);
+        const HGDIOBJ previousBorderPen = SelectObject(
+            deviceContext,
+            selectionPen
+        );
+        MoveToEx(
+            deviceContext,
+            selectionRectangle.left,
+            rectangle.top,
+            nullptr
+        );
+        LineTo(deviceContext, selectionRectangle.left, rectangle.bottom);
+        MoveToEx(
+            deviceContext,
+            selectionRectangle.right - 1,
+            rectangle.top,
+            nullptr
+        );
+        LineTo(deviceContext, selectionRectangle.right - 1, rectangle.bottom);
+        SelectObject(deviceContext, previousBorderPen);
+        DeleteObject(selectionPen);
+
+        HBRUSH handleBrush = CreateSolidBrush(selectionBorderColor_);
+        const int handleHalfWidth = Scale(3);
+        const int handleHeight = Scale(9);
+        RECT beginHandle{
+            selectionRectangle.left - handleHalfWidth,
+            rectangle.top,
+            selectionRectangle.left + handleHalfWidth + 1,
+            std::min(rectangle.bottom, rectangle.top + handleHeight)
+        };
+        RECT endHandle{
+            selectionRectangle.right - 1 - handleHalfWidth,
+            rectangle.top,
+            selectionRectangle.right + handleHalfWidth,
+            std::min(rectangle.bottom, rectangle.top + handleHeight)
+        };
+        FillRect(deviceContext, &beginHandle, handleBrush);
+        FillRect(deviceContext, &endHandle, handleBrush);
+        DeleteObject(handleBrush);
+    }
 
     const std::size_t playheadFrame = CurrentPlayheadFrame();
     if (!visibleRange.IsEmpty() && playheadFrame >= visibleRange.beginFrame &&
@@ -1667,6 +1963,7 @@ void AudioEditorWindow::ApplyTheme()
             &roundedCornerPreference,
             sizeof(roundedCornerPreference)
         );
+        MarkWaveformBaseDirty();
         InvalidateRect(window_, nullptr, TRUE);
     }
 }
@@ -1761,7 +2058,7 @@ void AudioEditorWindow::ApplyFonts()
 
 void AudioEditorWindow::ReleaseResources()
 {
-    ReleaseWaveformBuffer();
+    ReleaseWaveformBuffers();
     if (backgroundBrush_ != nullptr)
     {
         DeleteObject(backgroundBrush_);
@@ -2284,6 +2581,7 @@ void AudioEditorWindow::ZoomAtFrame(
     {
         UpdateWaveformScrollBar();
         UpdateTransportControls();
+        MarkWaveformBaseDirty();
         InvalidateRect(window_, &waveformRectangle_, FALSE);
     }
 }
@@ -2298,6 +2596,7 @@ void AudioEditorWindow::FitWaveform()
     viewport_.Reset(document_->FrameCount());
     UpdateWaveformScrollBar();
     UpdateTransportControls();
+    MarkWaveformBaseDirty();
     InvalidateRect(window_, &waveformRectangle_, FALSE);
 }
 
@@ -2380,6 +2679,7 @@ void AudioEditorWindow::HandleHorizontalScroll(const WPARAM wParam)
     if (changed)
     {
         UpdateWaveformScrollBar();
+        MarkWaveformBaseDirty();
         InvalidateRect(window_, &waveformRectangle_, FALSE);
     }
 }
@@ -2426,6 +2726,7 @@ void AudioEditorWindow::HandleMouseWheel(
         if (viewport_.PanFrames(wheelDelta > 0 ? -boundedStep : boundedStep))
         {
             UpdateWaveformScrollBar();
+            MarkWaveformBaseDirty();
             InvalidateRect(window_, &waveformRectangle_, FALSE);
         }
         return;
@@ -2458,6 +2759,7 @@ void AudioEditorWindow::HandleWaveformMouseDown(const int x, const int y)
         x - inner.left,
         width
     );
+    const std::optional<AudioFrameRange> previousSelection = selection_;
     const bool extendSelection =
         (GetKeyState(VK_SHIFT) & 0x8000) != 0;
     const int edgeTolerance = Scale(7);
@@ -2505,6 +2807,7 @@ void AudioEditorWindow::HandleWaveformMouseDown(const int x, const int y)
             clickedFrame,
             std::min(document_->FrameCount(), clickedFrame + 1U)
         };
+        InvalidateSelectionTransition(previousSelection, selection_);
     }
     else
     {
@@ -2512,7 +2815,6 @@ void AudioEditorWindow::HandleWaveformMouseDown(const int x, const int y)
     }
 
     UpdateEditControls();
-    InvalidateRect(window_, &waveformRectangle_, FALSE);
 }
 
 void AudioEditorWindow::HandleWaveformMouseMove(
@@ -2573,7 +2875,6 @@ void AudioEditorWindow::HandleWaveformMouseUp(const int x, const int y)
         SetStatusText(status);
     }
     UpdateEditControls();
-    InvalidateRect(window_, &waveformRectangle_, FALSE);
 }
 
 void AudioEditorWindow::UpdateSelectionFromPoint(const int x)
@@ -2599,6 +2900,7 @@ void AudioEditorWindow::UpdateSelectionFromPoint(const int x)
         frame = viewport_.VisibleRange().endFrame;
     }
 
+    const std::optional<AudioFrameRange> previousSelection = selection_;
     const std::size_t begin = std::min(selectionAnchorFrame_, frame);
     const std::size_t end = std::max(selectionAnchorFrame_, frame);
     const std::size_t boundedEnd = std::min(
@@ -2614,11 +2916,12 @@ void AudioEditorWindow::UpdateSelectionFromPoint(const int x)
         selection_.reset();
     }
     UpdateEditControls();
-    InvalidateRect(window_, &waveformRectangle_, FALSE);
+    InvalidateSelectionTransition(previousSelection, selection_);
 }
 
 void AudioEditorWindow::ClearSelection()
 {
+    const std::optional<AudioFrameRange> previousSelection = selection_;
     if (window_ != nullptr && GetCapture() == window_)
     {
         ReleaseCapture();
@@ -2627,10 +2930,7 @@ void AudioEditorWindow::ClearSelection()
     selecting_ = false;
     selectionDragMode_ = SelectionDragMode::None;
     UpdateEditControls();
-    if (window_ != nullptr)
-    {
-        InvalidateRect(window_, &waveformRectangle_, FALSE);
-    }
+    InvalidateSelectionTransition(previousSelection, selection_);
 }
 
 void AudioEditorWindow::SelectAllAudio()
@@ -2640,6 +2940,7 @@ void AudioEditorWindow::SelectAllAudio()
         return;
     }
 
+    const std::optional<AudioFrameRange> previousSelection = selection_;
     selection_ = AudioFrameRange{0U, document_->FrameCount()};
     playheadFrame_ = 0U;
     UpdateEditControls();
@@ -2648,7 +2949,7 @@ void AudioEditorWindow::SelectAllAudio()
         L"Tüm ses seçildi.",
         L"All audio selected."
     ));
-    InvalidateRect(window_, &waveformRectangle_, FALSE);
+    InvalidateSelectionTransition(previousSelection, selection_);
 }
 
 void AudioEditorWindow::ApplySelectionTimes()
@@ -2704,6 +3005,7 @@ void AudioEditorWindow::ApplySelectionTimes()
         return;
     }
 
+    const std::optional<AudioFrameRange> previousSelection = selection_;
     StopPlayback();
     playheadFrame_ = start->frame;
     if (start->frame == end->frame)
@@ -2725,7 +3027,7 @@ void AudioEditorWindow::ApplySelectionTimes()
 
     UpdateEditControls();
     UpdatePlaybackTimeText();
-    InvalidateRect(window_, &waveformRectangle_, FALSE);
+    InvalidateSelectionTransition(previousSelection, selection_);
 }
 
 void AudioEditorWindow::SnapSelectionToZeroCrossings()
@@ -2750,6 +3052,7 @@ void AudioEditorWindow::SnapSelectionToZeroCrossings()
         return;
     }
 
+    const std::optional<AudioFrameRange> previousSelection = selection_;
     selection_ = snapped;
     playheadFrame_ = snapped.beginFrame;
     UpdateEditControls();
@@ -2758,7 +3061,7 @@ void AudioEditorWindow::SnapSelectionToZeroCrossings()
         L"Seçim sınırları en yakın sıfır geçişlerine taşındı.",
         L"Selection boundaries snapped to nearby zero crossings."
     ));
-    InvalidateRect(window_, &waveformRectangle_, FALSE);
+    InvalidateSelectionTransition(previousSelection, selection_);
 }
 
 void AudioEditorWindow::ZoomToSelection()
@@ -2786,6 +3089,7 @@ void AudioEditorWindow::ZoomToSelection()
     {
         UpdateWaveformScrollBar();
         UpdateTransportControls();
+        MarkWaveformBaseDirty();
         InvalidateRect(window_, &waveformRectangle_, FALSE);
     }
 }
@@ -2872,6 +3176,7 @@ void AudioEditorWindow::ApplySelectionEdit(const SelectionEdit edit)
                 L"Selected audio was deleted."
             ));
     }
+    MarkWaveformBaseDirty();
     InvalidateRect(window_, nullptr, TRUE);
 }
 
@@ -3103,6 +3408,7 @@ void AudioEditorWindow::ApplyAudioEffect(const AudioEffect effect)
         }
     }
 
+    MarkWaveformBaseDirty();
     InvalidateRect(window_, nullptr, TRUE);
 }
 
@@ -3157,6 +3463,7 @@ bool AudioEditorWindow::RebuildAfterDocumentChange(const bool fitWaveform)
     UpdateEditControls();
     UpdatePlaybackTimeText();
     UpdateWaveformScrollBar();
+    MarkWaveformBaseDirty();
     InvalidateRect(window_, nullptr, TRUE);
     return true;
 }
@@ -3171,9 +3478,7 @@ RECT AudioEditorWindow::WaveformInnerRectangle() const noexcept
 
 std::size_t AudioEditorWindow::CurrentPlayheadFrame() const noexcept
 {
-    return previewPlayer_.State() == AudioPreviewState::Playing
-        ? previewPlayer_.CurrentFrame()
-        : playheadFrame_;
+    return playheadFrame_;
 }
 
 void AudioEditorWindow::SetStatusText(const std::wstring& text)

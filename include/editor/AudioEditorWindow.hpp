@@ -134,13 +134,20 @@ private:
     bool ConfirmDiscardChanges();
     void ClearDocument();
     void Paint();
-    void DrawWaveform(HDC deviceContext, const RECT& rectangle);
-    bool EnsureWaveformBuffer(HDC referenceDeviceContext, int width, int height);
-    void ReleaseWaveformBuffer() noexcept;
+    void DrawWaveformBase(HDC deviceContext, const RECT& rectangle);
+    void DrawWaveformOverlays(HDC deviceContext, const RECT& rectangle);
+    bool EnsureWaveformBuffers(HDC referenceDeviceContext, int width, int height);
+    bool RebuildWaveformBase();
+    void ReleaseWaveformBuffers() noexcept;
+    void MarkWaveformBaseDirty() noexcept;
     void InvalidatePlayheadTransition(
         std::size_t previousFrame,
         std::size_t currentFrame,
         bool viewportChanged
+    );
+    void InvalidateSelectionTransition(
+        const std::optional<AudioFrameRange>& previousSelection,
+        const std::optional<AudioFrameRange>& currentSelection
     );
     void DrawButton(const DRAWITEMSTRUCT& item) const;
     void ApplyTheme();
@@ -231,11 +238,15 @@ private:
     HFONT buttonFont_ = nullptr;
     HBRUSH backgroundBrush_ = nullptr;
     HBRUSH panelBrush_ = nullptr;
+    HDC waveformBaseDeviceContext_ = nullptr;
+    HBITMAP waveformBaseBitmap_ = nullptr;
+    HGDIOBJ waveformBaseOriginalBitmap_ = nullptr;
     HDC waveformBufferDeviceContext_ = nullptr;
     HBITMAP waveformBufferBitmap_ = nullptr;
     HGDIOBJ waveformBufferOriginalBitmap_ = nullptr;
     int waveformBufferWidth_ = 0;
     int waveformBufferHeight_ = 0;
+    bool waveformBaseDirty_ = true;
     UINT currentDpi_ = USER_DEFAULT_SCREEN_DPI;
     AppTheme theme_ = AppTheme::Dark;
     bool classRegistered_ = false;
