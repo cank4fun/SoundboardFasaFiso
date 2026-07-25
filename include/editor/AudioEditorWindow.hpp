@@ -10,12 +10,14 @@
 
 #include "config/Config.hpp"
 #include "editor/AudioDocument.hpp"
+#include "editor/AudioEditHistory.hpp"
 #include "editor/AudioEditorViewport.hpp"
 #include "editor/AudioPreviewPlayer.hpp"
 #include "editor/AudioWaveformCache.hpp"
 
 #include <Windows.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -43,10 +45,16 @@ public:
     [[nodiscard]] bool IsVisible() const noexcept;
 
 private:
-    static constexpr int InitialClientWidth = 980;
-    static constexpr int InitialClientHeight = 620;
-    static constexpr int MinimumClientWidth = 760;
-    static constexpr int MinimumClientHeight = 480;
+    enum class SelectionEdit
+    {
+        Crop,
+        Delete
+    };
+
+    static constexpr int InitialClientWidth = 1080;
+    static constexpr int InitialClientHeight = 700;
+    static constexpr int MinimumClientWidth = 840;
+    static constexpr int MinimumClientHeight = 560;
     static constexpr int IdOpenFile = 2100;
     static constexpr int IdClose = 2101;
     static constexpr int IdPlayPause = 2102;
@@ -55,6 +63,12 @@ private:
     static constexpr int IdZoomFit = 2105;
     static constexpr int IdZoomIn = 2106;
     static constexpr int IdWaveformScroll = 2107;
+    static constexpr int IdSaveAs = 2108;
+    static constexpr int IdOverwrite = 2109;
+    static constexpr int IdUndo = 2110;
+    static constexpr int IdRedo = 2111;
+    static constexpr int IdCrop = 2112;
+    static constexpr int IdDeleteSelection = 2113;
     static constexpr UINT_PTR PlaybackTimerId = 1U;
     static constexpr UINT PlaybackTimerMilliseconds = 33U;
     static constexpr int ScrollRangeMaximum = 10000;
@@ -78,7 +92,14 @@ private:
     void LayoutControls(int clientWidth, int clientHeight);
     void HandleDpiChanged(UINT dpi, const RECT& suggestedRectangle);
     void BrowseForWav();
+    void BrowseSaveAs();
     bool LoadFile(const std::filesystem::path& filePath);
+    bool SaveOverCurrent();
+    bool SaveToFile(
+        const std::filesystem::path& filePath,
+        bool replaceExisting
+    );
+    bool ConfirmDiscardChanges();
     void ClearDocument();
     void Paint();
     void DrawWaveform(HDC deviceContext, const RECT& rectangle);
@@ -88,8 +109,10 @@ private:
     void ReleaseResources();
     void UpdateMetadataText();
     void UpdateTransportControls();
+    void UpdateEditControls();
     void UpdatePlaybackTimeText();
     void UpdateWaveformScrollBar();
+    void UpdateWindowTitle();
     void SetStatusText(const std::wstring& text);
 
     void TogglePlayback();
@@ -100,10 +123,20 @@ private:
     void FitWaveform();
     void HandleHorizontalScroll(WPARAM wParam);
     void HandleMouseWheel(WPARAM wParam, LPARAM lParam);
-    void HandleWaveformClick(int x, int y);
+    void HandleWaveformMouseDown(int x, int y);
+    void HandleWaveformMouseMove(int x, int y, WPARAM keyState);
+    void HandleWaveformMouseUp(int x, int y);
+    void UpdateSelectionFromPoint(int x);
+    void ClearSelection();
+    void ApplySelectionEdit(SelectionEdit edit);
+    void UndoEdit();
+    void RedoEdit();
+    bool RebuildAfterDocumentChange(bool fitWaveform);
 
     [[nodiscard]] RECT WaveformInnerRectangle() const noexcept;
     [[nodiscard]] std::size_t CurrentPlayheadFrame() const noexcept;
+    [[nodiscard]] bool HasSelection() const noexcept;
+    [[nodiscard]] bool IsModified() const noexcept;
     [[nodiscard]] int Scale(int value) const noexcept;
 
     static std::wstring Utf8ToWide(const std::string& value);
@@ -113,9 +146,15 @@ private:
     HWND owner_ = nullptr;
     HWND window_ = nullptr;
     HWND openButton_ = nullptr;
+    HWND saveAsButton_ = nullptr;
+    HWND overwriteButton_ = nullptr;
     HWND closeButton_ = nullptr;
     HWND playPauseButton_ = nullptr;
     HWND stopButton_ = nullptr;
+    HWND undoButton_ = nullptr;
+    HWND redoButton_ = nullptr;
+    HWND cropButton_ = nullptr;
+    HWND deleteButton_ = nullptr;
     HWND zoomOutButton_ = nullptr;
     HWND zoomFitButton_ = nullptr;
     HWND zoomInButton_ = nullptr;
@@ -141,12 +180,23 @@ private:
     COLORREF waveformColor_ = RGB(139, 108, 255);
     COLORREF centerLineColor_ = RGB(70, 78, 96);
     COLORREF playheadColor_ = RGB(255, 93, 115);
+    COLORREF selectionColor_ = RGB(54, 47, 86);
+    COLORREF selectionBorderColor_ = RGB(177, 155, 255);
 
     RECT waveformRectangle_{};
     std::filesystem::path loadedFile_;
     std::optional<AudioDocument> document_;
     std::optional<AudioWaveformCache> waveformCache_;
+    AudioEditHistory editHistory_;
     AudioEditorViewport viewport_;
     AudioPreviewPlayer previewPlayer_;
+    std::optional<AudioFrameRange> selection_;
+    std::size_t selectionAnchorFrame_ = 0U;
+    int selectionAnchorX_ = 0;
+    bool selecting_ = false;
+    bool selectionDragged_ = false;
     std::size_t playheadFrame_ = 0U;
+    std::uint64_t currentStateIdentifier_ = 0U;
+    std::uint64_t savedStateIdentifier_ = 0U;
+    std::uint64_t nextStateIdentifier_ = 1U;
 };

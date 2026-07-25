@@ -16,8 +16,10 @@
 #include <iomanip>
 #include <iterator>
 #include <limits>
+#include <new>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace
@@ -28,8 +30,9 @@ namespace
     constexpr int ButtonHeight = 34;
     constexpr int ButtonWidth = 116;
     constexpr int ButtonGap = 8;
-    constexpr int HeaderRowHeight = 38;
+    constexpr int HeaderRowHeight = 84;
     constexpr int TransportRowHeight = 38;
+    constexpr int EditRowHeight = 38;
     constexpr int TransportButtonWidth = 88;
     constexpr int CompactButtonWidth = 58;
     constexpr int ScrollBarHeight = 18;
@@ -116,7 +119,8 @@ bool AudioEditorWindow::Show(
     ApplyTheme();
     RefreshLocalizedText();
 
-    if (initialFile.has_value())
+    if (initialFile.has_value() &&
+        (!document_.has_value() || loadedFile_ != *initialFile))
     {
         LoadFile(*initialFile);
     }
@@ -129,6 +133,23 @@ bool AudioEditorWindow::Show(
 
 void AudioEditorWindow::Shutdown()
 {
+    if (window_ != nullptr && IsModified())
+    {
+        const int choice = MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Ses editöründeki değişiklikler kaydedilsin mi?",
+                L"Save the changes in the audio editor?"
+            ),
+            L"SoundBoardFasaFiso",
+            MB_YESNO | MB_ICONWARNING
+        );
+        if (choice == IDYES)
+        {
+            SaveOverCurrent();
+        }
+    }
+
     if (window_ != nullptr)
     {
         DestroyWindow(window_);
@@ -143,9 +164,15 @@ void AudioEditorWindow::Shutdown()
     ReleaseResources();
     ClearDocument();
     openButton_ = nullptr;
+    saveAsButton_ = nullptr;
+    overwriteButton_ = nullptr;
     closeButton_ = nullptr;
     playPauseButton_ = nullptr;
     stopButton_ = nullptr;
+    undoButton_ = nullptr;
+    redoButton_ = nullptr;
+    cropButton_ = nullptr;
+    deleteButton_ = nullptr;
     zoomOutButton_ = nullptr;
     zoomFitButton_ = nullptr;
     zoomInButton_ = nullptr;
@@ -177,23 +204,20 @@ void AudioEditorWindow::RefreshLocalizedText()
         return;
     }
 
-    SetWindowTextW(
-        window_,
-        Localization::Text(
-            L"SoundBoardFasaFiso Ses Editörü",
-            L"SoundBoardFasaFiso Audio Editor"
-        )
-    );
-    SetWindowTextW(
-        openButton_,
-        Localization::Text(L"WAV aç", L"Open WAV")
-    );
+    SetWindowTextW(openButton_, Localization::Text(L"WAV aç", L"Open WAV"));
+    SetWindowTextW(saveAsButton_, Localization::Text(L"Farklı kaydet", L"Save As"));
+    SetWindowTextW(overwriteButton_, Localization::Text(L"Üzerine yaz", L"Overwrite"));
     SetWindowTextW(closeButton_, Localization::Text(L"Kapat", L"Close"));
     SetWindowTextW(stopButton_, Localization::Text(L"Durdur", L"Stop"));
+    SetWindowTextW(undoButton_, Localization::Text(L"Geri al", L"Undo"));
+    SetWindowTextW(redoButton_, Localization::Text(L"Yinele", L"Redo"));
+    SetWindowTextW(cropButton_, Localization::Text(L"Seçimi kırp", L"Crop"));
+    SetWindowTextW(deleteButton_, Localization::Text(L"Seçimi sil", L"Delete"));
     SetWindowTextW(zoomOutButton_, L"−");
     SetWindowTextW(zoomFitButton_, Localization::Text(L"Sığdır", L"Fit"));
     SetWindowTextW(zoomInButton_, L"+");
 
+    UpdateWindowTitle();
     if (document_.has_value())
     {
         UpdateMetadataText();
@@ -210,12 +234,13 @@ void AudioEditorWindow::RefreshLocalizedText()
         SetWindowTextW(metadataLabel_, L"");
         SetWindowTextW(timeLabel_, L"0:00.000 / 0:00.000");
         SetStatusText(Localization::Text(
-            L"WAV aç; oynat, waveform'a tıkla veya fare tekerleğiyle yakınlaştır.",
-            L"Open a WAV, play it, click the waveform, or zoom with the mouse wheel."
+            L"WAV aç; waveform üzerinde sürükleyerek seçim yap.",
+            L"Open a WAV and drag on the waveform to select audio."
         ));
     }
 
     UpdateTransportControls();
+    UpdateEditControls();
     UpdatePlaybackTimeText();
     InvalidateRect(window_, nullptr, TRUE);
 }
@@ -285,10 +310,7 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             const HDC deviceContext = reinterpret_cast<HDC>(wParam);
             const HWND control = reinterpret_cast<HWND>(lParam);
             SetBkMode(deviceContext, TRANSPARENT);
-            SetTextColor(
-                deviceContext,
-                control == fileLabel_ ? textColor_ : mutedTextColor_
-            );
+            SetTextColor(deviceContext, control == fileLabel_ ? textColor_ : mutedTextColor_);
             return reinterpret_cast<LRESULT>(backgroundBrush_);
         }
 
@@ -300,51 +322,35 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             {
                 switch (LOWORD(wParam))
                 {
-                    case IdOpenFile:
-                        BrowseForWav();
-                        return 0;
-
+                    case IdOpenFile: BrowseForWav(); return 0;
+                    case IdSaveAs: BrowseSaveAs(); return 0;
+                    case IdOverwrite: SaveOverCurrent(); return 0;
                     case IdClose:
                         StopPlayback();
                         ShowWindow(window_, SW_HIDE);
                         return 0;
-
-                    case IdPlayPause:
-                        TogglePlayback();
-                        return 0;
-
-                    case IdStop:
-                        StopPlayback();
-                        return 0;
-
+                    case IdPlayPause: TogglePlayback(); return 0;
+                    case IdStop: StopPlayback(); return 0;
+                    case IdUndo: UndoEdit(); return 0;
+                    case IdRedo: RedoEdit(); return 0;
+                    case IdCrop: ApplySelectionEdit(SelectionEdit::Crop); return 0;
+                    case IdDeleteSelection: ApplySelectionEdit(SelectionEdit::Delete); return 0;
                     case IdZoomOut:
                         if (document_.has_value())
                         {
-                            ZoomAtFrame(
-                                viewport_.VisibleRange().beginFrame +
-                                    viewport_.VisibleRange().FrameCount() / 2U,
-                                0.5
-                            );
+                            const AudioFrameRange range = viewport_.VisibleRange();
+                            ZoomAtFrame(range.beginFrame + range.FrameCount() / 2U, 0.5);
                         }
                         return 0;
-
-                    case IdZoomFit:
-                        FitWaveform();
-                        return 0;
-
+                    case IdZoomFit: FitWaveform(); return 0;
                     case IdZoomIn:
                         if (document_.has_value())
                         {
-                            ZoomAtFrame(
-                                viewport_.VisibleRange().beginFrame +
-                                    viewport_.VisibleRange().FrameCount() / 2U,
-                                2.0
-                            );
+                            const AudioFrameRange range = viewport_.VisibleRange();
+                            ZoomAtFrame(range.beginFrame + range.FrameCount() / 2U, 2.0);
                         }
                         return 0;
-
-                    default:
-                        break;
+                    default: break;
                 }
             }
             break;
@@ -362,7 +368,19 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             return 0;
 
         case WM_LBUTTONDOWN:
-            HandleWaveformClick(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            HandleWaveformMouseDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            return 0;
+
+        case WM_MOUSEMOVE:
+            HandleWaveformMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), wParam);
+            return 0;
+
+        case WM_LBUTTONUP:
+            HandleWaveformMouseUp(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
+            return 0;
+
+        case WM_CAPTURECHANGED:
+            selecting_ = false;
             return 0;
 
         case WM_TIMER:
@@ -374,50 +392,39 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             break;
 
         case WM_KEYDOWN:
-            if (wParam == VK_SPACE)
+        {
+            const bool control = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+            if (control && wParam == 'Z') { UndoEdit(); return 0; }
+            if (control && wParam == 'Y') { RedoEdit(); return 0; }
+            if (control && wParam == 'S')
             {
-                TogglePlayback();
+                if ((GetKeyState(VK_SHIFT) & 0x8000) != 0) BrowseSaveAs();
+                else SaveOverCurrent();
                 return 0;
             }
-            if (wParam == VK_HOME)
-            {
-                SeekToFrame(0U);
-                return 0;
-            }
+            if (wParam == VK_DELETE) { ApplySelectionEdit(SelectionEdit::Delete); return 0; }
+            if (wParam == VK_ESCAPE) { ClearSelection(); return 0; }
+            if (wParam == VK_SPACE) { TogglePlayback(); return 0; }
+            if (wParam == VK_HOME) { SeekToFrame(0U); return 0; }
             break;
+        }
 
         case WM_SIZE:
             LayoutControls(LOWORD(lParam), HIWORD(lParam));
             return 0;
 
         case WM_DPICHANGED:
-            HandleDpiChanged(
-                HIWORD(wParam),
-                *reinterpret_cast<const RECT*>(lParam)
-            );
+            HandleDpiChanged(HIWORD(wParam), *reinterpret_cast<const RECT*>(lParam));
             return 0;
 
         case WM_GETMINMAXINFO:
             if (lParam != 0)
             {
-                auto* minimumMaximum =
-                    reinterpret_cast<MINMAXINFO*>(lParam);
-                RECT minimumRectangle{
-                    0,
-                    0,
-                    Scale(MinimumClientWidth),
-                    Scale(MinimumClientHeight)
-                };
-                AdjustWindowRectEx(
-                    &minimumRectangle,
-                    WS_OVERLAPPEDWINDOW,
-                    FALSE,
-                    0
-                );
-                minimumMaximum->ptMinTrackSize.x =
-                    minimumRectangle.right - minimumRectangle.left;
-                minimumMaximum->ptMinTrackSize.y =
-                    minimumRectangle.bottom - minimumRectangle.top;
+                auto* minimumMaximum = reinterpret_cast<MINMAXINFO*>(lParam);
+                RECT minimumRectangle{0, 0, Scale(MinimumClientWidth), Scale(MinimumClientHeight)};
+                AdjustWindowRectEx(&minimumRectangle, WS_OVERLAPPEDWINDOW, FALSE, 0);
+                minimumMaximum->ptMinTrackSize.x = minimumRectangle.right - minimumRectangle.left;
+                minimumMaximum->ptMinTrackSize.y = minimumRectangle.bottom - minimumRectangle.top;
                 return 0;
             }
             break;
@@ -430,10 +437,7 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
         case WM_NCDESTROY:
             KillTimer(window, PlaybackTimerId);
             previewPlayer_.Shutdown();
-            if (window_ == window)
-            {
-                window_ = nullptr;
-            }
+            if (window_ == window) window_ = nullptr;
             return DefWindowProcW(window, message, wParam, lParam);
 
         default:
@@ -574,59 +578,35 @@ bool AudioEditorWindow::CreateControls()
         const int id
     )
     {
-        return CreateWindowExW(
-            0,
-            className,
-            text,
-            WS_CHILD | WS_VISIBLE | style,
-            0,
-            0,
-            0,
-            0,
-            window_,
-            reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
-            instance_,
-            nullptr
-        );
+        return CreateWindowExW(0, className, text, WS_CHILD | WS_VISIBLE | style,
+            0, 0, 0, 0, window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+            instance_, nullptr);
     };
 
-    openButton_ = createControl(
-        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdOpenFile
-    );
-    closeButton_ = createControl(
-        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdClose
-    );
-    playPauseButton_ = createControl(
-        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdPlayPause
-    );
-    stopButton_ = createControl(
-        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdStop
-    );
-    zoomOutButton_ = createControl(
-        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomOut
-    );
-    zoomFitButton_ = createControl(
-        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomFit
-    );
-    zoomInButton_ = createControl(
-        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomIn
-    );
-    waveformScrollBar_ = createControl(
-        L"SCROLLBAR", L"", SBS_HORZ | WS_TABSTOP, IdWaveformScroll
-    );
-    fileLabel_ = createControl(
-        L"STATIC", L"", SS_LEFT | SS_PATHELLIPSIS, 0
-    );
+    openButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdOpenFile);
+    saveAsButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdSaveAs);
+    overwriteButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdOverwrite);
+    closeButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdClose);
+    playPauseButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdPlayPause);
+    stopButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdStop);
+    undoButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdUndo);
+    redoButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdRedo);
+    cropButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdCrop);
+    deleteButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdDeleteSelection);
+    zoomOutButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomOut);
+    zoomFitButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomFit);
+    zoomInButton_ = createControl(L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdZoomIn);
+    waveformScrollBar_ = createControl(L"SCROLLBAR", L"", SBS_HORZ | WS_TABSTOP, IdWaveformScroll);
+    fileLabel_ = createControl(L"STATIC", L"", SS_LEFT | SS_PATHELLIPSIS, 0);
     metadataLabel_ = createControl(L"STATIC", L"", SS_LEFT, 0);
-    timeLabel_ = createControl(
-        L"STATIC", L"", SS_RIGHT | SS_PATHELLIPSIS, 0
-    );
-    statusLabel_ = createControl(
-        L"STATIC", L"", SS_LEFT | SS_PATHELLIPSIS, 0
-    );
+    timeLabel_ = createControl(L"STATIC", L"", SS_RIGHT | SS_PATHELLIPSIS, 0);
+    statusLabel_ = createControl(L"STATIC", L"", SS_LEFT | SS_PATHELLIPSIS, 0);
 
-    return openButton_ != nullptr && closeButton_ != nullptr &&
+    return openButton_ != nullptr && saveAsButton_ != nullptr &&
+        overwriteButton_ != nullptr && closeButton_ != nullptr &&
         playPauseButton_ != nullptr && stopButton_ != nullptr &&
+        undoButton_ != nullptr && redoButton_ != nullptr &&
+        cropButton_ != nullptr && deleteButton_ != nullptr &&
         zoomOutButton_ != nullptr && zoomFitButton_ != nullptr &&
         zoomInButton_ != nullptr && waveformScrollBar_ != nullptr &&
         fileLabel_ != nullptr && metadataLabel_ != nullptr &&
@@ -638,10 +618,7 @@ void AudioEditorWindow::LayoutControls(
     const int clientHeight
 )
 {
-    if (window_ == nullptr)
-    {
-        return;
-    }
+    if (window_ == nullptr) return;
 
     const int margin = Scale(Margin);
     const int buttonWidth = Scale(ButtonWidth);
@@ -649,139 +626,61 @@ void AudioEditorWindow::LayoutControls(
     const int buttonGap = Scale(ButtonGap);
     const int headerRowHeight = Scale(HeaderRowHeight);
     const int transportRowHeight = Scale(TransportRowHeight);
+    const int editRowHeight = Scale(EditRowHeight);
     const int transportButtonWidth = Scale(TransportButtonWidth);
     const int compactButtonWidth = Scale(CompactButtonWidth);
     const int scrollBarHeight = Scale(ScrollBarHeight);
     const int statusRowHeight = Scale(StatusRowHeight);
 
-    MoveWindow(
-        openButton_,
-        margin,
-        margin,
-        buttonWidth,
-        buttonHeight,
-        TRUE
-    );
-    MoveWindow(
-        closeButton_,
-        clientWidth - margin - buttonWidth,
-        margin,
-        buttonWidth,
-        buttonHeight,
-        TRUE
-    );
+    int headerX = margin;
+    MoveWindow(openButton_, headerX, margin, buttonWidth, buttonHeight, TRUE);
+    headerX += buttonWidth + buttonGap;
+    MoveWindow(saveAsButton_, headerX, margin, buttonWidth, buttonHeight, TRUE);
+    headerX += buttonWidth + buttonGap;
+    MoveWindow(overwriteButton_, headerX, margin, buttonWidth, buttonHeight, TRUE);
+    MoveWindow(closeButton_, clientWidth - margin - buttonWidth, margin, buttonWidth, buttonHeight, TRUE);
 
-    const int labelX = margin + buttonWidth + buttonGap;
-    const int labelWidth = std::max(
-        80,
-        clientWidth - labelX - margin - buttonWidth - buttonGap
-    );
-    MoveWindow(
-        fileLabel_,
-        labelX,
-        margin + Scale(2),
-        labelWidth,
-        Scale(22),
-        TRUE
-    );
-    MoveWindow(
-        metadataLabel_,
-        labelX,
-        margin + Scale(23),
-        labelWidth,
-        Scale(18),
-        TRUE
-    );
+    MoveWindow(fileLabel_, margin, margin + buttonHeight + Scale(8),
+        std::max(1, clientWidth - margin * 2), Scale(22), TRUE);
+    MoveWindow(metadataLabel_, margin, margin + buttonHeight + Scale(30),
+        std::max(1, clientWidth - margin * 2), Scale(18), TRUE);
 
     const int transportTop = margin + headerRowHeight + Scale(6);
     int transportX = margin;
-    MoveWindow(
-        playPauseButton_,
-        transportX,
-        transportTop,
-        transportButtonWidth,
-        buttonHeight,
-        TRUE
-    );
+    MoveWindow(playPauseButton_, transportX, transportTop, transportButtonWidth, buttonHeight, TRUE);
     transportX += transportButtonWidth + buttonGap;
-    MoveWindow(
-        stopButton_,
-        transportX,
-        transportTop,
-        transportButtonWidth,
-        buttonHeight,
-        TRUE
-    );
-    transportX += transportButtonWidth + Scale(18);
-    MoveWindow(
-        zoomOutButton_,
-        transportX,
-        transportTop,
-        compactButtonWidth,
-        buttonHeight,
-        TRUE
-    );
-    transportX += compactButtonWidth + buttonGap;
-    MoveWindow(
-        zoomFitButton_,
-        transportX,
-        transportTop,
-        transportButtonWidth,
-        buttonHeight,
-        TRUE
-    );
-    transportX += transportButtonWidth + buttonGap;
-    MoveWindow(
-        zoomInButton_,
-        transportX,
-        transportTop,
-        compactButtonWidth,
-        buttonHeight,
-        TRUE
-    );
+    MoveWindow(stopButton_, transportX, transportTop, transportButtonWidth, buttonHeight, TRUE);
 
-    const int timeLabelX = transportX + compactButtonWidth + buttonGap;
-    MoveWindow(
-        timeLabel_,
-        timeLabelX,
-        transportTop + Scale(8),
-        std::max(1, clientWidth - margin - timeLabelX),
-        Scale(22),
-        TRUE
-    );
+    int zoomX = clientWidth - margin - compactButtonWidth;
+    MoveWindow(zoomInButton_, zoomX, transportTop, compactButtonWidth, buttonHeight, TRUE);
+    zoomX -= buttonGap + transportButtonWidth;
+    MoveWindow(zoomFitButton_, zoomX, transportTop, transportButtonWidth, buttonHeight, TRUE);
+    zoomX -= buttonGap + compactButtonWidth;
+    MoveWindow(zoomOutButton_, zoomX, transportTop, compactButtonWidth, buttonHeight, TRUE);
 
-    const int waveformTop = transportTop + transportRowHeight + Scale(8);
-    const int statusTop = std::max(
-        waveformTop,
-        clientHeight - margin - statusRowHeight
-    );
-    const int scrollTop = std::max(
-        waveformTop,
-        statusTop - Scale(8) - scrollBarHeight
-    );
-    waveformRectangle_ = RECT{
-        margin,
-        waveformTop,
-        std::max(margin + 1, clientWidth - margin),
-        std::max(waveformTop + 1, scrollTop - Scale(8))
-    };
+    const int timeX = transportX + transportButtonWidth + buttonGap;
+    MoveWindow(timeLabel_, timeX, transportTop + Scale(8),
+        std::max(1, zoomX - buttonGap - timeX), Scale(22), TRUE);
 
-    MoveWindow(
-        waveformScrollBar_,
-        margin + Scale(8),
-        scrollTop,
-        std::max(1, clientWidth - margin * 2 - Scale(16)),
-        scrollBarHeight,
-        TRUE
-    );
-    MoveWindow(
-        statusLabel_,
-        margin,
-        statusTop,
-        std::max(1, clientWidth - margin * 2),
-        statusRowHeight,
-        TRUE
-    );
+    const int editTop = transportTop + transportRowHeight + Scale(6);
+    int editX = margin;
+    MoveWindow(undoButton_, editX, editTop, transportButtonWidth, buttonHeight, TRUE);
+    editX += transportButtonWidth + buttonGap;
+    MoveWindow(redoButton_, editX, editTop, transportButtonWidth, buttonHeight, TRUE);
+    editX += transportButtonWidth + Scale(18);
+    MoveWindow(cropButton_, editX, editTop, Scale(108), buttonHeight, TRUE);
+    editX += Scale(108) + buttonGap;
+    MoveWindow(deleteButton_, editX, editTop, Scale(108), buttonHeight, TRUE);
+
+    const int waveformTop = editTop + editRowHeight + Scale(8);
+    const int statusTop = std::max(waveformTop, clientHeight - margin - statusRowHeight);
+    const int scrollTop = std::max(waveformTop, statusTop - Scale(8) - scrollBarHeight);
+    waveformRectangle_ = RECT{margin, waveformTop, std::max(margin + 1, clientWidth - margin),
+        std::max(waveformTop + 1, scrollTop - Scale(8))};
+
+    MoveWindow(waveformScrollBar_, margin + Scale(8), scrollTop,
+        std::max(1, clientWidth - margin * 2 - Scale(16)), scrollBarHeight, TRUE);
+    MoveWindow(statusLabel_, margin, statusTop, std::max(1, clientWidth - margin * 2), statusRowHeight, TRUE);
 
     UpdateWaveformScrollBar();
     InvalidateRect(window_, nullptr, TRUE);
@@ -834,82 +733,143 @@ void AudioEditorWindow::BrowseForWav()
     }
 }
 
+void AudioEditorWindow::BrowseSaveAs()
+{
+    if (!document_.has_value() || document_->Empty()) return;
+
+    std::vector<wchar_t> selectedPath(32768, L'\0');
+    std::wstring suggestedName = loadedFile_.empty()
+        ? std::wstring{L"edited.wav"}
+        : loadedFile_.filename().wstring();
+    std::copy_n(suggestedName.c_str(), std::min(suggestedName.size(), selectedPath.size() - 1U), selectedPath.data());
+
+    std::wstring initialDirectory;
+    if (!loadedFile_.empty() && loadedFile_.has_parent_path())
+        initialDirectory = loadedFile_.parent_path().wstring();
+
+    OPENFILENAMEW dialog{};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = window_;
+    dialog.lpstrFile = selectedPath.data();
+    dialog.nMaxFile = static_cast<DWORD>(selectedPath.size());
+    dialog.lpstrFilter = L"WAV audio (*.wav)\0*.wav\0\0";
+    dialog.lpstrDefExt = L"wav";
+    dialog.lpstrInitialDir = initialDirectory.empty() ? nullptr : initialDirectory.c_str();
+    dialog.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER | OFN_OVERWRITEPROMPT;
+
+    if (GetSaveFileNameW(&dialog) != FALSE)
+        SaveToFile(std::filesystem::path{selectedPath.data()}, true);
+}
+
+bool AudioEditorWindow::SaveOverCurrent()
+{
+    if (!document_.has_value() || document_->Empty()) return false;
+    if (loadedFile_.empty())
+    {
+        BrowseSaveAs();
+        return !IsModified();
+    }
+    return SaveToFile(loadedFile_, true);
+}
+
+bool AudioEditorWindow::SaveToFile(
+    const std::filesystem::path& filePath,
+    const bool replaceExisting
+)
+{
+    if (!document_.has_value() || document_->Empty()) return false;
+
+    SetStatusText(Localization::Text(L"WAV güvenli biçimde kaydediliyor...", L"Saving WAV safely..."));
+    const AudioWavSaveResult result = AudioDocumentWav::SavePcm16(
+        *document_, filePath,
+        replaceExisting ? AudioWavSaveMode::ReplaceExisting : AudioWavSaveMode::CreateNew
+    );
+    if (!result.Succeeded())
+    {
+        const std::wstring detail = Utf8ToWide(result.errorMessage);
+        SetStatusText(Localization::Text(L"WAV kaydedilemedi.", L"The WAV could not be saved."));
+        MessageBoxW(window_, detail.empty() ? Localization::Text(L"WAV kaydedilemedi.", L"The WAV could not be saved.") : detail.c_str(),
+            L"SoundBoardFasaFiso", MB_OK | MB_ICONERROR);
+        return false;
+    }
+
+    loadedFile_ = filePath;
+    savedStateIdentifier_ = currentStateIdentifier_;
+    UpdateWindowTitle();
+    UpdateMetadataText();
+    UpdateEditControls();
+    SetStatusText(Localization::Text(L"WAV PCM16 olarak atomik biçimde kaydedildi.", L"WAV saved atomically as PCM16."));
+    return true;
+}
+
+bool AudioEditorWindow::ConfirmDiscardChanges()
+{
+    if (!IsModified()) return true;
+
+    const int choice = MessageBoxW(
+        window_,
+        Localization::Text(
+            L"Kaydedilmemiş değişiklikler var. Açık WAV dosyasının üzerine kaydedilsin mi?",
+            L"There are unsaved changes. Overwrite the open WAV file now?"
+        ),
+        L"SoundBoardFasaFiso",
+        MB_YESNOCANCEL | MB_ICONWARNING
+    );
+    if (choice == IDCANCEL) return false;
+    if (choice == IDYES) return SaveOverCurrent();
+    return true;
+}
+
 bool AudioEditorWindow::LoadFile(
     const std::filesystem::path& filePath
 )
 {
+    if (document_.has_value() && !ConfirmDiscardChanges()) return false;
+
     StopPlayback();
     previewPlayer_.Shutdown();
-
-    SetStatusText(Localization::Text(
-        L"WAV yükleniyor...",
-        L"Loading WAV..."
-    ));
+    SetStatusText(Localization::Text(L"WAV yükleniyor...", L"Loading WAV..."));
 
     AudioWavLoadResult loadResult = AudioDocumentWav::Load(filePath);
     if (!loadResult.Succeeded() || !loadResult.document.has_value())
     {
         const std::wstring detail = Utf8ToWide(loadResult.errorMessage);
-        SetStatusText(Localization::Text(
-            L"WAV açılamadı.",
-            L"The WAV file could not be opened."
-        ));
-        MessageBoxW(
-            window_,
-            detail.empty()
-                ? Localization::Text(
-                    L"WAV dosyası açılamadı.",
-                    L"The WAV file could not be opened."
-                )
-                : detail.c_str(),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONERROR
-        );
+        SetStatusText(Localization::Text(L"WAV açılamadı.", L"The WAV file could not be opened."));
+        MessageBoxW(window_, detail.empty() ? Localization::Text(L"WAV dosyası açılamadı.", L"The WAV file could not be opened.") : detail.c_str(),
+            L"SoundBoardFasaFiso", MB_OK | MB_ICONERROR);
         return false;
     }
 
-    std::optional<AudioDocument> loadedDocument{
-        std::move(*loadResult.document)
-    };
+    std::optional<AudioDocument> loadedDocument{std::move(*loadResult.document)};
     std::string cacheError;
-    std::optional<AudioWaveformCache> cache = AudioWaveformCache::Build(
-        *loadedDocument,
-        cacheError
-    );
-
+    std::optional<AudioWaveformCache> cache = AudioWaveformCache::Build(*loadedDocument, cacheError);
     if (!cache.has_value())
     {
-        SetStatusText(Localization::Text(
-            L"Waveform önbelleği oluşturulamadı.",
-            L"The waveform cache could not be created."
-        ));
         const std::wstring detail = Utf8ToWide(cacheError);
-        MessageBoxW(
-            window_,
-            detail.empty()
-                ? Localization::Text(
-                    L"Waveform önbelleği oluşturulamadı.",
-                    L"The waveform cache could not be created."
-                )
-                : detail.c_str(),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONERROR
-        );
+        SetStatusText(Localization::Text(L"Waveform önbelleği oluşturulamadı.", L"The waveform cache could not be created."));
+        MessageBoxW(window_, detail.empty() ? Localization::Text(L"Waveform önbelleği oluşturulamadı.", L"The waveform cache could not be created.") : detail.c_str(),
+            L"SoundBoardFasaFiso", MB_OK | MB_ICONERROR);
         return false;
     }
 
     loadedFile_ = filePath;
     document_ = std::move(loadedDocument);
     waveformCache_ = std::move(cache);
+    editHistory_.Clear();
+    currentStateIdentifier_ = nextStateIdentifier_++;
+    savedStateIdentifier_ = currentStateIdentifier_;
+    selection_.reset();
     viewport_.Reset(document_->FrameCount());
     playheadFrame_ = 0U;
+    UpdateWindowTitle();
     UpdateMetadataText();
     UpdateTransportControls();
+    UpdateEditControls();
     UpdatePlaybackTimeText();
     UpdateWaveformScrollBar();
     SetStatusText(Localization::Text(
-        L"WAV yüklendi. Oynat düğmesini kullan veya waveform'a tıklayarak konum seç.",
-        L"WAV loaded. Use Play or click the waveform to seek."
+        L"WAV yüklendi. Waveform üzerinde sürükleyerek seçim yap.",
+        L"WAV loaded. Drag on the waveform to select audio."
     ));
     InvalidateRect(window_, nullptr, TRUE);
     return true;
@@ -917,16 +877,18 @@ bool AudioEditorWindow::LoadFile(
 
 void AudioEditorWindow::ClearDocument()
 {
-    if (window_ != nullptr)
-    {
-        KillTimer(window_, PlaybackTimerId);
-    }
+    if (window_ != nullptr) KillTimer(window_, PlaybackTimerId);
     previewPlayer_.Shutdown();
     waveformCache_.reset();
     document_.reset();
     loadedFile_.clear();
+    editHistory_.Clear();
+    selection_.reset();
+    selecting_ = false;
     viewport_.Reset(0U);
     playheadFrame_ = 0U;
+    currentStateIdentifier_ = 0U;
+    savedStateIdentifier_ = 0U;
 }
 
 void AudioEditorWindow::Paint()
@@ -1032,6 +994,29 @@ void AudioEditorWindow::DrawWaveform(
         return;
     }
 
+    const AudioFrameRange visibleRange = viewport_.VisibleRange();
+    if (selection_.has_value() && !selection_->IsEmpty() &&
+        selection_->endFrame > visibleRange.beginFrame &&
+        selection_->beginFrame < visibleRange.endFrame)
+    {
+        const std::size_t beginFrame = std::max(selection_->beginFrame, visibleRange.beginFrame);
+        const std::size_t endFrame = std::min(selection_->endFrame, visibleRange.endFrame);
+        RECT selectionRectangle = rectangle;
+        selectionRectangle.left += viewport_.PixelForFrame(beginFrame, availableWidth);
+        selectionRectangle.right = rectangle.left + viewport_.PixelForFrame(endFrame, availableWidth) + 1;
+        HBRUSH selectionBrush = CreateSolidBrush(selectionColor_);
+        FillRect(deviceContext, &selectionRectangle, selectionBrush);
+        DeleteObject(selectionBrush);
+        HPEN selectionPen = CreatePen(PS_SOLID, 1, selectionBorderColor_);
+        const HGDIOBJ previousPen = SelectObject(deviceContext, selectionPen);
+        MoveToEx(deviceContext, selectionRectangle.left, rectangle.top, nullptr);
+        LineTo(deviceContext, selectionRectangle.left, rectangle.bottom);
+        MoveToEx(deviceContext, selectionRectangle.right - 1, rectangle.top, nullptr);
+        LineTo(deviceContext, selectionRectangle.right - 1, rectangle.bottom);
+        SelectObject(deviceContext, previousPen);
+        DeleteObject(selectionPen);
+    }
+
     HPEN waveformPen = CreatePen(PS_SOLID, 1, waveformColor_);
     HPEN centerPen = CreatePen(PS_SOLID, 1, centerLineColor_);
     const HGDIOBJ oldPen = SelectObject(deviceContext, centerPen);
@@ -1106,7 +1091,6 @@ void AudioEditorWindow::DrawWaveform(
     DeleteObject(centerPen);
     DeleteObject(waveformPen);
 
-    const AudioFrameRange visibleRange = viewport_.VisibleRange();
     const std::size_t playheadFrame = CurrentPlayheadFrame();
     if (!visibleRange.IsEmpty() && playheadFrame >= visibleRange.beginFrame &&
         playheadFrame <= visibleRange.endFrame)
@@ -1133,8 +1117,11 @@ void AudioEditorWindow::DrawButton(
     const bool pressed = (item.itemState & ODS_SELECTED) != 0;
     const bool focused = (item.itemState & ODS_FOCUS) != 0;
     const bool primaryButton = item.hwndItem == openButton_ ||
-        item.hwndItem == playPauseButton_;
-    COLORREF fillColor = primaryButton ? accentColor_ : panelColor_;
+        item.hwndItem == playPauseButton_ || item.hwndItem == saveAsButton_;
+    const bool dangerButton = item.hwndItem == overwriteButton_;
+    COLORREF fillColor = dangerButton
+        ? playheadColor_
+        : (primaryButton ? accentColor_ : panelColor_);
 
     if (disabled)
     {
@@ -1193,6 +1180,8 @@ void AudioEditorWindow::ApplyTheme()
         waveformColor_ = RGB(139, 108, 255);
         centerLineColor_ = RGB(70, 78, 96);
         playheadColor_ = RGB(255, 93, 115);
+        selectionColor_ = RGB(54, 47, 86);
+        selectionBorderColor_ = RGB(177, 155, 255);
     }
     else
     {
@@ -1205,6 +1194,8 @@ void AudioEditorWindow::ApplyTheme()
         waveformColor_ = RGB(98, 70, 230);
         centerLineColor_ = RGB(207, 214, 225);
         playheadColor_ = RGB(220, 55, 82);
+        selectionColor_ = RGB(226, 218, 255);
+        selectionBorderColor_ = RGB(98, 70, 230);
     }
 
     if (backgroundBrush_ != nullptr)
@@ -1292,9 +1283,15 @@ void AudioEditorWindow::ApplyFonts()
 
     const HWND buttons[]{
         openButton_,
+        saveAsButton_,
+        overwriteButton_,
         closeButton_,
         playPauseButton_,
         stopButton_,
+        undoButton_,
+        redoButton_,
+        cropButton_,
+        deleteButton_,
         zoomOutButton_,
         zoomFitButton_,
         zoomInButton_
@@ -1339,19 +1336,16 @@ void AudioEditorWindow::ReleaseResources()
 
 void AudioEditorWindow::UpdateMetadataText()
 {
-    if (!document_.has_value())
-    {
-        return;
-    }
+    if (!document_.has_value()) return;
 
-    SetWindowTextW(fileLabel_, loadedFile_.filename().c_str());
+    std::wstring fileText = loadedFile_.filename().wstring();
+    if (IsModified()) fileText.append(L" *");
+    SetWindowTextW(fileLabel_, fileText.c_str());
 
     std::wostringstream metadata;
     metadata << document_->SampleRate() << L" Hz · "
         << document_->ChannelCount() << L" "
-        << (document_->ChannelCount() == 1U
-            ? Localization::Text(L"kanal", L"channel")
-            : Localization::Text(L"kanal", L"channels"))
+        << Localization::Text(L"kanal", document_->ChannelCount() == 1U ? L"channel" : L"channels")
         << L" · " << FormatDuration(document_->DurationSeconds())
         << L" · " << document_->FrameCount() << L" "
         << Localization::Text(L"frame", L"frames");
@@ -1400,6 +1394,33 @@ void AudioEditorWindow::UpdateTransportControls()
     {
         EnableWindow(zoomInButton_, zoomEnabled);
     }
+}
+
+void AudioEditorWindow::UpdateEditControls()
+{
+    const bool hasDocument = document_.has_value() && !document_->Empty();
+    const bool hasSelection = HasSelection();
+    if (saveAsButton_ != nullptr) EnableWindow(saveAsButton_, hasDocument ? TRUE : FALSE);
+    if (overwriteButton_ != nullptr) EnableWindow(overwriteButton_, hasDocument && IsModified() ? TRUE : FALSE);
+    if (undoButton_ != nullptr) EnableWindow(undoButton_, editHistory_.CanUndo() ? TRUE : FALSE);
+    if (redoButton_ != nullptr) EnableWindow(redoButton_, editHistory_.CanRedo() ? TRUE : FALSE);
+    if (cropButton_ != nullptr) EnableWindow(cropButton_, hasSelection ? TRUE : FALSE);
+    if (deleteButton_ != nullptr)
+    {
+        const bool canDelete = hasSelection && selection_->FrameCount() < document_->FrameCount();
+        EnableWindow(deleteButton_, canDelete ? TRUE : FALSE);
+    }
+}
+
+void AudioEditorWindow::UpdateWindowTitle()
+{
+    if (window_ == nullptr) return;
+    std::wstring title = Localization::Text(
+        L"SoundBoardFasaFiso Ses Editörü",
+        L"SoundBoardFasaFiso Audio Editor"
+    );
+    if (IsModified()) title.append(L" *");
+    SetWindowTextW(window_, title.c_str());
 }
 
 void AudioEditorWindow::UpdatePlaybackTimeText()
@@ -1847,25 +1868,231 @@ void AudioEditorWindow::HandleMouseWheel(
     ZoomAtFrame(anchorFrame, wheelDelta > 0 ? 1.5 : (1.0 / 1.5));
 }
 
-void AudioEditorWindow::HandleWaveformClick(const int x, const int y)
+void AudioEditorWindow::HandleWaveformMouseDown(const int x, const int y)
 {
-    if (!document_.has_value())
-    {
-        return;
-    }
-
+    if (!document_.has_value()) return;
     const RECT inner = WaveformInnerRectangle();
     const POINT point{x, y};
-    if (PtInRect(&inner, point) == FALSE)
+    if (PtInRect(&inner, point) == FALSE) return;
+
+    SetFocus(window_);
+    SetCapture(window_);
+    selecting_ = true;
+    selectionDragged_ = false;
+    selectionAnchorX_ = x;
+    selectionAnchorFrame_ = viewport_.FrameAtPixel(x - inner.left, inner.right - inner.left);
+    selection_ = AudioFrameRange{selectionAnchorFrame_, std::min(document_->FrameCount(), selectionAnchorFrame_ + 1U)};
+    UpdateEditControls();
+    InvalidateRect(window_, &waveformRectangle_, FALSE);
+}
+
+void AudioEditorWindow::HandleWaveformMouseMove(
+    const int x,
+    const int,
+    const WPARAM keyState
+)
+{
+    if (!selecting_ || (keyState & MK_LBUTTON) == 0) return;
+    if (std::abs(x - selectionAnchorX_) >= Scale(3)) selectionDragged_ = true;
+    UpdateSelectionFromPoint(x);
+}
+
+void AudioEditorWindow::HandleWaveformMouseUp(const int x, const int y)
+{
+    if (!selecting_) return;
+    UpdateSelectionFromPoint(x);
+    selecting_ = false;
+    if (GetCapture() == window_) ReleaseCapture();
+
+    if (!selectionDragged_)
     {
+        ClearSelection();
+        const RECT inner = WaveformInnerRectangle();
+        const POINT point{x, y};
+        if (PtInRect(&inner, point) != FALSE)
+            SeekToFrame(viewport_.FrameAtPixel(x - inner.left, inner.right - inner.left));
         return;
     }
 
-    SetFocus(window_);
-    SeekToFrame(viewport_.FrameAtPixel(
-        x - inner.left,
-        inner.right - inner.left
-    ));
+    if (selection_.has_value())
+    {
+        const double seconds = static_cast<double>(selection_->FrameCount()) /
+            static_cast<double>(document_->SampleRate());
+        std::wstring status = Localization::Text(L"Seçim: ", L"Selection: ");
+        status.append(FormatDuration(seconds));
+        SetStatusText(status);
+    }
+    UpdateEditControls();
+    InvalidateRect(window_, &waveformRectangle_, FALSE);
+}
+
+void AudioEditorWindow::UpdateSelectionFromPoint(const int x)
+{
+    if (!document_.has_value()) return;
+    const RECT inner = WaveformInnerRectangle();
+    const int clampedX = std::clamp(
+        x,
+        static_cast<int>(inner.left),
+        static_cast<int>(inner.right) - 1
+    );
+    const std::size_t frame = viewport_.FrameAtPixel(clampedX - inner.left, inner.right - inner.left);
+    const std::size_t begin = std::min(selectionAnchorFrame_, frame);
+    const std::size_t endInclusive = std::max(selectionAnchorFrame_, frame);
+    selection_ = AudioFrameRange{begin, std::min(document_->FrameCount(), endInclusive + 1U)};
+    UpdateEditControls();
+    InvalidateRect(window_, &waveformRectangle_, FALSE);
+}
+
+void AudioEditorWindow::ClearSelection()
+{
+    if (window_ != nullptr && GetCapture() == window_)
+    {
+        ReleaseCapture();
+    }
+    selection_.reset();
+    selecting_ = false;
+    UpdateEditControls();
+    if (window_ != nullptr) InvalidateRect(window_, &waveformRectangle_, FALSE);
+}
+
+void AudioEditorWindow::ApplySelectionEdit(const SelectionEdit edit)
+{
+    if (!document_.has_value() || !HasSelection()) return;
+    if (edit == SelectionEdit::Delete && selection_->FrameCount() >= document_->FrameCount())
+    {
+        MessageBoxW(window_, Localization::Text(L"Tüm ses silinemez. Bunun yerine başka bir bölüm seç.", L"The entire audio cannot be deleted. Select a smaller range."),
+            L"SoundBoardFasaFiso", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (!editHistory_.CanStore(*document_))
+    {
+        MessageBoxW(window_, Localization::Text(L"Bu dosya geri alma belleği sınırını aşıyor; güvenli düzenleme uygulanmadı.", L"This file exceeds the undo memory limit; no edit was applied."),
+            L"SoundBoardFasaFiso", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    StopPlayback();
+    std::optional<AudioDocument> before;
+    try
+    {
+        before.emplace(*document_);
+    }
+    catch (const std::bad_alloc&)
+    {
+        MessageBoxW(window_, Localization::Text(
+            L"Geri alma kopyası için yeterli bellek yok; düzenleme uygulanmadı.",
+            L"There is not enough memory for the undo snapshot; no edit was applied."
+        ), L"SoundBoardFasaFiso", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    const std::uint64_t beforeState = currentStateIdentifier_;
+    const AudioEditResult result = edit == SelectionEdit::Crop
+        ? document_->CropTo(*selection_)
+        : document_->Delete(*selection_);
+    if (result != AudioEditResult::Applied) return;
+
+    std::string cacheError;
+    auto cache = AudioWaveformCache::Build(*document_, cacheError);
+    if (!cache.has_value())
+    {
+        *document_ = std::move(*before);
+        waveformCache_ = AudioWaveformCache::Build(*document_, cacheError);
+        MessageBoxW(window_, Localization::Text(L"Düzenleme sonrası waveform oluşturulamadı; değişiklik geri alındı.", L"The waveform could not be rebuilt; the edit was rolled back."),
+            L"SoundBoardFasaFiso", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    const bool historyRecorded = editHistory_.Record(
+        std::move(*before),
+        beforeState
+    );
+    currentStateIdentifier_ = nextStateIdentifier_++;
+    waveformCache_ = std::move(cache);
+    previewPlayer_.Shutdown();
+    selection_.reset();
+    playheadFrame_ = 0U;
+    viewport_.Reset(document_->FrameCount());
+    UpdateWindowTitle();
+    UpdateMetadataText();
+    UpdateTransportControls();
+    UpdateEditControls();
+    UpdatePlaybackTimeText();
+    UpdateWaveformScrollBar();
+    if (!historyRecorded)
+    {
+        SetStatusText(Localization::Text(
+            L"Düzenleme uygulandı ancak geri alma kaydı oluşturulamadı.",
+            L"The edit was applied, but an undo record could not be created."
+        ));
+    }
+    else
+    {
+        SetStatusText(edit == SelectionEdit::Crop
+            ? Localization::Text(
+                L"Seçim dışındaki ses kırpıldı.",
+                L"Audio outside the selection was cropped."
+            )
+            : Localization::Text(
+                L"Seçili ses silindi.",
+                L"Selected audio was deleted."
+            ));
+    }
+    InvalidateRect(window_, nullptr, TRUE);
+}
+
+void AudioEditorWindow::UndoEdit()
+{
+    if (!document_.has_value() || !editHistory_.CanUndo()) return;
+    StopPlayback();
+    if (!editHistory_.Undo(*document_, currentStateIdentifier_)) return;
+    if (!RebuildAfterDocumentChange(true))
+    {
+        editHistory_.Redo(*document_, currentStateIdentifier_);
+        RebuildAfterDocumentChange(true);
+        return;
+    }
+    SetStatusText(Localization::Text(L"Düzenleme geri alındı.", L"Edit undone."));
+}
+
+void AudioEditorWindow::RedoEdit()
+{
+    if (!document_.has_value() || !editHistory_.CanRedo()) return;
+    StopPlayback();
+    if (!editHistory_.Redo(*document_, currentStateIdentifier_)) return;
+    if (!RebuildAfterDocumentChange(true))
+    {
+        editHistory_.Undo(*document_, currentStateIdentifier_);
+        RebuildAfterDocumentChange(true);
+        return;
+    }
+    SetStatusText(Localization::Text(L"Düzenleme yinelendi.", L"Edit redone."));
+}
+
+bool AudioEditorWindow::RebuildAfterDocumentChange(const bool fitWaveform)
+{
+    if (!document_.has_value()) return false;
+    std::string cacheError;
+    auto cache = AudioWaveformCache::Build(*document_, cacheError);
+    if (!cache.has_value())
+    {
+        const std::wstring detail = Utf8ToWide(cacheError);
+        MessageBoxW(window_, detail.empty() ? Localization::Text(L"Waveform yeniden oluşturulamadı.", L"The waveform could not be rebuilt.") : detail.c_str(),
+            L"SoundBoardFasaFiso", MB_OK | MB_ICONERROR);
+        return false;
+    }
+    waveformCache_ = std::move(cache);
+    previewPlayer_.Shutdown();
+    selection_.reset();
+    playheadFrame_ = 0U;
+    if (fitWaveform) viewport_.Reset(document_->FrameCount());
+    UpdateWindowTitle();
+    UpdateMetadataText();
+    UpdateTransportControls();
+    UpdateEditControls();
+    UpdatePlaybackTimeText();
+    UpdateWaveformScrollBar();
+    InvalidateRect(window_, nullptr, TRUE);
+    return true;
 }
 
 RECT AudioEditorWindow::WaveformInnerRectangle() const noexcept
@@ -1889,6 +2116,17 @@ void AudioEditorWindow::SetStatusText(const std::wstring& text)
     {
         SetWindowTextW(statusLabel_, text.c_str());
     }
+}
+
+bool AudioEditorWindow::HasSelection() const noexcept
+{
+    return document_.has_value() && selection_.has_value() &&
+        document_->IsValidRange(*selection_) && !selection_->IsEmpty();
+}
+
+bool AudioEditorWindow::IsModified() const noexcept
+{
+    return document_.has_value() && currentStateIdentifier_ != savedStateIdentifier_;
 }
 
 int AudioEditorWindow::Scale(const int value) const noexcept
