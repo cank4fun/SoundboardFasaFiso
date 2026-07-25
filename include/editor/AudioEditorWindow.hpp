@@ -82,6 +82,15 @@ private:
         bool cancelled = false;
     };
 
+    struct AudioSaveJobResult final
+    {
+        std::filesystem::path filePath;
+        std::uint64_t stateIdentifier = 0U;
+        std::string errorMessage;
+        bool succeeded = false;
+        bool cancelled = false;
+    };
+
     static constexpr int InitialClientWidth = 1080;
     static constexpr int InitialClientHeight = 820;
     static constexpr int MinimumClientWidth = 900;
@@ -119,6 +128,7 @@ private:
     static constexpr int IdSilenceSelection = 2130;
     static constexpr int IdTrimSilence = 2131;
     static constexpr UINT LoadJobCompletedMessage = WM_APP + 80U;
+    static constexpr UINT SaveJobCompletedMessage = WM_APP + 81U;
     static constexpr UINT_PTR PlaybackTimerId = 1U;
     static constexpr UINT PlaybackTimerMilliseconds = 40U;
     static constexpr int ScrollRangeMaximum = 10000;
@@ -142,17 +152,22 @@ private:
     void LayoutControls(int clientWidth, int clientHeight);
     void HandleDpiChanged(UINT dpi, const RECT& suggestedRectangle);
     void BrowseForWav();
-    void BrowseSaveAs();
+    void BrowseSaveAs(bool synchronous = false);
     bool LoadFile(const std::filesystem::path& filePath);
     void RequestLoadCancellation();
     void HandleLoadJobCompleted();
     void StopLoadJob(bool waitForCompletion);
     void UpdateLoadControls();
-    bool SaveOverCurrent();
+    bool SaveOverCurrent(bool synchronous = false);
     bool SaveToFile(
         const std::filesystem::path& filePath,
-        bool replaceExisting
+        bool replaceExisting,
+        bool synchronous = false
     );
+    void RequestSaveCancellation();
+    void HandleSaveJobCompleted();
+    void StopSaveJob(bool waitForCompletion);
+    void UpdateSaveControls();
     bool ConfirmDiscardChanges();
     void ClearDocument();
     void Paint();
@@ -228,6 +243,8 @@ private:
     [[nodiscard]] bool HasSelection() const noexcept;
     [[nodiscard]] bool IsModified() const noexcept;
     [[nodiscard]] bool IsLoadRunning() const noexcept;
+    [[nodiscard]] bool IsSaveRunning() const noexcept;
+    [[nodiscard]] bool IsBusy() const noexcept;
     [[nodiscard]] int Scale(int value) const noexcept;
 
     static std::wstring Utf8ToWide(const std::string& value);
@@ -313,6 +330,11 @@ private:
     std::atomic_bool loadCancellationRequested_{false};
     std::mutex loadResultMutex_;
     std::optional<AudioLoadJobResult> pendingLoadResult_;
+    std::jthread saveThread_;
+    std::atomic_bool saveRunning_{false};
+    std::atomic_bool saveCancellationRequested_{false};
+    std::mutex saveResultMutex_;
+    std::optional<AudioSaveJobResult> pendingSaveResult_;
     std::optional<AudioDocument> clipboard_;
     std::optional<AudioWaveformCache> waveformCache_;
     AudioEditHistory editHistory_;

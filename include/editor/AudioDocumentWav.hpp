@@ -58,6 +58,7 @@ public:
     static AudioWavSaveResult SavePcm16(
         const AudioDocument& document,
         const std::filesystem::path& filePath,
-        AudioWavSaveMode saveMode = AudioWavSaveMode::CreateNew
+        AudioWavSaveMode saveMode = AudioWavSaveMode::CreateNew,
+        const std::atomic_bool* cancellationRequested = nullptr
     );
 };

@@ -20,6 +20,7 @@
 #include <fstream>
 #include <limits>
 #include <optional>
+#include <span>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -31,6 +32,7 @@ namespace
     constexpr std::uint32_t MaximumRiffDataBytes =
         std::numeric_limits<std::uint32_t>::max() - 36U;
     constexpr ma_uint64 DecodeChunkFrames = 16384U;
+    constexpr std::size_t EncodeChunkFrames = 16384U;
 
     bool IsCancellationRequested(
         const std::atomic_bool* cancellationRequested
@@ -732,9 +734,18 @@ AudioWavLoadResult AudioDocumentWav::Load(
 AudioWavSaveResult AudioDocumentWav::SavePcm16(
     const AudioDocument& document,
     const std::filesystem::path& filePath,
-    const AudioWavSaveMode saveMode
+    const AudioWavSaveMode saveMode,
+    const std::atomic_bool* cancellationRequested
 )
 {
+    if (IsCancellationRequested(cancellationRequested))
+    {
+        return SaveFailure(
+            AudioWavFileError::Cancelled,
+            "The WAV save was cancelled."
+        );
+    }
+
     if (filePath.empty())
     {
         return SaveFailure(
@@ -801,14 +812,12 @@ AudioWavSaveResult AudioDocumentWav::SavePcm16(
         );
     }
 
-    std::vector<std::int16_t> encodedSamples(
-        static_cast<std::size_t>(sampleCount),
-        0
-    );
-
-    for (std::size_t index = 0U; index < encodedSamples.size(); ++index)
+    if (IsCancellationRequested(cancellationRequested))
     {
-        encodedSamples[index] = EncodePcm16(document.Samples()[index]);
+        return SaveFailure(
+            AudioWavFileError::Cancelled,
+            "The WAV save was cancelled."
+        );
     }
 
     const auto temporaryPath = CreateTemporaryPath(filePath);
@@ -844,23 +853,77 @@ AudioWavSaveResult AudioDocumentWav::SavePcm16(
         );
     }
 
-    ma_uint64 framesWritten = 0U;
+    const std::size_t channelCount = document.ChannelCount();
+    const std::size_t maximumChunkSamples = EncodeChunkFrames * channelCount;
+    std::vector<std::int16_t> encodedSamples(maximumChunkSamples, 0);
+    const std::span<const float> sourceSamples = document.Samples();
+    std::size_t frameOffset = 0U;
+    bool cancelled = false;
     ma_result writeResult = MA_SUCCESS;
 
-    if (document.FrameCount() != 0U)
+    while (frameOffset < document.FrameCount())
     {
+        if (IsCancellationRequested(cancellationRequested))
+        {
+            cancelled = true;
+            break;
+        }
+
+        const std::size_t framesInChunk = std::min(
+            EncodeChunkFrames,
+            document.FrameCount() - frameOffset
+        );
+        const std::size_t samplesInChunk = framesInChunk * channelCount;
+        const std::size_t sourceOffset = frameOffset * channelCount;
+
+        for (std::size_t index = 0U; index < samplesInChunk; ++index)
+        {
+            if ((index & 4095U) == 0U &&
+                IsCancellationRequested(cancellationRequested))
+            {
+                cancelled = true;
+                break;
+            }
+
+            encodedSamples[index] = EncodePcm16(
+                sourceSamples[sourceOffset + index]
+            );
+        }
+
+        if (cancelled)
+        {
+            break;
+        }
+
+        ma_uint64 chunkFramesWritten = 0U;
         writeResult = ma_encoder_write_pcm_frames(
             &encoder,
             encodedSamples.data(),
-            static_cast<ma_uint64>(document.FrameCount()),
-            &framesWritten
+            static_cast<ma_uint64>(framesInChunk),
+            &chunkFramesWritten
         );
+
+        if (writeResult != MA_SUCCESS ||
+            chunkFramesWritten != static_cast<ma_uint64>(framesInChunk))
+        {
+            break;
+        }
+
+        frameOffset += framesInChunk;
     }
 
     ma_encoder_uninit(&encoder);
 
-    if (writeResult != MA_SUCCESS ||
-        framesWritten != document.FrameCount())
+    if (cancelled || IsCancellationRequested(cancellationRequested))
+    {
+        std::filesystem::remove(*temporaryPath, error);
+        return SaveFailure(
+            AudioWavFileError::Cancelled,
+            "The WAV save was cancelled."
+        );
+    }
+
+    if (writeResult != MA_SUCCESS || frameOffset != document.FrameCount())
     {
         std::filesystem::remove(*temporaryPath, error);
         return SaveFailure(
@@ -875,6 +938,15 @@ AudioWavSaveResult AudioDocumentWav::SavePcm16(
         return SaveFailure(
             AudioWavFileError::WriteFailed,
             "The temporary WAV file could not be flushed to disk."
+        );
+    }
+
+    if (IsCancellationRequested(cancellationRequested))
+    {
+        std::filesystem::remove(*temporaryPath, error);
+        return SaveFailure(
+            AudioWavFileError::Cancelled,
+            "The WAV save was cancelled."
         );
     }
 

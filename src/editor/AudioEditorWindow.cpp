@@ -221,6 +221,7 @@ bool AudioEditorWindow::Show(
 void AudioEditorWindow::Shutdown()
 {
     StopLoadJob(true);
+    StopSaveJob(true);
 
     if (window_ != nullptr && IsModified())
     {
@@ -235,7 +236,7 @@ void AudioEditorWindow::Shutdown()
         );
         if (choice == IDYES)
         {
-            SaveOverCurrent();
+            SaveOverCurrent(true);
         }
     }
 
@@ -316,7 +317,12 @@ void AudioEditorWindow::RefreshLocalizedText()
             : Localization::Text(L"WAV aç", L"Open WAV")
     );
     SetWindowTextW(saveAsButton_, Localization::Text(L"Farklı kaydet", L"Save As"));
-    SetWindowTextW(overwriteButton_, Localization::Text(L"Üzerine yaz", L"Overwrite"));
+    SetWindowTextW(
+        overwriteButton_,
+        IsSaveRunning()
+            ? Localization::Text(L"İptal", L"Cancel")
+            : Localization::Text(L"Üzerine yaz", L"Overwrite")
+    );
     SetWindowTextW(closeButton_, Localization::Text(L"Kapat", L"Close"));
     SetWindowTextW(stopButton_, Localization::Text(L"Durdur", L"Stop"));
     SetWindowTextW(undoButton_, Localization::Text(L"Geri al", L"Undo"));
@@ -380,8 +386,23 @@ void AudioEditorWindow::RefreshLocalizedText()
                 )
         );
     }
+    else if (IsSaveRunning())
+    {
+        SetStatusText(
+            saveCancellationRequested_.load(std::memory_order_relaxed)
+                ? Localization::Text(
+                    L"WAV kaydetme iptal ediliyor...",
+                    L"Cancelling WAV save..."
+                )
+                : Localization::Text(
+                    L"WAV arka planda güvenli biçimde kaydediliyor...",
+                    L"Saving WAV safely in the background..."
+                )
+        );
+    }
 
     UpdateLoadControls();
+    UpdateSaveControls();
     UpdateTransportControls();
     UpdateEditControls();
     UpdateSelectionControls();
@@ -473,17 +494,35 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
         case WM_COMMAND:
             if (HIWORD(wParam) == BN_CLICKED)
             {
-                switch (LOWORD(wParam))
+                const WORD commandIdentifier = LOWORD(wParam);
+                if (IsLoadRunning() && commandIdentifier != IdOpenFile &&
+                    commandIdentifier != IdClose)
+                {
+                    return 0;
+                }
+                if (IsSaveRunning() && commandIdentifier != IdOverwrite &&
+                    commandIdentifier != IdClose)
+                {
+                    return 0;
+                }
+
+                switch (commandIdentifier)
                 {
                     case IdOpenFile:
                         if (IsLoadRunning()) RequestLoadCancellation();
-                        else BrowseForWav();
+                        else if (!IsSaveRunning()) BrowseForWav();
                         return 0;
-                    case IdSaveAs: BrowseSaveAs(); return 0;
-                    case IdOverwrite: SaveOverCurrent(); return 0;
+                    case IdSaveAs:
+                        if (!IsBusy()) BrowseSaveAs();
+                        return 0;
+                    case IdOverwrite:
+                        if (IsSaveRunning()) RequestSaveCancellation();
+                        else SaveOverCurrent();
+                        return 0;
                     case IdClose:
                         StopPlayback();
                         if (IsLoadRunning()) RequestLoadCancellation();
+                        if (IsSaveRunning()) RequestSaveCancellation();
                         ShowWindow(window_, SW_HIDE);
                         return 0;
                     case IdPlayPause: TogglePlayback(); return 0;
@@ -528,7 +567,7 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             break;
 
         case WM_HSCROLL:
-            if (IsLoadRunning())
+            if (IsBusy())
             {
                 return 0;
             }
@@ -540,27 +579,27 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             break;
 
         case WM_MOUSEWHEEL:
-            if (IsLoadRunning()) return 0;
+            if (IsBusy()) return 0;
             HandleMouseWheel(wParam, lParam);
             return 0;
 
         case WM_LBUTTONDOWN:
-            if (IsLoadRunning()) return 0;
+            if (IsBusy()) return 0;
             HandleWaveformMouseDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             return 0;
 
         case WM_MOUSEMOVE:
-            if (IsLoadRunning()) return 0;
+            if (IsBusy()) return 0;
             HandleWaveformMouseMove(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam), wParam);
             return 0;
 
         case WM_LBUTTONUP:
-            if (IsLoadRunning()) return 0;
+            if (IsBusy()) return 0;
             HandleWaveformMouseUp(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             return 0;
 
         case WM_LBUTTONDBLCLK:
-            if (IsLoadRunning()) return 0;
+            if (IsBusy()) return 0;
             HandleWaveformMouseDown(GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam));
             if (selecting_)
             {
@@ -580,6 +619,10 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
             HandleLoadJobCompleted();
             return 0;
 
+        case SaveJobCompletedMessage:
+            HandleSaveJobCompleted();
+            return 0;
+
         case WM_TIMER:
             if (wParam == PlaybackTimerId)
             {
@@ -590,11 +633,12 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
 
         case WM_KEYDOWN:
         {
-            if (IsLoadRunning())
+            if (IsBusy())
             {
                 if (wParam == VK_ESCAPE)
                 {
-                    RequestLoadCancellation();
+                    if (IsLoadRunning()) RequestLoadCancellation();
+                    if (IsSaveRunning()) RequestSaveCancellation();
                 }
                 return 0;
             }
@@ -650,12 +694,14 @@ LRESULT AudioEditorWindow::HandleWindowMessage(
         case WM_CLOSE:
             StopPlayback();
             if (IsLoadRunning()) RequestLoadCancellation();
+            if (IsSaveRunning()) RequestSaveCancellation();
             ShowWindow(window_, SW_HIDE);
             return 0;
 
         case WM_NCDESTROY:
             KillTimer(window, PlaybackTimerId);
             StopLoadJob(true);
+            StopSaveJob(true);
             previewPlayer_.Shutdown();
             if (window_ == window) window_ = nullptr;
             return DefWindowProcW(window, message, wParam, lParam);
@@ -1084,19 +1130,29 @@ void AudioEditorWindow::BrowseForWav()
     }
 }
 
-void AudioEditorWindow::BrowseSaveAs()
+void AudioEditorWindow::BrowseSaveAs(const bool synchronous)
 {
-    if (!document_.has_value() || document_->Empty()) return;
+    if (!document_.has_value() || document_->Empty() ||
+        (!synchronous && IsBusy()))
+    {
+        return;
+    }
 
     std::vector<wchar_t> selectedPath(32768, L'\0');
     std::wstring suggestedName = loadedFile_.empty()
         ? std::wstring{L"edited.wav"}
         : loadedFile_.filename().wstring();
-    std::copy_n(suggestedName.c_str(), std::min(suggestedName.size(), selectedPath.size() - 1U), selectedPath.data());
+    std::copy_n(
+        suggestedName.c_str(),
+        std::min(suggestedName.size(), selectedPath.size() - 1U),
+        selectedPath.data()
+    );
 
     std::wstring initialDirectory;
     if (!loadedFile_.empty() && loadedFile_.has_parent_path())
+    {
         initialDirectory = loadedFile_.parent_path().wstring();
+    }
 
     OPENFILENAMEW dialog{};
     dialog.lStructSize = sizeof(dialog);
@@ -1105,52 +1161,371 @@ void AudioEditorWindow::BrowseSaveAs()
     dialog.nMaxFile = static_cast<DWORD>(selectedPath.size());
     dialog.lpstrFilter = L"WAV audio (*.wav)\0*.wav\0\0";
     dialog.lpstrDefExt = L"wav";
-    dialog.lpstrInitialDir = initialDirectory.empty() ? nullptr : initialDirectory.c_str();
-    dialog.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_EXPLORER | OFN_OVERWRITEPROMPT;
+    dialog.lpstrInitialDir = initialDirectory.empty()
+        ? nullptr
+        : initialDirectory.c_str();
+    dialog.Flags = OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR |
+        OFN_EXPLORER | OFN_OVERWRITEPROMPT;
 
     if (GetSaveFileNameW(&dialog) != FALSE)
-        SaveToFile(std::filesystem::path{selectedPath.data()}, true);
+    {
+        SaveToFile(
+            std::filesystem::path{selectedPath.data()},
+            true,
+            synchronous
+        );
+    }
 }
 
-bool AudioEditorWindow::SaveOverCurrent()
+bool AudioEditorWindow::SaveOverCurrent(const bool synchronous)
 {
-    if (!document_.has_value() || document_->Empty()) return false;
+    if (!document_.has_value() || document_->Empty())
+    {
+        return false;
+    }
+
+    if (!synchronous && IsBusy())
+    {
+        return false;
+    }
+
     if (loadedFile_.empty())
     {
-        BrowseSaveAs();
+        BrowseSaveAs(synchronous);
         return !IsModified();
     }
-    return SaveToFile(loadedFile_, true);
+
+    return SaveToFile(loadedFile_, true, synchronous);
 }
 
 bool AudioEditorWindow::SaveToFile(
     const std::filesystem::path& filePath,
-    const bool replaceExisting
+    const bool replaceExisting,
+    const bool synchronous
 )
 {
-    if (!document_.has_value() || document_->Empty()) return false;
-
-    SetStatusText(Localization::Text(L"WAV güvenli biçimde kaydediliyor...", L"Saving WAV safely..."));
-    const AudioWavSaveResult result = AudioDocumentWav::SavePcm16(
-        *document_, filePath,
-        replaceExisting ? AudioWavSaveMode::ReplaceExisting : AudioWavSaveMode::CreateNew
-    );
-    if (!result.Succeeded())
+    if (!document_.has_value() || document_->Empty())
     {
-        const std::wstring detail = Utf8ToWide(result.errorMessage);
-        SetStatusText(Localization::Text(L"WAV kaydedilemedi.", L"The WAV could not be saved."));
-        MessageBoxW(window_, detail.empty() ? Localization::Text(L"WAV kaydedilemedi.", L"The WAV could not be saved.") : detail.c_str(),
-            L"SoundBoardFasaFiso", MB_OK | MB_ICONERROR);
         return false;
     }
 
-    loadedFile_ = filePath;
-    savedStateIdentifier_ = currentStateIdentifier_;
+    if (synchronous)
+    {
+        SetStatusText(Localization::Text(
+            L"WAV güvenli biçimde kaydediliyor...",
+            L"Saving WAV safely..."
+        ));
+        const AudioWavSaveResult result = AudioDocumentWav::SavePcm16(
+            *document_,
+            filePath,
+            replaceExisting
+                ? AudioWavSaveMode::ReplaceExisting
+                : AudioWavSaveMode::CreateNew
+        );
+
+        if (!result.Succeeded())
+        {
+            const std::wstring detail = Utf8ToWide(result.errorMessage);
+            SetStatusText(Localization::Text(
+                L"WAV kaydedilemedi.",
+                L"The WAV could not be saved."
+            ));
+            MessageBoxW(
+                window_,
+                detail.empty()
+                    ? Localization::Text(
+                        L"WAV kaydedilemedi.",
+                        L"The WAV could not be saved."
+                    )
+                    : detail.c_str(),
+                L"SoundBoardFasaFiso",
+                MB_OK | MB_ICONERROR
+            );
+            return false;
+        }
+
+        loadedFile_ = filePath;
+        savedStateIdentifier_ = currentStateIdentifier_;
+        UpdateWindowTitle();
+        UpdateMetadataText();
+        UpdateEditControls();
+        SetStatusText(Localization::Text(
+            L"WAV PCM16 olarak atomik biçimde kaydedildi.",
+            L"WAV saved atomically as PCM16."
+        ));
+        return true;
+    }
+
+    if (IsBusy())
+    {
+        return false;
+    }
+
+    StopPlayback();
+    previewPlayer_.Shutdown();
+    saveCancellationRequested_.store(false, std::memory_order_relaxed);
+    saveRunning_.store(true, std::memory_order_release);
+    UpdateLoadControls();
+    UpdateSaveControls();
+    UpdateTransportControls();
+    UpdateEditControls();
+    UpdateWaveformScrollBar();
+    SetStatusText(Localization::Text(
+        L"WAV arka planda güvenli biçimde kaydediliyor...",
+        L"Saving WAV safely in the background..."
+    ));
+
+    const HWND targetWindow = window_;
+    const AudioDocument* const snapshot = &*document_;
+    const std::uint64_t stateIdentifier = currentStateIdentifier_;
+    const AudioWavSaveMode saveMode = replaceExisting
+        ? AudioWavSaveMode::ReplaceExisting
+        : AudioWavSaveMode::CreateNew;
+
+    try
+    {
+        saveThread_ = std::jthread(
+            [this, targetWindow, snapshot, filePath, stateIdentifier, saveMode]()
+            {
+                AudioSaveJobResult result;
+                result.filePath = filePath;
+                result.stateIdentifier = stateIdentifier;
+
+                try
+                {
+                    const AudioWavSaveResult saveResult =
+                        AudioDocumentWav::SavePcm16(
+                            *snapshot,
+                            filePath,
+                            saveMode,
+                            &saveCancellationRequested_
+                        );
+                    result.succeeded = saveResult.Succeeded();
+                    result.cancelled =
+                        saveResult.error == AudioWavFileError::Cancelled;
+                    result.errorMessage = saveResult.errorMessage;
+                }
+                catch (const std::exception& error)
+                {
+                    result.errorMessage = error.what();
+                }
+                catch (...)
+                {
+                    result.errorMessage =
+                        "The WAV save worker failed unexpectedly.";
+                }
+
+                {
+                    const std::scoped_lock lock{saveResultMutex_};
+                    pendingSaveResult_ = std::move(result);
+                }
+
+                if (PostMessageW(
+                        targetWindow,
+                        SaveJobCompletedMessage,
+                        0,
+                        0
+                    ) == FALSE)
+                {
+                    const std::scoped_lock lock{saveResultMutex_};
+                    pendingSaveResult_.reset();
+                    saveRunning_.store(false, std::memory_order_release);
+                    saveCancellationRequested_.store(
+                        false,
+                        std::memory_order_relaxed
+                    );
+                }
+            }
+        );
+    }
+    catch (const std::system_error& error)
+    {
+        saveRunning_.store(false, std::memory_order_release);
+        saveCancellationRequested_.store(false, std::memory_order_relaxed);
+        UpdateLoadControls();
+        UpdateSaveControls();
+        UpdateTransportControls();
+        UpdateEditControls();
+        UpdateWaveformScrollBar();
+
+        const std::wstring detail = Utf8ToWide(error.what());
+        SetStatusText(Localization::Text(
+            L"WAV kaydetme iş parçacığı başlatılamadı.",
+            L"The WAV save worker could not be started."
+        ));
+        MessageBoxW(
+            window_,
+            detail.empty()
+                ? Localization::Text(
+                    L"WAV kaydetme iş parçacığı başlatılamadı.",
+                    L"The WAV save worker could not be started."
+                )
+                : detail.c_str(),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return false;
+    }
+
+    return true;
+}
+
+void AudioEditorWindow::RequestSaveCancellation()
+{
+    if (!IsSaveRunning())
+    {
+        return;
+    }
+
+    saveCancellationRequested_.store(true, std::memory_order_relaxed);
+    if (saveThread_.joinable())
+    {
+        saveThread_.request_stop();
+    }
+
+    SetStatusText(Localization::Text(
+        L"WAV kaydetme iptal ediliyor...",
+        L"Cancelling WAV save..."
+    ));
+    UpdateSaveControls();
+}
+
+void AudioEditorWindow::HandleSaveJobCompleted()
+{
+    std::optional<AudioSaveJobResult> result;
+
+    {
+        const std::scoped_lock lock{saveResultMutex_};
+        result = std::move(pendingSaveResult_);
+        pendingSaveResult_.reset();
+    }
+
+    if (saveThread_.joinable())
+    {
+        saveThread_.join();
+    }
+
+    saveRunning_.store(false, std::memory_order_release);
+    saveCancellationRequested_.store(false, std::memory_order_relaxed);
+    UpdateLoadControls();
+    UpdateSaveControls();
+    UpdateTransportControls();
+    UpdateEditControls();
+    UpdateWaveformScrollBar();
+
+    if (!result.has_value())
+    {
+        return;
+    }
+
+    if (result->cancelled)
+    {
+        SetStatusText(Localization::Text(
+            L"WAV kaydetme iptal edildi.",
+            L"WAV saving was cancelled."
+        ));
+        return;
+    }
+
+    if (!result->succeeded)
+    {
+        const std::wstring detail = Utf8ToWide(result->errorMessage);
+        SetStatusText(Localization::Text(
+            L"WAV kaydedilemedi.",
+            L"The WAV could not be saved."
+        ));
+        MessageBoxW(
+            window_,
+            detail.empty()
+                ? Localization::Text(
+                    L"WAV kaydedilemedi.",
+                    L"The WAV could not be saved."
+                )
+                : detail.c_str(),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return;
+    }
+
+    loadedFile_ = std::move(result->filePath);
+    if (currentStateIdentifier_ == result->stateIdentifier)
+    {
+        savedStateIdentifier_ = result->stateIdentifier;
+    }
     UpdateWindowTitle();
     UpdateMetadataText();
     UpdateEditControls();
-    SetStatusText(Localization::Text(L"WAV PCM16 olarak atomik biçimde kaydedildi.", L"WAV saved atomically as PCM16."));
-    return true;
+    SetStatusText(Localization::Text(
+        L"WAV PCM16 olarak atomik biçimde kaydedildi.",
+        L"WAV saved atomically as PCM16."
+    ));
+}
+
+void AudioEditorWindow::StopSaveJob(const bool waitForCompletion)
+{
+    if (!saveThread_.joinable())
+    {
+        if (waitForCompletion)
+        {
+            saveRunning_.store(false, std::memory_order_release);
+            saveCancellationRequested_.store(
+                false,
+                std::memory_order_relaxed
+            );
+        }
+        return;
+    }
+
+    saveCancellationRequested_.store(true, std::memory_order_relaxed);
+    saveThread_.request_stop();
+
+    if (!waitForCompletion)
+    {
+        return;
+    }
+
+    saveThread_.join();
+
+    {
+        const std::scoped_lock lock{saveResultMutex_};
+        pendingSaveResult_.reset();
+    }
+
+    saveRunning_.store(false, std::memory_order_release);
+    saveCancellationRequested_.store(false, std::memory_order_relaxed);
+}
+
+void AudioEditorWindow::UpdateSaveControls()
+{
+    const bool hasDocument = document_.has_value() && !document_->Empty();
+    const bool saveRunning = IsSaveRunning();
+
+    if (saveAsButton_ != nullptr)
+    {
+        EnableWindow(
+            saveAsButton_,
+            hasDocument && !IsBusy() ? TRUE : FALSE
+        );
+    }
+
+    if (overwriteButton_ != nullptr)
+    {
+        SetWindowTextW(
+            overwriteButton_,
+            saveRunning
+                ? Localization::Text(L"İptal", L"Cancel")
+                : Localization::Text(L"Üzerine yaz", L"Overwrite")
+        );
+        EnableWindow(
+            overwriteButton_,
+            saveRunning ||
+                (hasDocument && !IsBusy() && IsModified())
+                ? TRUE
+                : FALSE
+        );
+        InvalidateRect(overwriteButton_, nullptr, TRUE);
+    }
 }
 
 bool AudioEditorWindow::ConfirmDiscardChanges()
@@ -1167,7 +1542,11 @@ bool AudioEditorWindow::ConfirmDiscardChanges()
         MB_YESNOCANCEL | MB_ICONWARNING
     );
     if (choice == IDCANCEL) return false;
-    if (choice == IDYES) return SaveOverCurrent();
+    if (choice == IDYES)
+    {
+        SaveOverCurrent();
+        return false;
+    }
     return true;
 }
 
@@ -1175,7 +1554,7 @@ bool AudioEditorWindow::LoadFile(
     const std::filesystem::path& filePath
 )
 {
-    if (IsLoadRunning())
+    if (IsBusy())
     {
         return false;
     }
@@ -1470,7 +1849,10 @@ void AudioEditorWindow::UpdateLoadControls()
             ? Localization::Text(L"İptal", L"Cancel")
             : Localization::Text(L"WAV aç", L"Open WAV")
     );
-    EnableWindow(openButton_, TRUE);
+    EnableWindow(
+        openButton_,
+        IsLoadRunning() || !IsSaveRunning() ? TRUE : FALSE
+    );
     InvalidateRect(openButton_, nullptr, TRUE);
 }
 
@@ -2177,7 +2559,7 @@ void AudioEditorWindow::DrawButton(
     const bool pressed = (item.itemState & ODS_SELECTED) != 0;
     const bool focused = (item.itemState & ODS_FOCUS) != 0;
     const bool primaryButton =
-        (item.hwndItem == openButton_ && !IsLoadRunning()) ||
+        (item.hwndItem == openButton_ && !IsBusy()) ||
         item.hwndItem == playPauseButton_ || item.hwndItem == saveAsButton_;
     const bool dangerButton = item.hwndItem == overwriteButton_ ||
         (item.hwndItem == openButton_ && IsLoadRunning());
@@ -2444,7 +2826,7 @@ void AudioEditorWindow::UpdateMetadataText()
 
 void AudioEditorWindow::UpdateTransportControls()
 {
-    const bool hasDocument = !IsLoadRunning() &&
+    const bool hasDocument = !IsBusy() &&
         document_.has_value() && !document_->Empty();
     const AudioPreviewState state = previewPlayer_.State();
     const bool playing = state == AudioPreviewState::Playing;
@@ -2489,11 +2871,10 @@ void AudioEditorWindow::UpdateTransportControls()
 
 void AudioEditorWindow::UpdateEditControls()
 {
-    const bool hasDocument = !IsLoadRunning() &&
+    UpdateSaveControls();
+    const bool hasDocument = !IsBusy() &&
         document_.has_value() && !document_->Empty();
     const bool hasSelection = hasDocument && HasSelection();
-    if (saveAsButton_ != nullptr) EnableWindow(saveAsButton_, hasDocument ? TRUE : FALSE);
-    if (overwriteButton_ != nullptr) EnableWindow(overwriteButton_, hasDocument && IsModified() ? TRUE : FALSE);
     if (undoButton_ != nullptr) EnableWindow(
             undoButton_,
             hasDocument && editHistory_.CanUndo() ? TRUE : FALSE
@@ -2600,7 +2981,7 @@ void AudioEditorWindow::UpdateWindowTitle()
 
 void AudioEditorWindow::UpdateEffectControls()
 {
-    const bool hasDocument = !IsLoadRunning() &&
+    const bool hasDocument = !IsBusy() &&
         document_.has_value() && !document_->Empty();
     const bool hasSelection = hasDocument && HasSelection();
     const bool selectionScope = effectScope_ == AudioEffectScope::Selection &&
@@ -2681,7 +3062,7 @@ void AudioEditorWindow::UpdateWaveformScrollBar()
     information.nMin = 0;
     information.nMax = ScrollRangeMaximum;
 
-    const bool scrollable = !IsLoadRunning() &&
+    const bool scrollable = !IsBusy() &&
         document_.has_value() && !viewport_.IsFit();
     if (!scrollable)
     {
@@ -4277,6 +4658,16 @@ bool AudioEditorWindow::IsModified() const noexcept
 bool AudioEditorWindow::IsLoadRunning() const noexcept
 {
     return loadRunning_.load(std::memory_order_acquire);
+}
+
+bool AudioEditorWindow::IsSaveRunning() const noexcept
+{
+    return saveRunning_.load(std::memory_order_acquire);
+}
+
+bool AudioEditorWindow::IsBusy() const noexcept
+{
+    return IsLoadRunning() || IsSaveRunning();
 }
 
 int AudioEditorWindow::Scale(const int value) const noexcept

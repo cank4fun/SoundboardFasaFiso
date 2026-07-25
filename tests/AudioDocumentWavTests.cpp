@@ -723,6 +723,78 @@ namespace
         );
     }
 
+    void TestChunkedPcm16Save()
+    {
+        TemporaryDirectory directory;
+        constexpr std::size_t frameCount = 20000U;
+        std::vector<float> samples(frameCount * 2U, 0.0f);
+
+        for (std::size_t frame = 0U; frame < frameCount; ++frame)
+        {
+            samples[frame * 2U] = static_cast<float>(frame % 101U) / 100.0f;
+            samples[frame * 2U + 1U] =
+                -static_cast<float>(frame % 101U) / 100.0f;
+        }
+
+        std::string errorMessage;
+        AudioDocument document = RequireDocument(
+            AudioDocument::Create(48000U, 2U, std::move(samples), errorMessage),
+            "chunked save fixture is valid"
+        );
+        const auto path = directory.Path() / "chunked-save.wav";
+        const AudioWavSaveResult saveResult =
+            AudioDocumentWav::SavePcm16(document, path);
+
+        Expect(saveResult.Succeeded(), "chunked PCM16 save succeeds");
+        AudioWavLoadResult loadResult = AudioDocumentWav::Load(path);
+        Expect(loadResult.Succeeded(), "chunked PCM16 save loads");
+        Expect(
+            loadResult.document.has_value() &&
+                loadResult.document->FrameCount() == frameCount,
+            "chunked PCM16 save retains every frame"
+        );
+        Expect(
+            TemporarySiblingCount(path) == 0U,
+            "chunked PCM16 save leaves no temporary sibling"
+        );
+    }
+
+    void TestSaveCancellation()
+    {
+        TemporaryDirectory directory;
+        std::string errorMessage;
+        AudioDocument document = RequireDocument(
+            AudioDocument::Create(
+                48000U,
+                2U,
+                std::vector<float>(48000U * 2U, 0.25f),
+                errorMessage
+            ),
+            "save cancellation fixture is valid"
+        );
+        const auto path = directory.Path() / "cancelled-save.wav";
+        std::atomic_bool cancellationRequested{true};
+        const AudioWavSaveResult result = AudioDocumentWav::SavePcm16(
+            document,
+            path,
+            AudioWavSaveMode::CreateNew,
+            &cancellationRequested
+        );
+
+        Expect(
+            result.error == AudioWavFileError::Cancelled,
+            "pre-cancelled WAV save reports cancellation"
+        );
+        Expect(
+            !std::filesystem::exists(path),
+            "cancelled WAV save does not create the destination"
+        );
+        Expect(
+            TemporarySiblingCount(path) == 0U,
+            "cancelled WAV save leaves no temporary sibling"
+        );
+    }
+
     void TestEmptyDocumentAndInvalidSavePaths()
     {
         TemporaryDirectory directory;
@@ -775,6 +847,8 @@ int main()
     TestExtensibleFloat();
     TestInvalidInputs();
     TestLoadCancellation();
+    TestChunkedPcm16Save();
+    TestSaveCancellation();
     TestEmptyDocumentAndInvalidSavePaths();
 
     if (failureCount != 0)
