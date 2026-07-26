@@ -5,100 +5,217 @@
 <h1 align="center">SoundBoardFasaFiso</h1>
 
 <p align="center">
-  A lightweight, portable Windows soundboard built with C++23, miniaudio and native Win32 APIs.
+  A portable native Windows soundboard, microphone processor, media importer, and WAV editor built with C++23.
 </p>
 
 <p align="center">
+  <a href="https://github.com/cank4fun/SoundboardFasaFiso/releases/latest">
+    <img alt="Release" src="https://img.shields.io/github/v/release/cank4fun/SoundboardFasaFiso">
+  </a>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4">
   <img alt="Language" src="https://img.shields.io/badge/C%2B%2B-23-00599C">
   <img alt="Audio" src="https://img.shields.io/badge/audio-WASAPI-6A5ACD">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**Latest stable release:** `2.1.0` adds verified background media import, an embedded WAV editor, expanded playback controls, and the opt-in microphone-processing pipeline with RNNoise, AGC and WebRTC AEC3.
+## About
 
-SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
+SoundBoardFasaFiso is a standalone Windows audio toolkit designed for voice chat, streaming, gaming, and fast sound playback.
 
-There is no installer, database or GUI framework. The official ZIP is a self-contained folder: no Visual C++ redistributable, .NET, Python, CMake, vcpkg or administrator rights are required. Audio settings, control hotkeys, and sound bindings can be edited from the native control panel; `config.txt` remains available for manual workflows.
+It combines a global-hotkey soundboard, independent main and monitor routing, physical microphone mixing, RNNoise noise suppression, optional WebRTC AEC3 echo cancellation, local and URL media import, and an embedded waveform editor in one native Win32 application.
+
+A common setup sends the main mix to **VB-CABLE** for voice chat or streaming while the monitor output plays through headphones. VB-CABLE is optional; the application also works as a normal local soundboard.
+
+There is no installer, database, background service, .NET runtime, Qt dependency, or external GUI framework. The official build is distributed as a portable ZIP and keeps its configuration, sounds, logs, and imported media beside the executable.
+
+**Current stable release:** `v2.1.0`
+
+## Highlights in v2.1.0
+
+- Built-in WAV editor embedded in the main window
+- Local media import and URL import
+- Bundled, pinned, and SHA-256-verified yt-dlp, Deno, FFmpeg, and ffprobe
+- Background media conversion without blocking the control panel
+- RNNoise microphone noise suppression
+- WebRTC AEC3 echo cancellation
+- Independent editor preview through the monitor output
+- Responsive editor toolbar, polished native controls, light/dark theme parity, and inline validation
+- `I` and `O` shortcuts for setting trim-selection boundaries
+- Fresh test-binary builds and complete portable-release verification
+
+See [docs/releases/v2.1.0.md](docs/releases/v2.1.0.md) and [CHANGELOG.md](CHANGELOG.md) for the complete release notes.
 
 ## Features
 
+### Soundboard and audio routing
+
 - Global hotkeys through Win32 `RegisterHotKey`
-- Separate main and monitor outputs with independent volume and mute controls
-- Physical microphone capture with device selection, gain and output/monitor routing
-- Local microphone processing with HPF, RNNoise, AGC, compression, limiting and optional WebRTC AEC3
-- Persistent session logs with one-click log-folder access
-- Manual and optional startup update checks through the public GitHub Releases API
-- Optional Windows startup registration and console-free launch
-- WAV, MP3 and FLAC playback
-- Multi-file and recursive folder import by dropping items onto the control panel
-- Background URL import and local-media conversion to WAV through bundled, SHA-256-verified media tools kept inside the portable package
-- Embedded WAV editor with asynchronous load/save, waveform navigation, selection, precision trim, clipboard editing, undo/redo, effects and monitor-output preview
-- Audio preloaded into RAM
-- Per-sound volume and playback mode
-- Active Playbacks tab with live progress, pause/resume, seek, per-session stop and temporary session volume
-- `restart`, `overlap`, `toggle`, `loop` and `ignore` retrigger modes
+- Separate main and monitor playback devices
+- Independent output volume and mute controls
+- Optional VB-CABLE routing for voice chat and streaming
+- WAV, MP3, and FLAC playback
+- Audio preloaded into RAM for responsive playback
+- Per-sound volume
+- `restart`, `overlap`, `toggle`, and `loop` playback modes
 - Bounded eight-voice overlap pool
-- Live config reload with rollback on failure and atomic saves that retain `config.txt.bak`
-- Automatic recovery after audio-device disconnects
-- WASAPI with configurable sample rate and buffer target
-- Turkish and English runtime messages selected from `config.txt`
-- Modern native Win32 control panel with persistent light/dark themes, live signal meters, device selectors, hotkey capture and sound-binding editing
-- UTF-8 console and Unicode file-path support
+- Global stop, output mute, monitor mute, reload, and exit hotkeys
+- Automatic recovery after playback-device disconnects
+- Configurable WASAPI sample rate and buffer target
+
+### Microphone processing
+
+- Physical microphone capture with device selection and gain
+- Independent routing to the main output and monitor output
+- Microphone-processing filter chain
+- RNNoise noise suppression
+- Optional WebRTC AEC3 acoustic echo cancellation
+- Real-time microphone and output level meters
+- Runtime rebuild and rollback when a new audio configuration fails
+- Monitor routing for local listening; headphones are recommended to prevent feedback
+
+### Local and URL media import
+
+- Import local media files through the native control panel
+- Import supported online media through a URL
+- Background conversion keeps the main interface responsive
+- Imported files can be placed directly in the portable `sounds` library
+- Bundled standalone media tools:
+  - yt-dlp
+  - Deno
+  - FFmpeg
+  - ffprobe
+- Tool versions are pinned and verified with SHA-256
+- Required third-party license files are included in the portable package
+- Media tools are self-contained; users do not need to install them separately
+
+### Built-in WAV editor
+
+- Embedded in the main application window
+- Asynchronous WAV loading and saving
+- Cancellable long-running load and save operations
+- Buffered waveform rendering through `AudioWaveformCache`
+- Playback, pause, seek, zoom, fit-to-window, and monitor preview
+- Precise selection and trimming
+- `I` sets the selection start at the playhead
+- `O` sets the selection end at the playhead
+- Cut, copy, and paste
+- Undo and redo history
+- Gain adjustment
+- Peak normalization
+- Fade-in and fade-out
+- Stereo-to-mono conversion
+- Trim leading and trailing silence
+- Save, Save As, and overwrite workflows
+- Inline validation for recoverable input errors
+- Responsive toolbar layout across supported DPI scales
+
+### Native control panel and reliability
+
+- Single-window native Win32 interface
+- Home, Settings, and Hotkeys tabs
+- Embedded audio editor instead of a separate popup window
+- Persistent light and dark themes
+- Per-monitor DPI scaling
+- Device selectors, hotkey capture, and sound-binding editor
+- Live microphone and output meters
+- Keyboard navigation
+- Safe `Save and apply` workflow
+- Live config reload with rollback on failure
+- Portable paths and Unicode file-name support
+- UTF-8 console output
 - Tray menu and single-instance protection
-- Strict portable data mode through `portable.flag`, with clear writability checks and no silent system-wide installation
-- Portable Release ZIP generation with CMake
+- Optional current-user Windows startup registration
+- Console-free normal startup with an on-demand diagnostic console
+- Persistent `latest.log` and `previous.log` session logs
+- Manual and optional startup update checks through GitHub Releases
+- The updater never downloads or replaces the application automatically
+
+### Portable release integrity
+
+- Native x64 Windows GUI executable
+- Portable ZIP generated through CMake
+- SHA-256 checksum generated for the final archive
+- Package allowlist verification
+- Safe default-config verification
+- Bundled media-tool checksum and license verification
+- Rejection of hidden files, symbolic links, build artifacts, and debug residue
+- PE verification for x64, PE32+, and Windows GUI subsystem
+- Fresh build of the complete test suite before release validation
 
 ## Quick start
 
-1. Download and extract the latest portable ZIP.
-2. Run `SoundBoardFasaFiso.exe`; the control panel opens automatically.
-3. Drop WAV, MP3 or FLAC files, or a folder containing them, anywhere on the control panel. External files are copied into `sounds/Imported`; the **Browse** button also supports multi-select.
-4. To import online media, paste an `http://` or `https://` address into the sound field and choose **URL**. The bundled verified tools download and convert it to WAV in the background.
-5. Use the embedded audio editor to preview through the monitor output, select and trim audio, apply edits, and save the resulting WAV. `I` and `O` set the trim start and end at the playhead.
-6. Open the **Hotkeys** tab and create a binding for each sound. Importing media fills the editor but does not assign a global hotkey automatically.
-7. Configure devices and control hotkeys, then click **Save and apply**. Invalid changes are rejected and the previous runtime is restored.
+1. Download the latest portable ZIP from [GitHub Releases](https://github.com/cank4fun/SoundboardFasaFiso/releases).
+2. Compare the ZIP with the attached `.sha256` file.
+3. Extract the complete archive to a writable folder.
+4. Run `SoundBoardFasaFiso.exe`.
+5. Select the main, monitor, and optional microphone devices.
+6. Add sound bindings in the **Hotkeys** tab.
+7. Click **Save and apply**.
 
-The control panel remains available even when no sound binding is active or previously configured files are missing, so a fresh portable folder can be repaired without editing `config.txt` manually.
+The packaged default uses the current Windows default output and keeps monitor routing disabled. Copying a file into `sounds` does not assign a hotkey automatically.
 
-The packaged default starts on the Windows default output with monitor routing disabled, so VB-CABLE is optional.
+The control panel remains available even if no sound binding is active or a previously configured file is missing, so the portable folder can be repaired without editing `config.txt` manually.
 
-### Windows security notice
+## Recommended routing with VB-CABLE
 
-GitHub portable builds are currently unsigned. Microsoft Defender SmartScreen may show an unknown-publisher warning, and Windows 11 Smart App Control can block a new unsigned executable without offering a per-application exception. This also applies to locally compiled unsigned Release builds.
+A typical voice-chat or streaming setup is:
 
-Download releases only from this repository and compare the ZIP against the attached `.sha256` file:
-
-```powershell
-Get-FileHash .\SoundBoardFasaFiso-v*-windows-x64-portable.zip -Algorithm SHA256
+```text
+Soundboard main output  -> CABLE Input
+Soundboard monitor      -> Headphones
+Voice-chat microphone   -> CABLE Output
 ```
 
-A matching checksum confirms that the archive is identical to the release asset; it is not a substitute for code signing. Do not weaken system security solely to run the application. Systems that enforce trusted signing require a signed build or an application-control policy that explicitly permits the executable.
+The physical microphone can also be mixed into the main route, allowing the virtual endpoint to carry both microphone audio and soundboard playback.
+
+VB-CABLE is not bundled with SoundBoardFasaFiso.
+
+## Importing media
+
+Use the control panel to import either:
+
+- A local media file
+- A supported media URL
+
+The import service uses the verified tools included under `media-tools`. Imported audio is converted into a soundboard-compatible file and placed in the portable sound library.
+
+The importer does not require a system-wide FFmpeg, yt-dlp, Deno, or Python installation.
+
+## Audio editor
+
+Open a WAV file from the control panel to use the embedded editor.
+
+Core workflow:
+
+1. Load or import a sound.
+2. Play and seek through the waveform.
+3. Zoom or fit the full file.
+4. Drag to create a selection, or use `I` and `O` at the playhead.
+5. Trim, cut, copy, paste, normalize, fade, change gain, convert to mono, or remove silence.
+6. Preview through the configured monitor device.
+7. Save asynchronously without blocking the main UI.
+
+The editor preserves undo and redo history for document edits. Recoverable input errors are shown inline instead of opening unnecessary modal dialogs.
+
+## Portable folder layout
 
 ```text
 SoundBoardFasaFiso/
 ├── SoundBoardFasaFiso.exe
-├── portable.flag       # keeps mutable data inside this folder
 ├── config.txt
 ├── README.txt
 ├── LICENSE
 ├── THIRD_PARTY_NOTICES.txt
-├── WEBRTC_THIRD_PARTY_NOTICES.txt  # AEC-enabled official builds
-├── tools/         # verified media tools; never installed into PATH
-├── logs/          # created automatically
-└── sounds/
+├── media-tools/          # Verified import tools and their licenses
+├── sounds/               # Sound library and neutral examples
+└── logs/                 # Created automatically after launch
 ```
 
-
-### Standalone storage behavior
-
-The official archive contains `portable.flag`. In this mode, configuration, backups, logs, imported sounds and private tools all stay inside the extracted folder. Portable mode requires a writable location; placing the folder under Program Files or another protected directory produces a clear startup error instead of silently redirecting data elsewhere.
-
-If the marker is intentionally removed, the application uses `%LOCALAPPDATA%\SoundBoardFasaFiso` and copies packaged defaults only when user data does not already exist. This fallback is for future installer or loose-EXE workflows; official releases remain strict portable folders.
-
-The embedded manifest requests `asInvoker`. SoundBoardFasaFiso never needs elevation. Running it manually as administrator can make Explorer drag and drop fail because Windows blocks messages between different integrity levels, so an elevated launch displays a warning.
+Configuration, logs, imported media, and edited sounds remain inside the portable folder.
 
 ## Configuration
+
+Most settings can be edited from the control panel. `config.txt` remains available for manual and automated workflows.
 
 ```ini
 # LANGUAGE AND APPEARANCE
@@ -118,13 +235,6 @@ microphone=default
 microphone_volume=1.00
 microphone_to_output=true
 microphone_to_monitor=false
-
-# MICROPHONE PROCESSING
-microphone_processing_enabled=false
-microphone_processing_preset=natural
-microphone_echo_cancellation_enabled=false
-microphone_noise_suppression_enabled=false
-microphone_agc_enabled=false
 
 # LOW-LATENCY AUDIO
 audio_sample_rate=48000
@@ -147,28 +257,24 @@ F1=example.wav|volume=0.80|mode=restart
 F2=example.mp3|volume=1.00|mode=toggle
 F3=example.flac|volume=0.60|mode=loop
 F4=example.wav|volume=1.00|mode=overlap
-F5=example.wav|volume=1.00|mode=ignore
 ```
 
-`language=tr` selects Turkish messages and `language=en` selects English messages. `theme=dark` and `theme=light` select the persistent interface theme. Both settings are applied during startup and live reload.
+`language=tr` selects Turkish runtime messages and `language=en` selects English runtime messages.
 
-`default` selects the current Windows default playback or capture device. `none` disables the monitor output. Device names also support unique partial matches.
+`theme=dark` and `theme=light` select the persistent interface theme.
 
-When `microphone_enabled=true`, the selected physical microphone is captured and mixed into every enabled route. `microphone_to_output=true` sends it to the main output; `microphone_to_monitor=true` also lets the user hear it through the monitor device. Enabling microphone monitoring can create feedback when speakers are used, so headphones are recommended.
+`default` selects the current Windows default playback or capture device. `none` disables the monitor route. Device settings also support unique partial-name matches.
 
-Microphone processing is opt-in. AEC-enabled builds can remove soundboard audio that returns through the physical monitor and microphone by using WebRTC AEC3. The render reference excludes microphone monitoring and the virtual main-output route. Builds made without WebRTC preserve the setting but show echo cancellation as unavailable.
-
-Sound paths are relative to the `sounds` folder. Subfolders are supported, but absolute paths and `..` traversal are rejected.
+Sound paths are relative to `sounds`. Subfolders are supported; absolute paths and `..` traversal are rejected.
 
 ### Playback modes
 
 | Mode | Behavior |
 |---|---|
 | `restart` | Restarts the sound from the beginning on every press. |
-| `overlap` | Starts another voice without stopping the previous one. Uses up to eight voices. |
+| `overlap` | Starts another voice without stopping the previous one, up to eight voices. |
 | `toggle` | Starts on the first press and stops on the next. |
 | `loop` | Loops until the same hotkey is pressed again. |
-| `ignore` | Starts only when inactive; repeated presses leave the current session untouched. |
 
 Defaults when options are omitted:
 
@@ -179,7 +285,7 @@ mode=restart
 
 ### Hotkeys
 
-Supported modifiers are `CTRL`, `SHIFT` and `ALT`. Function keys `F1` through `F24` and `NUMPAD0` through `NUMPAD9` are supported.
+Supported modifiers are `CTRL`, `SHIFT`, and `ALT`. Function keys `F1` through `F24` and `NUMPAD0` through `NUMPAD9` are supported.
 
 ```ini
 CTRL+F2=example.wav
@@ -188,50 +294,60 @@ CTRL+ALT+F4=example.flac
 NUMPAD1=example.wav
 ```
 
-Windows rejects a hotkey already owned by another application. SoundBoardFasaFiso reports the conflict and keeps the last working configuration during a failed reload.
+Windows rejects a global hotkey already owned by another application. SoundBoardFasaFiso reports the conflict and keeps the last working configuration.
 
-## Control panel
-
-The native Win32 control panel uses a single-window, tabbed layout with light/dark themes, live microphone and output meters, keyboard navigation, per-monitor DPI scaling, device selectors, hotkey capture and sound-binding editing. It does not require Qt, .NET or another GUI runtime.
-
-`Save and apply` writes a pending configuration, validates it, rebuilds the complete playback/capture runtime and only replaces the active config after every device and hotkey succeeds. A failure restores the previous working runtime. Closing the control-panel window only hides it, so the soundboard continues running in the tray.
-
-Keyboard shortcuts inside the panel:
+### Control-panel shortcuts
 
 - `Ctrl+1`, `Ctrl+2`, `Ctrl+3` switch tabs
 - `Ctrl+S` saves and applies pending changes
 - `Esc` cancels hotkey capture
 
-## Startup and diagnostics
+### Audio-editor shortcuts
 
-`start_with_windows=true` registers the current executable under the current user's Windows startup key, so no administrator permission is required. Moving the portable folder and launching the application again refreshes the registered path.
+- `I` sets the selection start at the current playhead
+- `O` sets the selection end at the current playhead
 
-The application starts without a console window. The diagnostic console remains available on demand from the control panel or tray menu. The legacy `show_console_on_start` key is retained for config compatibility and is normalized to `false` when settings are saved.
+## Startup, tray, and diagnostics
 
-`check_updates_on_start=true` performs a background check against the latest published stable GitHub Release. The control panel also provides a manual check. The updater never downloads, replaces, or executes files automatically; it only offers to open the official Release page.
+`start_with_windows=true` registers the current executable for the current user without requiring administrator permission. Moving the portable folder and launching it again refreshes the registered path.
 
-Every successful launch writes `logs/latest.log`; the previous session is kept as `logs/previous.log`. The control panel can open the logs folder directly.
+The application normally starts without a console window. The diagnostic console can be opened from the control panel or tray menu.
 
-## Tray menu
+`check_updates_on_start=true` checks the latest stable GitHub Release in the background. The updater only offers to open the official release page; it does not download, replace, or execute an update.
+
+Every successful launch writes `logs/latest.log`. The previous session is retained as `logs/previous.log`.
 
 Right-click the tray icon to:
 
 - Open the control panel
-- Reload the config
+- Reload the configuration
 - Stop all sounds
-- Mute or unmute either output
-- Show or hide the console
-- Exit
+- Mute or unmute the main output
+- Mute or unmute the monitor output
+- Show the diagnostic console
+- Exit the application
 
 Double-click the tray icon to reopen the control panel.
 
 ## Device recovery and latency
 
-If a configured device disappears, the application remains open and periodically rebuilds the audio engine. Loaded sounds are restored after the device becomes available.
+If a configured device disappears, SoundBoardFasaFiso remains open and periodically attempts to rebuild the audio runtime. Loaded sounds are restored after the device becomes available.
 
-`audio_sample_rate=0` uses the device's native rate. `audio_buffer_ms=0` leaves buffer selection to Windows/miniaudio. Very small buffer targets can crackle on some drivers; increase the value when needed.
+`audio_sample_rate=0` uses the device's native rate. `audio_buffer_ms=0` leaves buffer selection to Windows and miniaudio. Increase the buffer target if a driver produces crackling or dropouts.
 
-The console prints the actual sample rate, period count and effective buffer reported by the device.
+## Windows security notice
+
+Official GitHub release artifacts are currently unsigned. Microsoft Defender SmartScreen may show an unknown-publisher warning, and Windows 11 Smart App Control may block a new unsigned executable.
+
+Download the application only from this repository and compare the ZIP with its attached checksum:
+
+```powershell
+Get-FileHash .\SoundBoardFasaFiso-v2.1.0-windows-x64-portable.zip -Algorithm SHA256
+```
+
+A matching checksum confirms that the archive matches the published release asset. It does not replace code signing. Do not permanently weaken Windows security to run the application.
+
+See [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md) for the project policy.
 
 ## Building from source
 
@@ -241,64 +357,90 @@ The console prints the actual sample rate, period count and effective buffer rep
 - Visual Studio 2022 with **Desktop development with C++**
 - CMake 3.25 or newer
 - Ninja
+- vcpkg
+- Git
 
-### Visual Studio debug build
+### Development build
 
-Open the repository folder in Visual Studio and press `CTRL+SHIFT+B`.
+Open the repository folder in Visual Studio, or configure a Ninja build from an **x64 Native Tools Command Prompt for VS 2022**.
 
-The build copies the default `config.txt` only when the build directory does not already contain one, so local test settings are not overwritten. Delete the build-directory copy to restore the packaged defaults.
+The project uses C++23 and treats supported warning configurations as errors.
 
-The default CMake output is normally:
+### Verified Release build
 
-```text
-out/build/x64-Debug/SoundBoardFasaFiso.exe
-```
-
-### Portable Release build
-
-The official v2.1 release path enables WebRTC AEC3 through the pinned vcpkg manifest. Follow [Building with WebRTC AEC3](docs/BUILDING_WITH_WEBRTC_AEC3.md) for the one-time vcpkg setup and complete configure command.
-
-A smaller dependency-free build remains available when echo cancellation is not needed:
+Set `VCPKG_ROOT` to your vcpkg installation:
 
 ```cmd
+set "VCPKG_ROOT=C:\path\to\vcpkg"
+
 cmake -S . -B out/build/x64-Release -G Ninja ^
   -DCMAKE_BUILD_TYPE=Release ^
-  -DSOUNDBOARD_ENABLE_WEBRTC_AEC3=OFF
-cmake --build out/build/x64-Release --target PortableRelease
+  "-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
+  -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
+  -DVCPKG_MANIFEST_FEATURES=webrtc-aec3 ^
+  -DSOUNDBOARD_ENABLE_WEBRTC_AEC3=ON ^
+  -DSOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS=ON ^
+  -DSOUNDBOARD_WARNINGS_AS_ERRORS=ON
 ```
 
-The distributable archive is created at:
+Build the application and fresh test binaries:
+
+```cmd
+cmake --build out/build/x64-Release ^
+  --target SoundBoardFasaFiso SoundBoardFasaFisoTests --parallel
+```
+
+Run the complete test suite:
+
+```cmd
+ctest --test-dir out/build/x64-Release --output-on-failure
+```
+
+Create and verify the portable release:
+
+```cmd
+cmake --build out/build/x64-Release ^
+  --target VerifyPortableRelease --parallel
+```
+
+The verified files are created under:
 
 ```text
-out/build/x64-Release/SoundBoardFasaFiso-v2.1.0-windows-x64-portable.zip
+out/build/x64-Release/
+├── SoundBoardFasaFiso-v2.1.0-windows-x64-portable.zip
+└── SoundBoardFasaFiso-v2.1.0-windows-x64-portable.zip.sha256
 ```
 
 ## Repository layout
 
 ```text
+.github/         GitHub Actions workflows
 assets/          Repository artwork
-cmake/           Small build helper scripts
-docs/            Architecture, build and release notes
-include/         Project headers and generated-file templates
+cmake/           Build and portable-verification scripts
+docs/            Architecture, build, development, and release documentation
+include/         Project headers
 resources/       Windows icon and resource templates
-sounds/          Neutral example tones
+sounds/          Neutral example sounds
 src/             Application sources
-third_party/     Vendored third-party code
+tests/           Automated tests
+third_party/     Vendored third-party source and notices
+tools/           Development and import helper scripts
 config.txt       Default runtime configuration
-CMakeLists.txt   Build and packaging rules
-THIRD_PARTY_NOTICES.txt  Vendored dependency notices
-vcpkg.json       Pinned optional WebRTC AEC3 dependency manifest
+CMakeLists.txt   Build, test, and packaging rules
+vcpkg.json       Manifest dependencies and optional features
 ```
 
 ## Third-party software
 
-This repository vendors [miniaudio](https://github.com/mackron/miniaudio) and RNNoise. Their notices are summarized in `THIRD_PARTY_NOTICES.txt`. AEC-enabled portable builds additionally include generated `WEBRTC_THIRD_PARTY_NOTICES.txt` covering WebRTC and the transitive static dependencies installed by the pinned vcpkg manifest.
+The repository vendors or packages third-party components including miniaudio and RNNoise. Optional WebRTC AEC3 support is resolved through the vcpkg manifest feature.
 
-VB-CABLE is optional and is not bundled with this project. Local playback works without it. Presenting the mixed signal to other applications as a microphone requires a virtual audio endpoint; the v2 architecture keeps this as a separate bridge layer. See [docs/V2_ARCHITECTURE.md](docs/V2_ARCHITECTURE.md).
+Official portable releases also include pinned standalone builds of yt-dlp, Deno, FFmpeg, and ffprobe together with the required license material. See [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) and the license files inside `media-tools`.
+
+VB-CABLE is optional and is not bundled.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for release notes.
+See [CHANGELOG.md](CHANGELOG.md) and [docs/releases/v2.1.0.md](docs/releases/v2.1.0.md).
 
 ## License
 
@@ -306,8 +448,6 @@ Released under the [MIT License](LICENSE).
 
 ## Code signing policy
 
-Official GitHub release artifacts are currently unsigned. The project does not currently use a SignPath Foundation certificate or another public code-signing certificate. Signing is not a release blocker; official artifacts are built by GitHub Actions and published with SHA-256 checksums.
+Official GitHub release artifacts are currently unsigned.
 
-Build provenance, project roles, privacy rules, checksum verification and the requirements for any future signed release are documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
-
-- Per-binding fade-in/fade-out: `fade_in_ms` and `fade_out_ms` accept values from 0 to 10000 milliseconds.
+Build provenance, privacy rules, checksum verification, and requirements for any future signed release are documented in [CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md).
