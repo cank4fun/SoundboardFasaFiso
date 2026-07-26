@@ -26,7 +26,7 @@ It combines a global-hotkey soundboard, independent main and monitor routing, ph
 
 A common setup sends the main mix to **VB-CABLE** for voice chat or streaming while the monitor output plays through headphones. VB-CABLE is optional; the application also works as a normal local soundboard.
 
-There is no installer, database, background service, .NET runtime, Qt dependency, or external GUI framework. The official build is distributed as a portable ZIP and keeps its configuration, sounds, logs, and imported media beside the executable.
+There is no installer, database, background service, .NET runtime or Qt dependency. The official build is distributed as a portable ZIP and keeps its configuration, sounds, logs, and imported media beside the executable.
 
 **Current stable release:** `v2.1.0`
 
