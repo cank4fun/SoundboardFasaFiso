@@ -1,0 +1,32 @@
+{
+  "manifestVersion": 1,
+  "bundleVersion": "2026.07.24.3",
+  "ytDlp": {
+    "version": "2026.07.04",
+    "url": "https://github.com/yt-dlp/yt-dlp/releases/download/2026.07.04/yt-dlp.exe",
+    "sha256": "52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8",
+    "licenseUrl": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.07.04/LICENSE",
+    "thirdPartyLicensesUrl": "https://raw.githubusercontent.com/yt-dlp/yt-dlp/2026.07.04/THIRD_PARTY_LICENSES.txt",
+    "licenseSha256": "7e12e5df4bae12cb21581ba157ced20e1986a0508dd10d0e8a4ab9a4cf94e85c",
+    "thirdPartyLicensesSha256": "b085c65586a953cdb4b13c6390d63ec984d66912e4b6a19e66ba3582f2ed104b"
+  },
+  "deno": {
+    "version": "2.9.4",
+    "archiveName": "deno-x86_64-pc-windows-msvc.zip",
+    "archiveUrl": "https://github.com/denoland/deno/releases/download/v2.9.4/deno-x86_64-pc-windows-msvc.zip",
+    "archiveSha256": "68ed08b05c56cf887e9aa509947dc3f468f7e12f47a13e5c1abd51d46d1453ef",
+    "licenseUrl": "https://raw.githubusercontent.com/denoland/deno/v2.9.4/LICENSE.md",
+    "licenseSha256": "f62497fffecc0852960c8d3e6934b9db86d16396e9b604072e923892cae3a588"
+  },
+  "ffmpeg": {
+    "version": "n8.1.2-30-g45f1910444",
+    "archiveName": "ffmpeg-n8.1.2-30-g45f1910444-win64-lgpl-8.1.zip",
+    "archiveUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-23-14-16/ffmpeg-n8.1.2-30-g45f1910444-win64-lgpl-8.1.zip",
+    "checksumsUrl": "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-07-23-14-16/checksums.sha256",
+    "checksumsSha256": "708bf7f86bf42d7e96937523d432c9d237143b6d0ea89724e7dadb9bb4fe1e22",
+    "ffmpegLicenseUrl": "https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/COPYING.LGPLv2.1",
+    "buildLicenseUrl": "https://raw.githubusercontent.com/BtbN/FFmpeg-Builds/master/LICENSE",
+    "ffmpegLicenseSha256": "246041b6ecf9bc32d718a62c57877c78b5eb397b6467e74ed7ae2626ab189c30",
+    "buildLicenseSha256": "c1b3cc7eec42bd9c4f6247169bb887b4a9bc904abfd2a7f7f9231ed357844993"
+  }
+}

@@ -13,6 +13,8 @@
 #include "gui/ControlWindow.hpp"
 #include "hotkeys/HotkeyManager.hpp"
 #include "localization/Localization.hpp"
+#include "platform/ApplicationPaths.hpp"
+#include "platform/MediaToolManager.hpp"
 #include "platform/DebugConsole.hpp"
 #include "platform/SingleInstance.hpp"
 #include "platform/StartupManager.hpp"
@@ -223,7 +225,16 @@ namespace
                 );
             }
 
-            std::cout << '\n';
+            std::cout
+                << '\n'
+                << Localization::Text(
+                    "Mikrofon işleme: ",
+                    "Microphone processing: "
+                )
+                << (config.GetMicrophoneProcessingSettings().enabled
+                    ? Localization::Text("Açık", "Enabled")
+                    : Localization::Text("Kapalı", "Disabled"))
+                << '\n';
         }
 
         std::cout
@@ -303,6 +314,7 @@ namespace
             config.GetMicrophoneVolume(),
             config.GetMicrophoneToOutput(),
             config.GetMicrophoneToMonitor(),
+            config.GetMicrophoneProcessingSettings(),
             config.GetAudioSampleRate(),
             config.GetAudioBufferMilliseconds()
         ))
@@ -354,7 +366,9 @@ namespace
                 binding.keyName,
                 soundPath,
                 binding.volume,
-                binding.mode
+                binding.mode,
+                binding.fadeInMilliseconds,
+                binding.fadeOutMilliseconds
             ))
             {
                 std::cerr
@@ -551,7 +565,7 @@ namespace
         std::vector<SoundBinding>& activeBindings
     )
     {
-        audio.StopAll();
+        audio.StopAll(true);
         hotkeys.UnregisterAll();
         audio.Shutdown();
         activeBindings.clear();
@@ -602,14 +616,44 @@ int WINAPI wWinMain(
         return 1;
     }
 
-    const std::filesystem::path programFolder =
-        executablePath->parent_path();
+    const ApplicationPathResolution pathResolution =
+        ResolveApplicationPaths(*executablePath);
+
+    if (!pathResolution.paths.has_value())
+    {
+        MessageBoxW(
+            nullptr,
+            pathResolution.errorMessage.c_str(),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return 1;
+    }
+
+    const ApplicationPaths applicationPaths =
+        *pathResolution.paths;
+    std::wstring storageErrorMessage;
+
+    if (!PrepareApplicationStorage(
+            applicationPaths,
+            storageErrorMessage
+        ))
+    {
+        MessageBoxW(
+            nullptr,
+            storageErrorMessage.c_str(),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONERROR
+        );
+        return 1;
+    }
+
     const std::filesystem::path soundsFolder =
-        programFolder / "sounds";
+        applicationPaths.soundsFolder;
     const std::filesystem::path logsFolder =
-        programFolder / "logs";
+        applicationPaths.logsFolder;
     const std::filesystem::path configPath =
-        programFolder / "config.txt";
+        applicationPaths.configPath;
 
     std::filesystem::path pendingConfigPath = configPath;
     pendingConfigPath += L".pending";
@@ -626,6 +670,32 @@ int WINAPI wWinMain(
         );
     }
 
+    const std::optional<MediaToolBundleStatus> mediaToolBundle =
+        MediaToolManager::FindUsableBundle(
+            {
+                applicationPaths.userToolsFolder,
+                applicationPaths.bundledToolsFolder
+            }
+        );
+
+    if (mediaToolBundle.has_value())
+    {
+        std::cout
+            << "Verified standalone media tools: "
+            << mediaToolBundle->bundleVersion
+            << " ("
+            << PathToUtf8(mediaToolBundle->rootFolder)
+            << ")\n";
+    }
+    else
+    {
+        std::cerr
+            << Localization::Text(
+                "Medya araçları eksik veya doğrulanamadı. Yerel soundboard çalışmaya devam edecek; URL içe aktarma ve dönüştürme kapalı kalacak.\n",
+                "Media tools are missing or failed verification. Local soundboard features remain available; URL import and conversion will stay disabled.\n"
+            );
+    }
+
     Config config;
 
     if (!config.Load(configPath))
@@ -640,6 +710,19 @@ int WINAPI wWinMain(
             MB_OK | MB_ICONERROR
         );
         return 1;
+    }
+
+    if (IsCurrentProcessElevated())
+    {
+        MessageBoxW(
+            nullptr,
+            Localization::Text(
+                L"Uygulama yönetici olarak çalışıyor. SoundBoardFasaFiso yönetici yetkisi istemez; Windows güvenlik sınırı nedeniyle normal Explorer pencerelerinden sürükle-bırak çalışmayabilir. Uygulamayı kapatıp normal şekilde açman önerilir.",
+                L"The application is running as administrator. SoundBoardFasaFiso does not require elevation, and Windows may block drag and drop from normal Explorer windows across the integrity boundary. Close it and launch it normally."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
     }
 
     SingleInstance singleInstance;
@@ -690,10 +773,18 @@ int WINAPI wWinMain(
 
     std::cout
         << Localization::Text(
+            "Veri modu: ",
+            "Data mode: "
+        )
+        << (applicationPaths.storageMode == ApplicationStorageMode::Portable
+            ? Localization::Text("portable", "portable")
+            : "LocalAppData")
+        << '\n'
+        << Localization::Text(
             "Kullanılan config: ",
             "Config in use: "
         )
-        << PathToUtf8(configPath.filename())
+        << PathToUtf8(configPath)
         << '\n';
 
     if (!logger.GetLogPath().empty())
@@ -703,9 +794,7 @@ int WINAPI wWinMain(
                 "Oturum logu: ",
                 "Session log: "
             )
-            << PathToUtf8(
-                logsFolder.filename() / logger.GetLogPath().filename()
-            )
+            << PathToUtf8(logger.GetLogPath())
             << '\n';
     }
 
@@ -744,7 +833,8 @@ int WINAPI wWinMain(
         Audio::EnumeratePlaybackDevices(),
         Audio::EnumerateCaptureDevices(),
         controlWindowCommandIds,
-        &audio
+        &audio,
+        mediaToolBundle
     ))
     {
         controlWindow.Show();
@@ -1349,6 +1439,25 @@ int WINAPI wWinMain(
 
             controlWindow.SetStatus(
                 Localization::Text(L"Ses durduruldu.", L"Sound stopped.")
+            );
+        }
+        else if (playbackResult == PlaybackResult::Ignored)
+        {
+            std::cout
+                << Localization::Text(
+                    "Çalma isteği yok sayıldı: ",
+                    "Playback request ignored: "
+                )
+                << PathToUtf8(binding.soundFile.stem())
+                << " ["
+                << PlaybackModeName(binding.mode)
+                << "]\n";
+
+            controlWindow.SetStatus(
+                Localization::Text(
+                    L"Çalma isteği mevcut moda göre yok sayıldı.",
+                    L"The playback request was ignored by the current mode."
+                )
             );
         }
         else if (playbackResult == PlaybackResult::Failed)

@@ -1,10 +1,17 @@
 #pragma once
 
+#include "audio/MicrophoneProcessingRuntime.hpp"
+#include "audio/PlaybackState.hpp"
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+#include "audio/AecRenderReferenceMixer.hpp"
+#endif
 #include "miniaudio/miniaudio.h"
 #include "sound/PlaybackMode.hpp"
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -22,6 +29,7 @@ enum class PlaybackResult
 {
     Started,
     Stopped,
+    Ignored,
     Unsupported,
     Failed
 };
@@ -34,15 +42,47 @@ enum class MuteToggleResult
     Failed
 };
 
+enum class MicrophoneTestMonitorResult
+{
+    Enabled,
+    Disabled,
+    AlreadyRouted,
+    Unavailable,
+    Failed
+};
+
 struct AudioLevelSnapshot
 {
     float output = 0.0f;
     float monitor = 0.0f;
     float microphone = 0.0f;
+    float microphoneRaw = 0.0f;
+    float microphoneProcessed = 0.0f;
+    float microphoneRawRms = 0.0f;
+    float microphoneProcessedRms = 0.0f;
+    float microphoneVoiceActivityProbability = 0.0f;
+    float microphoneAgcGainDb = 0.0f;
+    int microphoneEchoCancellationError = 0;
 
     bool outputAvailable = false;
     bool monitorAvailable = false;
     bool microphoneAvailable = false;
+    bool microphoneProcessingActive = false;
+    bool microphoneTestMonitorActive = false;
+    bool microphoneNoiseSuppressionActive = false;
+    bool microphoneNoiseSuppressionFailed = false;
+    bool microphoneEchoCancellationRequested = false;
+    bool microphoneEchoCancellationReady = false;
+    bool microphoneEchoCancellationReferenceAvailable = false;
+    bool microphoneEchoCancellationActive = false;
+    bool microphoneEchoCancellationFailed = false;
+    bool microphoneAgcActive = false;
+    bool microphoneInputClipped = false;
+    bool microphoneInvalidSampleDetected = false;
+
+    std::uint64_t microphoneDroppedInputFrames = 0;
+    std::uint64_t microphoneEchoCancellationReferenceUnderruns = 0;
+    std::uint64_t microphoneEchoCancellationFailures = 0;
 };
 
 class Audio
@@ -70,6 +110,7 @@ public:
         float microphoneVolume,
         bool microphoneToOutput,
         bool microphoneToMonitor,
+        const MicrophoneProcessingSettings& microphoneProcessingSettings,
         unsigned int sampleRate,
         unsigned int bufferMilliseconds
     );
@@ -78,14 +119,29 @@ public:
         const std::string& soundId,
         const std::filesystem::path& soundPath,
         float volume,
-        PlaybackMode mode
+        PlaybackMode mode,
+        unsigned int fadeInMilliseconds,
+        unsigned int fadeOutMilliseconds
     );
 
     PlaybackResult PlayLoaded(const std::string& soundId);
-    bool StopAll();
+    bool StopAll(bool immediate = false);
+
+    [[nodiscard]] std::vector<PlaybackSnapshot>
+        GetPlaybackSnapshots() const;
+    bool PausePlayback(PlaybackId playbackId);
+    bool ResumePlayback(PlaybackId playbackId);
+    bool StopPlayback(PlaybackId playbackId);
+    bool SeekPlayback(PlaybackId playbackId, float positionSeconds);
+    bool SetPlaybackVolume(PlaybackId playbackId, float volume);
 
     MuteToggleResult ToggleOutputMute();
     MuteToggleResult ToggleMonitorMute();
+
+    MicrophoneTestMonitorResult SetMicrophoneTestMonitorEnabled(
+        bool enabled
+    );
+    bool IsMicrophoneTestMonitorEnabled() const noexcept;
 
     AudioRecoveryResult MaintainDeviceConnection();
     AudioLevelSnapshot GetLevelSnapshot() const;
@@ -127,12 +183,25 @@ private:
         std::filesystem::path path;
         float volume = 1.0f;
         PlaybackMode mode = PlaybackMode::Restart;
+        unsigned int fadeInMilliseconds = 0;
+        unsigned int fadeOutMilliseconds = 0;
     };
 
     struct Voice
     {
         std::unique_ptr<ma_sound> outputSound;
         std::unique_ptr<ma_sound> monitorSound;
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        std::unique_ptr<ma_sound> aecReferenceSound;
+#endif
+
+        PlaybackId playbackId = InvalidPlaybackId;
+        float volume = 1.0f;
+        unsigned int fadeInMilliseconds = 0;
+        unsigned int fadeOutMilliseconds = 0;
+        bool paused = false;
+        bool stopping = false;
     };
 
     struct LoadedSound
@@ -152,6 +221,22 @@ private:
         const void* inputFrames,
         ma_uint32 frameCount
     );
+
+    static void ProcessedMicrophoneOutputCallback(
+        void* context,
+        const float* interleavedStereoFrames,
+        ma_uint32 frameCount
+    ) noexcept;
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    static bool ReadAecRenderReferenceCallback(
+        void* context,
+        float* monoFrames,
+        ma_uint32 frameCount
+    ) noexcept;
+
+    [[nodiscard]] int EstimateAecStreamDelayMilliseconds() const noexcept;
+#endif
 
     bool InitializeRuntime();
 
@@ -209,10 +294,24 @@ private:
 
     bool StartVoice(
         Voice& voice,
-        const std::string& soundId
+        const std::string& soundId,
+        bool beginNewPlayback = true
+    );
+
+    bool StopVoice(
+        Voice& voice,
+        const std::string& soundId,
+        bool immediate
+    );
+
+    [[nodiscard]] PlaybackId AllocatePlaybackId() noexcept;
+    Voice* FindVoiceByPlaybackId(
+        PlaybackId playbackId,
+        const std::string** soundId = nullptr
     );
 
     static bool IsVoicePlaying(const Voice& voice);
+    static bool IsVoiceActive(const Voice& voice);
     static void DestroyVoice(Voice& voice);
     static void DestroyLoadedSound(LoadedSound& loadedSound);
 
@@ -238,9 +337,16 @@ private:
     CaptureState microphoneCapture_;
     MicrophoneRoute microphoneOutputRoute_;
     MicrophoneRoute microphoneMonitorRoute_;
+    MicrophoneRoute microphoneTestMonitorRoute_;
+    MicrophoneProcessingRuntime microphoneProcessingRuntime_;
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    AecRenderReferenceMixer aecRenderReferenceMixer_;
+#endif
 
     std::unordered_map<std::string, LoadedSound> loadedSounds_;
     std::unordered_map<std::string, SoundDefinition> soundDefinitions_;
+    std::atomic<PlaybackId> nextPlaybackId_{1};
 
     std::string requestedOutputDevice_;
     std::string requestedMonitorDevice_;
@@ -253,6 +359,7 @@ private:
     bool microphoneEnabled_ = false;
     bool microphoneToOutput_ = true;
     bool microphoneToMonitor_ = false;
+    MicrophoneProcessingSettings microphoneProcessingSettings_{};
 
     ma_uint32 sampleRate_ = 48000;
     ma_uint32 bufferMilliseconds_ = 5;
@@ -263,6 +370,8 @@ private:
     std::atomic_bool recoveryRequested_{false};
     std::atomic_bool ignoreDeviceNotifications_{false};
     std::atomic<float> microphonePeak_{0.0f};
+    std::atomic_bool microphoneProcessingActive_{false};
+    std::atomic_bool microphoneTestMonitorEnabled_{false};
 
     bool contextInitialized_ = false;
     bool desiredConfigurationSet_ = false;

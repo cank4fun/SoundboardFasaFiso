@@ -23,9 +23,4 @@ namespace UpdateChecker
     UpdateCheckResult CheckLatestRelease(
         std::string_view currentVersion
     );
-
-    bool IsNewerVersion(
-        std::string_view candidateVersion,
-        std::string_view currentVersion
-    );
 }

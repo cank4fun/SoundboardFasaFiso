@@ -22,9 +22,13 @@ concurrency:
 
 jobs:
   build:
-    name: Build portable Windows release
+    name: Build portable Windows release with WebRTC AEC3
     runs-on: windows-latest
-    timeout-minutes: 20
+    timeout-minutes: 180
+    env:
+      SOUNDBOARD_VCPKG_ROOT: ${{ github.workspace }}\_vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows-static
+      VCPKG_DISABLE_METRICS: "1"
 
     steps:
       - name: Check out repository
@@ -34,6 +38,24 @@ jobs:
         uses: TheMrMilchmann/setup-msvc-dev@v4
         with:
           arch: x64
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v5
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: windows-vcpkg-aec3-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            windows-vcpkg-aec3-
+
+      - name: Bootstrap pinned vcpkg
+        shell: pwsh
+        run: |
+          $root = $env:SOUNDBOARD_VCPKG_ROOT
+          Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+          git clone https://github.com/microsoft/vcpkg.git $root
+          git -C $root checkout cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
+          & "$root\bootstrap-vcpkg.bat" -disableMetrics
+          & "$root\vcpkg.exe" version
 
       - name: Show toolchain versions
         shell: pwsh
@@ -63,22 +85,40 @@ jobs:
             throw "Tag $actualTag does not match project version $expectedTag."
           }
 
-      - name: Configure Release build
+      - name: Configure Release build with WebRTC AEC3
         shell: pwsh
         run: >-
           cmake -S . -B out/build/ci-release
           -G Ninja
           -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_TOOLCHAIN_FILE=${{ env.SOUNDBOARD_VCPKG_ROOT }}/scripts/buildsystems/vcpkg.cmake
+          -DVCPKG_TARGET_TRIPLET=x64-windows-static
+          -DVCPKG_MANIFEST_FEATURES=webrtc-aec3
+          -DSOUNDBOARD_ENABLE_WEBRTC_AEC3=ON
+          -DSOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS=ON
           -DSOUNDBOARD_WARNINGS_AS_ERRORS=ON
 
-      - name: Build portable package
+      - name: Build application and complete test suite
         shell: pwsh
         run: >-
           cmake --build out/build/ci-release
-          --target PortableRelease
+          --target SoundBoardFasaFiso SoundBoardFasaFisoTests
           --parallel
 
-      - name: Verify portable package and create checksum
+      - name: Run tests
+        shell: pwsh
+        run: >-
+          ctest --test-dir out/build/ci-release
+          --output-on-failure
+
+      - name: Build and verify portable package
+        shell: pwsh
+        run: >-
+          cmake --build out/build/ci-release
+          --target VerifyPortableRelease
+          --parallel
+
+      - name: Locate verified portable artifacts
         shell: pwsh
         run: |
           $archives = @(
@@ -92,79 +132,16 @@ jobs:
           }
 
           $zip = $archives[0].FullName
-          $extract = Join-Path $env:RUNNER_TEMP "soundboard-portable-check"
-          Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
-          Expand-Archive -Path $zip -DestinationPath $extract
-
-          $root = Join-Path $extract "SoundBoardFasaFiso"
-          $required = @(
-            "SoundBoardFasaFiso.exe",
-            "config.txt",
-            "README.txt",
-            "LICENSE",
-            "THIRD_PARTY_NOTICES.txt",
-            "sounds"
-          )
-
-          foreach ($item in $required) {
-            $path = Join-Path $root $item
-            if (-not (Test-Path $path)) {
-              throw "Portable package is missing: $item"
-            }
-          }
-
-          $unexpected = @(
-            Get-ChildItem $root |
-              Where-Object { $_.Name -notin $required }
-          )
-
-          if ($unexpected.Count -ne 0) {
-            $names = ($unexpected.Name -join ", ")
-            throw "Portable package contains unexpected top-level items: $names"
-          }
-
-          $config = Get-Content (Join-Path $root "config.txt") -Raw
-          $requiredDefaults = @(
-            '(?m)^output=default$',
-            '(?m)^monitor=none$',
-            '(?m)^show_console_on_start=false$'
-          )
-
-          foreach ($pattern in $requiredDefaults) {
-            if ($config -notmatch $pattern) {
-              throw "Portable config is missing required safe default: $pattern"
-            }
-          }
-
-          $sounds = @(
-            Get-ChildItem (Join-Path $root "sounds") -File -Recurse
-          )
-
-          if ($sounds.Count -eq 0) {
-            throw "Portable package contains no example sounds."
-          }
-
-          $invalidSounds = @(
-            $sounds |
-              Where-Object { $_.Extension.ToLowerInvariant() -notin @(".wav", ".mp3", ".flac") }
-          )
-
-          if ($invalidSounds.Count -ne 0) {
-            $names = ($invalidSounds.FullName -join ", ")
-            throw "Portable package contains unsupported sound files: $names"
-          }
-
-          $hash = Get-FileHash $zip -Algorithm SHA256
           $checksum = "$zip.sha256"
-          "$($hash.Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($zip))" |
-            Set-Content $checksum -Encoding ascii
+          if (-not (Test-Path -LiteralPath $checksum -PathType Leaf)) {
+            throw "Verified portable checksum is missing: $checksum"
+          }
 
           "PORTABLE_ZIP=$zip" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "PORTABLE_SHA256=$checksum" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
           Write-Host "Portable ZIP: $zip"
-          Write-Host "Size: $((Get-Item $zip).Length) bytes"
-          Write-Host "SHA-256: $($hash.Hash)"
+          Write-Host "Portable checksum: $checksum"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7

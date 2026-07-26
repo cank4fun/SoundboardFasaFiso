@@ -9,3 +9,9 @@
 *.wav binary
 *.mp3 binary
 *.flac binary
+
+# Generated RNNoise model weights are source code but not useful as line diffs.
+third_party/rnnoise/src/rnnoise_data_little.c -diff
+
+# Preserve upstream RNNoise formatting.
+third_party/rnnoise/** -whitespace

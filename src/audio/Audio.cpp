@@ -287,6 +287,8 @@ namespace
 
     bool PrepareSoundForPlayback(ma_sound* sound)
     {
+        ma_sound_reset_stop_time_and_fade(sound);
+
         ma_result result = ma_sound_stop(sound);
 
         if (result != MA_SUCCESS)
@@ -300,6 +302,87 @@ namespace
         );
 
         return result == MA_SUCCESS;
+    }
+
+    bool ReadPlaybackTimeline(
+        const ma_sound& sound,
+        float& positionSeconds,
+        float& durationSeconds
+    )
+    {
+        ma_uint32 sampleRate = 0;
+        ma_uint64 cursorFrames = 0;
+        ma_uint64 lengthFrames = 0;
+
+        if (ma_sound_get_data_format(
+                &sound,
+                nullptr,
+                nullptr,
+                &sampleRate,
+                nullptr,
+                0
+            ) == MA_SUCCESS &&
+            sampleRate != 0 &&
+            ma_sound_get_cursor_in_pcm_frames(
+                &sound,
+                &cursorFrames
+            ) == MA_SUCCESS &&
+            ma_sound_get_length_in_pcm_frames(
+                &sound,
+                &lengthFrames
+            ) == MA_SUCCESS)
+        {
+            const double rate = static_cast<double>(sampleRate);
+            const double duration =
+                static_cast<double>(lengthFrames) / rate;
+            const double position = std::min(
+                static_cast<double>(cursorFrames) / rate,
+                duration
+            );
+
+            positionSeconds = static_cast<float>(
+                std::max(0.0, position)
+            );
+            durationSeconds = static_cast<float>(
+                std::max(0.0, duration)
+            );
+            return true;
+        }
+
+        positionSeconds = 0.0f;
+        durationSeconds = 0.0f;
+
+        const ma_result cursorResult =
+            ma_sound_get_cursor_in_seconds(
+                &sound,
+                &positionSeconds
+            );
+        const ma_result lengthResult =
+            ma_sound_get_length_in_seconds(
+                &sound,
+                &durationSeconds
+            );
+
+        if (cursorResult != MA_SUCCESS ||
+            lengthResult != MA_SUCCESS)
+        {
+            positionSeconds = 0.0f;
+            durationSeconds = 0.0f;
+            return false;
+        }
+
+        positionSeconds = std::max(0.0f, positionSeconds);
+        durationSeconds = std::max(0.0f, durationSeconds);
+
+        if (durationSeconds > 0.0f)
+        {
+            positionSeconds = std::min(
+                positionSeconds,
+                durationSeconds
+            );
+        }
+
+        return true;
     }
 }
 
@@ -521,6 +604,19 @@ void Audio::MicrophoneDataCallback(
         std::memory_order_relaxed
     );
 
+    if (instance->microphoneProcessingActive_.load(
+            std::memory_order_acquire
+        ))
+    {
+        static_cast<void>(
+            instance->microphoneProcessingRuntime_.PushInputFrames(
+                samples,
+                frameCount
+            )
+        );
+        return;
+    }
+
     if (instance->microphoneToOutput_)
     {
         WriteMicrophoneFrames(
@@ -538,7 +634,103 @@ void Audio::MicrophoneDataCallback(
             frameCount
         );
     }
+
+    if (instance->microphoneTestMonitorEnabled_.load(
+            std::memory_order_acquire
+        ))
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneTestMonitorRoute_,
+            inputFrames,
+            frameCount
+        );
+    }
 }
+
+void Audio::ProcessedMicrophoneOutputCallback(
+    void* const context,
+    const float* const interleavedStereoFrames,
+    const ma_uint32 frameCount
+) noexcept
+{
+    auto* const instance = static_cast<Audio*>(context);
+
+    if (instance == nullptr || interleavedStereoFrames == nullptr ||
+        frameCount == 0)
+    {
+        return;
+    }
+
+    if (instance->microphoneToOutput_)
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneOutputRoute_,
+            interleavedStereoFrames,
+            frameCount
+        );
+    }
+
+    if (instance->microphoneToMonitor_)
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneMonitorRoute_,
+            interleavedStereoFrames,
+            frameCount
+        );
+    }
+
+    if (instance->microphoneTestMonitorEnabled_.load(
+            std::memory_order_acquire
+        ))
+    {
+        WriteMicrophoneFrames(
+            instance->microphoneTestMonitorRoute_,
+            interleavedStereoFrames,
+            frameCount
+        );
+    }
+}
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+bool Audio::ReadAecRenderReferenceCallback(
+    void* const context,
+    float* const monoFrames,
+    const ma_uint32 frameCount
+) noexcept
+{
+    auto* const instance = static_cast<Audio*>(context);
+
+    if (monoFrames == nullptr ||
+        frameCount != AecRenderReferenceMixer::FramesPerBlock)
+    {
+        return false;
+    }
+
+    std::fill_n(monoFrames, frameCount, 0.0f);
+
+    if (instance == nullptr ||
+        !instance->aecRenderReferenceMixer_.IsInitialized())
+    {
+        return false;
+    }
+
+    return instance->aecRenderReferenceMixer_.ReadMonoBlock(
+        std::span<float>(monoFrames, frameCount)
+    );
+}
+
+int Audio::EstimateAecStreamDelayMilliseconds() const noexcept
+{
+    const ma_uint32 periodMilliseconds =
+        bufferMilliseconds_ == 0 ? 10U : bufferMilliseconds_;
+    const ma_uint32 estimatedDelay = 10U + periodMilliseconds * 2U;
+    return static_cast<int>(std::clamp<ma_uint32>(
+        estimatedDelay,
+        10U,
+        100U
+    ));
+}
+#endif
 
 bool Audio::InitializeEngine(
     const std::string& requestedDevice,
@@ -1007,6 +1199,89 @@ bool Audio::InitializeMicrophone(
         }
     }
 
+    microphoneTestMonitorEnabled_.store(
+        false,
+        std::memory_order_release
+    );
+
+    if (!microphoneToMonitor_ && monitorEngine_.initialized &&
+        !InitializeMicrophoneRoute(
+            monitorEngine_,
+            captureSampleRate,
+            microphoneTestMonitorRoute_
+        ))
+    {
+        std::cerr << Localization::Text(
+            "Uyarı: Geçici mikrofon test monitörü hazırlanamadı. Ana mikrofon rotası çalışmaya devam edecek.\n",
+            "Warning: The temporary microphone test monitor could not be prepared. The main microphone route will continue to work.\n"
+        );
+    }
+
+    microphoneProcessingActive_.store(
+        false,
+        std::memory_order_release
+    );
+
+    const bool echoCancellationRequested =
+        microphoneProcessingSettings_.echoCancellationEnabled;
+
+    const bool nativeProcessingRequested =
+        microphoneProcessingSettings_.enabled &&
+        (microphoneProcessingSettings_.highPassEnabled ||
+            microphoneProcessingSettings_.noiseSuppressionEnabled ||
+            microphoneProcessingSettings_.agcEnabled ||
+            microphoneProcessingSettings_.compressorEnabled ||
+            microphoneProcessingSettings_.limiterEnabled);
+    const bool processingRequested = nativeProcessingRequested ||
+        echoCancellationRequested;
+
+    if (processingRequested)
+    {
+        if (captureSampleRate !=
+            MicrophoneProcessingRuntime::RequiredSampleRate)
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: Mikrofon işleme şu anda yalnızca 48000 Hz destekliyor. Filtrelenmemiş mikrofon rotasına dönülüyor. Aktif hız: ",
+                    "Warning: Microphone processing currently supports only 48000 Hz. Falling back to the unprocessed microphone route. Active rate: "
+                )
+                << captureSampleRate
+                << " Hz\n";
+        }
+        else
+        {
+            if (microphoneProcessingRuntime_.Initialize(
+                    captureSampleRate,
+                    2,
+                    microphoneProcessingSettings_,
+                    &Audio::ProcessedMicrophoneOutputCallback,
+                    this
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+                    ,
+                    echoCancellationRequested &&
+                            aecRenderReferenceMixer_.IsInitialized()
+                        ? &Audio::ReadAecRenderReferenceCallback
+                        : nullptr,
+                    this,
+                    EstimateAecStreamDelayMilliseconds()
+#endif
+                ))
+            {
+                microphoneProcessingActive_.store(
+                    true,
+                    std::memory_order_release
+                );
+            }
+            else
+            {
+                std::cerr << Localization::Text(
+                    "Uyarı: Mikrofon işleme runtime'ı başlatılamadı. Filtrelenmemiş mikrofon rotasına dönülüyor.\n",
+                    "Warning: The microphone-processing runtime could not be initialized. Falling back to the unprocessed microphone route.\n"
+                );
+            }
+        }
+    }
+
     result = ma_device_start(&microphoneCapture_.device);
 
     if (result != MA_SUCCESS)
@@ -1047,7 +1322,20 @@ bool Audio::InitializeMicrophone(
     std::cout
         << Localization::Text(" | Örnekleme: ", " | Sample rate: ")
         << captureSampleRate
-        << " Hz\n";
+        << " Hz"
+        << Localization::Text(" | İşleme: ", " | Processing: ")
+        << (microphoneProcessingActive_.load(
+                std::memory_order_acquire
+            )
+            ? Localization::Text("aktif", "active")
+            : Localization::Text("bypass", "bypassed"))
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        << Localization::Text(" | AEC: ", " | AEC: ")
+        << (echoCancellationRequested
+            ? Localization::Text("hazır", "armed")
+            : Localization::Text("bypass", "bypassed"))
+#endif
+        << '\n';
 
     return true;
 }
@@ -1168,6 +1456,33 @@ bool Audio::InitializeRuntime()
             return false;
         }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        if (microphoneEnabled_ &&
+            microphoneProcessingSettings_.echoCancellationEnabled)
+        {
+            const float referenceVolume =
+                monitorMuted_ ? 0.0f : monitorVolume_;
+
+            if (!aecRenderReferenceMixer_.Initialize(referenceVolume))
+            {
+                std::cerr
+                    << Localization::Text(
+                        "Uyarı: AEC render referans mikseri başlatılamadı. Echo cancellation referans bekleme durumunda kalacak. Hata: ",
+                        "Warning: The AEC render-reference mixer could not be initialized. Echo cancellation will remain in the no-reference state. Error: "
+                    )
+                    << aecRenderReferenceMixer_.LastError()
+                    << '\n';
+            }
+            else
+            {
+                std::cout << Localization::Text(
+                    "AEC render referansı: Hazır\n",
+                    "AEC render reference: Ready\n"
+                );
+            }
+        }
+#endif
+
         if (outputEngine_.deviceName ==
             monitorEngine_.deviceName)
         {
@@ -1215,6 +1530,7 @@ bool Audio::Initialize(
     const float microphoneVolume,
     const bool microphoneToOutput,
     const bool microphoneToMonitor,
+    const MicrophoneProcessingSettings& microphoneProcessingSettings,
     const unsigned int sampleRate,
     const unsigned int bufferMilliseconds
 )
@@ -1255,7 +1571,10 @@ bool Audio::Initialize(
             (microphoneToOutput || microphoneToMonitor));
 
     if (!sampleRateIsValid || !bufferIsValid ||
-        !microphoneSettingsAreValid)
+        !microphoneSettingsAreValid ||
+        !IsValidMicrophoneProcessingSettings(
+            microphoneProcessingSettings
+        ))
     {
         std::cerr
             << Localization::Text(
@@ -1283,6 +1602,7 @@ bool Audio::Initialize(
     microphoneVolume_ = microphoneVolume;
     microphoneToOutput_ = microphoneToOutput;
     microphoneToMonitor_ = microphoneToMonitor;
+    microphoneProcessingSettings_ = microphoneProcessingSettings;
     sampleRate_ = static_cast<ma_uint32>(sampleRate);
     bufferMilliseconds_ =
         static_cast<ma_uint32>(bufferMilliseconds);
@@ -1391,6 +1711,40 @@ bool Audio::InitializeVoiceFromFile(
         }
     }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.monitorSound &&
+        aecRenderReferenceMixer_.IsInitialized())
+    {
+        voice.aecReferenceSound =
+            std::make_unique<ma_sound>();
+
+        result =
+            ma_sound_init_from_file_w(
+                aecRenderReferenceMixer_.GetEngine(),
+                pathString.c_str(),
+                flags,
+                nullptr,
+                nullptr,
+                voice.aecReferenceSound.get()
+            );
+
+        if (result != MA_SUCCESS)
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: Ses AEC render referansına yüklenemedi; normal oynatma devam edecek: ",
+                    "Warning: The sound could not be loaded into the AEC render reference; normal playback will continue: "
+                )
+                << PathToUtf8(definition.path)
+                << Localization::Text(". Hata: ", ". Error: ")
+                << result
+                << '\n';
+
+            voice.aecReferenceSound.reset();
+        }
+    }
+#endif
+
     const ma_bool32 shouldLoop =
         definition.mode == PlaybackMode::Loop
             ? MA_TRUE
@@ -1418,6 +1772,28 @@ bool Audio::InitializeVoiceFromFile(
             shouldLoop
         );
     }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound)
+    {
+        ma_sound_set_volume(
+            voice.aecReferenceSound.get(),
+            definition.volume
+        );
+
+        ma_sound_set_looping(
+            voice.aecReferenceSound.get(),
+            shouldLoop
+        );
+    }
+#endif
+
+    voice.volume = definition.volume;
+    voice.fadeInMilliseconds = definition.fadeInMilliseconds;
+    voice.fadeOutMilliseconds = definition.fadeOutMilliseconds;
+    voice.playbackId = InvalidPlaybackId;
+    voice.paused = false;
+    voice.stopping = false;
 
     return true;
 }
@@ -1490,6 +1866,39 @@ bool Audio::InitializeVoiceCopy(
         }
     }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (sourceVoice.aecReferenceSound &&
+        aecRenderReferenceMixer_.IsInitialized())
+    {
+        voice.aecReferenceSound =
+            std::make_unique<ma_sound>();
+
+        result =
+            ma_sound_init_copy(
+                aecRenderReferenceMixer_.GetEngine(),
+                sourceVoice.aecReferenceSound.get(),
+                flags,
+                nullptr,
+                voice.aecReferenceSound.get()
+            );
+
+        if (result != MA_SUCCESS)
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: Overlap voice AEC render referansı için oluşturulamadı; normal oynatma devam edecek: ",
+                    "Warning: The overlap voice could not be created for the AEC render reference; normal playback will continue: "
+                )
+                << PathToUtf8(definition.path)
+                << Localization::Text(". Hata: ", ". Error: ")
+                << result
+                << '\n';
+
+            voice.aecReferenceSound.reset();
+        }
+    }
+#endif
+
     ma_sound_set_volume(
         voice.outputSound.get(),
         definition.volume
@@ -1512,6 +1921,28 @@ bool Audio::InitializeVoiceCopy(
             MA_FALSE
         );
     }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound)
+    {
+        ma_sound_set_volume(
+            voice.aecReferenceSound.get(),
+            definition.volume
+        );
+
+        ma_sound_set_looping(
+            voice.aecReferenceSound.get(),
+            MA_FALSE
+        );
+    }
+#endif
+
+    voice.volume = definition.volume;
+    voice.fadeInMilliseconds = definition.fadeInMilliseconds;
+    voice.fadeOutMilliseconds = definition.fadeOutMilliseconds;
+    voice.playbackId = InvalidPlaybackId;
+    voice.paused = false;
+    voice.stopping = false;
 
     return true;
 }
@@ -1644,17 +2075,73 @@ bool Audio::PrepareVoiceForPlayback(
         success = false;
     }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound &&
+        !PrepareSoundForPlayback(
+            voice.aecReferenceSound.get()
+        ))
+    {
+        std::cerr
+            << Localization::Text(
+                "Uyarı: AEC render referansı hazırlanamadı; normal oynatma devam edecek: ",
+                "Warning: The AEC render reference could not be prepared; normal playback will continue: "
+            )
+            << soundId
+            << '\n';
+
+        ma_sound_uninit(voice.aecReferenceSound.get());
+        voice.aecReferenceSound.reset();
+    }
+#endif
+
+    voice.playbackId = InvalidPlaybackId;
+    voice.paused = false;
+    voice.stopping = false;
+
     return success;
 }
 
 bool Audio::StartVoice(
     Voice& voice,
-    const std::string& soundId
+    const std::string& soundId,
+    const bool beginNewPlayback
 )
 {
     if (!voice.outputSound)
     {
         return false;
+    }
+
+    if (beginNewPlayback && voice.fadeInMilliseconds > 0)
+    {
+        ma_sound_set_fade_in_milliseconds(
+            voice.outputSound.get(),
+            0.0f,
+            1.0f,
+            voice.fadeInMilliseconds
+        );
+
+        if (voice.monitorSound)
+        {
+            ma_sound_set_fade_in_milliseconds(
+                voice.monitorSound.get(),
+                0.0f,
+                1.0f,
+                voice.fadeInMilliseconds
+            );
+        }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+        if (voice.aecReferenceSound)
+        {
+            ma_sound_set_fade_in_milliseconds(
+                voice.aecReferenceSound.get(),
+                0.0f,
+                1.0f,
+                voice.fadeInMilliseconds
+            );
+        }
+#endif
     }
 
     ma_result result =
@@ -1702,7 +2189,164 @@ bool Audio::StartVoice(
         }
     }
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound)
+    {
+        result = ma_sound_start(
+            voice.aecReferenceSound.get()
+        );
+
+        if (result != MA_SUCCESS)
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: AEC render referansı başlatılamadı; normal oynatma devam edecek: ",
+                    "Warning: The AEC render reference could not be started; normal playback will continue: "
+                )
+                << soundId
+                << Localization::Text(". Hata: ", ". Error: ")
+                << result
+                << '\n';
+
+            ma_sound_uninit(voice.aecReferenceSound.get());
+            voice.aecReferenceSound.reset();
+        }
+    }
+#endif
+
+    if (beginNewPlayback || voice.playbackId == InvalidPlaybackId)
+    {
+        voice.playbackId = AllocatePlaybackId();
+    }
+
+    voice.paused = false;
+    voice.stopping = false;
     return true;
+}
+
+bool Audio::StopVoice(
+    Voice& voice,
+    const std::string& soundId,
+    const bool immediate
+)
+{
+    if (!immediate && voice.stopping && IsVoicePlaying(voice))
+    {
+        return true;
+    }
+
+    if (immediate || voice.paused ||
+        voice.fadeOutMilliseconds == 0 ||
+        !IsVoicePlaying(voice))
+    {
+        return PrepareVoiceForPlayback(voice, soundId);
+    }
+
+    bool success = true;
+
+    if (!voice.outputSound ||
+        ma_sound_stop_with_fade_in_milliseconds(
+            voice.outputSound.get(),
+            voice.fadeOutMilliseconds
+        ) != MA_SUCCESS)
+    {
+        success = false;
+    }
+
+    if (voice.monitorSound &&
+        ma_sound_stop_with_fade_in_milliseconds(
+            voice.monitorSound.get(),
+            voice.fadeOutMilliseconds
+        ) != MA_SUCCESS)
+    {
+        success = false;
+    }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound &&
+        ma_sound_stop_with_fade_in_milliseconds(
+            voice.aecReferenceSound.get(),
+            voice.fadeOutMilliseconds
+        ) != MA_SUCCESS)
+    {
+        success = false;
+    }
+#endif
+
+    if (success)
+    {
+        voice.stopping = true;
+    }
+    else
+    {
+        PrepareVoiceForPlayback(voice, soundId);
+
+        std::cerr
+            << Localization::Text(
+                "Ses fade-out ile durdurulamadı: ",
+                "The sound could not be stopped with fade-out: "
+            )
+            << soundId
+            << '\n';
+    }
+
+    return success;
+}
+
+PlaybackId Audio::AllocatePlaybackId() noexcept
+{
+    PlaybackId id = nextPlaybackId_.fetch_add(
+        1,
+        std::memory_order_relaxed
+    );
+
+    if (id == InvalidPlaybackId)
+    {
+        id = nextPlaybackId_.fetch_add(
+            1,
+            std::memory_order_relaxed
+        );
+    }
+
+    return id;
+}
+
+Audio::Voice* Audio::FindVoiceByPlaybackId(
+    const PlaybackId playbackId,
+    const std::string** soundId
+)
+{
+    if (playbackId == InvalidPlaybackId)
+    {
+        return nullptr;
+    }
+
+    for (auto& [candidateSoundId, loadedSound] : loadedSounds_)
+    {
+        for (Voice& voice : loadedSound.voices)
+        {
+            if (voice.playbackId != playbackId)
+            {
+                continue;
+            }
+
+            if (!voice.paused && !IsVoicePlaying(voice))
+            {
+                voice.playbackId = InvalidPlaybackId;
+                voice.stopping = false;
+                return nullptr;
+            }
+
+            if (soundId != nullptr)
+            {
+                *soundId = &candidateSoundId;
+            }
+
+            return &voice;
+        }
+    }
+
+    return nullptr;
 }
 
 bool Audio::IsVoicePlaying(const Voice& voice)
@@ -1722,8 +2366,24 @@ bool Audio::IsVoicePlaying(const Voice& voice)
     return outputIsPlaying || monitorIsPlaying;
 }
 
+bool Audio::IsVoiceActive(const Voice& voice)
+{
+    return voice.paused || IsVoicePlaying(voice);
+}
+
 void Audio::DestroyVoice(Voice& voice)
 {
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice.aecReferenceSound)
+    {
+        ma_sound_uninit(
+            voice.aecReferenceSound.get()
+        );
+
+        voice.aecReferenceSound.reset();
+    }
+#endif
+
     if (voice.monitorSound)
     {
         ma_sound_uninit(
@@ -1741,6 +2401,13 @@ void Audio::DestroyVoice(Voice& voice)
 
         voice.outputSound.reset();
     }
+
+    voice.playbackId = InvalidPlaybackId;
+    voice.volume = 1.0f;
+    voice.fadeInMilliseconds = 0;
+    voice.fadeOutMilliseconds = 0;
+    voice.paused = false;
+    voice.stopping = false;
 }
 
 void Audio::DestroyLoadedSound(
@@ -1764,7 +2431,9 @@ bool Audio::LoadSound(
     const std::string& soundId,
     const std::filesystem::path& soundPath,
     const float volume,
-    const PlaybackMode mode
+    const PlaybackMode mode,
+    const unsigned int fadeInMilliseconds,
+    const unsigned int fadeOutMilliseconds
 )
 {
     if (soundDefinitions_.contains(soundId))
@@ -1806,10 +2475,17 @@ bool Audio::LoadSound(
         return false;
     }
 
+    if (fadeInMilliseconds > 10000 || fadeOutMilliseconds > 10000)
+    {
+        return false;
+    }
+
     const SoundDefinition definition{
         soundPath,
         volume,
-        mode
+        mode,
+        fadeInMilliseconds,
+        fadeOutMilliseconds
     };
 
     if (!LoadSoundIntoRuntime(soundId, definition))
@@ -1869,7 +2545,7 @@ PlaybackResult Audio::PlayLoaded(const std::string& soundId)
                 (loadedSound.nextOverlapVoice + offset) %
                 voiceCount;
 
-            if (!IsVoicePlaying(
+            if (!IsVoiceActive(
                 loadedSound.voices[candidateIndex]
             ))
             {
@@ -1907,15 +2583,23 @@ PlaybackResult Audio::PlayLoaded(const std::string& soundId)
     Voice& voice =
         loadedSound.voices.front();
 
-    const bool isToggleMode =
-        loadedSound.mode == PlaybackMode::Toggle ||
-        loadedSound.mode == PlaybackMode::Loop;
+    const PlaybackTriggerAction triggerAction =
+        ResolvePlaybackTrigger(
+            loadedSound.mode,
+            IsVoiceActive(voice)
+        );
 
-    if (isToggleMode && IsVoicePlaying(voice))
+    if (triggerAction == PlaybackTriggerAction::Ignore)
     {
-        if (!PrepareVoiceForPlayback(
+        return PlaybackResult::Ignored;
+    }
+
+    if (triggerAction == PlaybackTriggerAction::Stop)
+    {
+        if (!StopVoice(
             voice,
-            soundId
+            soundId,
+            false
         ))
         {
             recoveryRequested_.store(
@@ -1949,7 +2633,7 @@ PlaybackResult Audio::PlayLoaded(const std::string& soundId)
     return PlaybackResult::Started;
 }
 
-bool Audio::StopAll()
+bool Audio::StopAll(const bool immediate)
 {
     bool success = true;
 
@@ -1957,9 +2641,10 @@ bool Audio::StopAll()
     {
         for (Voice& voice : loadedSound.voices)
         {
-            if (!PrepareVoiceForPlayback(
+            if (!StopVoice(
                 voice,
-                soundId
+                soundId,
+                immediate
             ))
             {
                 success = false;
@@ -1976,6 +2661,262 @@ bool Audio::StopAll()
     }
 
     return success;
+}
+
+std::vector<PlaybackSnapshot> Audio::GetPlaybackSnapshots() const
+{
+    std::vector<PlaybackSnapshot> snapshots;
+
+    for (const auto& [soundId, loadedSound] : loadedSounds_)
+    {
+        for (const Voice& voice : loadedSound.voices)
+        {
+            if (voice.playbackId == InvalidPlaybackId)
+            {
+                continue;
+            }
+
+            const bool playing = IsVoicePlaying(voice);
+
+            if (!playing && !voice.paused)
+            {
+                continue;
+            }
+
+            float positionSeconds = 0.0f;
+            float durationSeconds = 0.0f;
+
+            if (voice.outputSound)
+            {
+                ReadPlaybackTimeline(
+                    *voice.outputSound,
+                    positionSeconds,
+                    durationSeconds
+                );
+            }
+
+            snapshots.push_back(PlaybackSnapshot{
+                voice.playbackId,
+                soundId,
+                voice.paused
+                    ? PlaybackStatus::Paused
+                    : (voice.stopping
+                        ? PlaybackStatus::Stopping
+                        : PlaybackStatus::Playing),
+                loadedSound.mode,
+                std::max(0.0f, positionSeconds),
+                std::max(0.0f, durationSeconds),
+                voice.volume
+            });
+        }
+    }
+
+    std::sort(
+        snapshots.begin(),
+        snapshots.end(),
+        [](const PlaybackSnapshot& left, const PlaybackSnapshot& right)
+        {
+            return left.id < right.id;
+        }
+    );
+
+    return snapshots;
+}
+
+bool Audio::PausePlayback(const PlaybackId playbackId)
+{
+    Voice* const voice = FindVoiceByPlaybackId(playbackId);
+
+    if (voice == nullptr)
+    {
+        return false;
+    }
+
+    if (voice->paused)
+    {
+        return true;
+    }
+
+    if (voice->stopping)
+    {
+        return false;
+    }
+
+    if (!IsVoicePlaying(*voice))
+    {
+        return false;
+    }
+
+    bool success = true;
+
+    if (!voice->outputSound ||
+        ma_sound_stop(voice->outputSound.get()) != MA_SUCCESS)
+    {
+        success = false;
+    }
+
+    if (voice->monitorSound &&
+        ma_sound_stop(voice->monitorSound.get()) != MA_SUCCESS)
+    {
+        success = false;
+    }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice->aecReferenceSound &&
+        ma_sound_stop(voice->aecReferenceSound.get()) != MA_SUCCESS)
+    {
+        success = false;
+    }
+#endif
+
+    if (!success)
+    {
+        recoveryRequested_.store(true, std::memory_order_release);
+        return false;
+    }
+
+    voice->paused = true;
+    return true;
+}
+
+bool Audio::ResumePlayback(const PlaybackId playbackId)
+{
+    const std::string* soundId = nullptr;
+    Voice* const voice = FindVoiceByPlaybackId(playbackId, &soundId);
+
+    if (voice == nullptr || soundId == nullptr)
+    {
+        return false;
+    }
+
+    if (!voice->paused)
+    {
+        return IsVoicePlaying(*voice);
+    }
+
+    if (!StartVoice(*voice, *soundId, false))
+    {
+        recoveryRequested_.store(true, std::memory_order_release);
+        return false;
+    }
+
+    return true;
+}
+
+bool Audio::StopPlayback(const PlaybackId playbackId)
+{
+    const std::string* soundId = nullptr;
+    Voice* const voice = FindVoiceByPlaybackId(playbackId, &soundId);
+
+    if (voice == nullptr || soundId == nullptr)
+    {
+        return false;
+    }
+
+    if (!StopVoice(*voice, *soundId, false))
+    {
+        recoveryRequested_.store(true, std::memory_order_release);
+        return false;
+    }
+
+    return true;
+}
+
+bool Audio::SeekPlayback(
+    const PlaybackId playbackId,
+    const float positionSeconds
+)
+{
+    if (!std::isfinite(positionSeconds) || positionSeconds < 0.0f)
+    {
+        return false;
+    }
+
+    Voice* const voice = FindVoiceByPlaybackId(playbackId);
+
+    if (voice == nullptr || !voice->outputSound || voice->stopping)
+    {
+        return false;
+    }
+
+    float durationSeconds = 0.0f;
+    float targetSeconds = positionSeconds;
+
+    if (ma_sound_get_length_in_seconds(
+            voice->outputSound.get(),
+            &durationSeconds
+        ) == MA_SUCCESS && durationSeconds > 0.0f)
+    {
+        targetSeconds = std::min(targetSeconds, durationSeconds);
+    }
+
+    bool success =
+        ma_sound_seek_to_second(
+            voice->outputSound.get(),
+            targetSeconds
+        ) == MA_SUCCESS;
+
+    if (voice->monitorSound)
+    {
+        success =
+            ma_sound_seek_to_second(
+                voice->monitorSound.get(),
+                targetSeconds
+            ) == MA_SUCCESS && success;
+    }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice->aecReferenceSound)
+    {
+        success =
+            ma_sound_seek_to_second(
+                voice->aecReferenceSound.get(),
+                targetSeconds
+            ) == MA_SUCCESS && success;
+    }
+#endif
+
+    if (!success)
+    {
+        recoveryRequested_.store(true, std::memory_order_release);
+    }
+
+    return success;
+}
+
+bool Audio::SetPlaybackVolume(
+    const PlaybackId playbackId,
+    const float volume
+)
+{
+    if (!std::isfinite(volume) || volume < 0.0f || volume > 1.0f)
+    {
+        return false;
+    }
+
+    Voice* const voice = FindVoiceByPlaybackId(playbackId);
+
+    if (voice == nullptr || !voice->outputSound)
+    {
+        return false;
+    }
+
+    ma_sound_set_volume(voice->outputSound.get(), volume);
+
+    if (voice->monitorSound)
+    {
+        ma_sound_set_volume(voice->monitorSound.get(), volume);
+    }
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if (voice->aecReferenceSound)
+    {
+        ma_sound_set_volume(voice->aecReferenceSound.get(), volume);
+    }
+#endif
+
+    voice->volume = volume;
+    return true;
 }
 
 MuteToggleResult Audio::ToggleEngineMute(
@@ -2035,11 +2976,95 @@ MuteToggleResult Audio::ToggleOutputMute()
 
 MuteToggleResult Audio::ToggleMonitorMute()
 {
-    return ToggleEngineMute(
+    const MuteToggleResult result = ToggleEngineMute(
         monitorEngine_,
         monitorVolume_,
         monitorMuted_,
         Localization::Text("Monitör çıkışı", "Monitor output")
+    );
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    if ((result == MuteToggleResult::Muted ||
+            result == MuteToggleResult::Unmuted) &&
+        aecRenderReferenceMixer_.IsInitialized())
+    {
+        const float referenceVolume =
+            monitorMuted_ ? 0.0f : monitorVolume_;
+
+        if (!aecRenderReferenceMixer_.SetVolume(referenceVolume))
+        {
+            std::cerr
+                << Localization::Text(
+                    "Uyarı: AEC render referansı monitör mute durumuyla eşitlenemedi. Audio runtime yeniden başlatılacak. Hata: ",
+                    "Warning: The AEC render reference could not be synchronized with the monitor mute state. The audio runtime will be restarted. Error: "
+                )
+                << aecRenderReferenceMixer_.LastError()
+                << '\n';
+
+            recoveryRequested_.store(
+                true,
+                std::memory_order_release
+            );
+        }
+    }
+#endif
+
+    return result;
+}
+
+MicrophoneTestMonitorResult Audio::SetMicrophoneTestMonitorEnabled(
+    const bool enabled
+)
+{
+    if (!enabled)
+    {
+        microphoneTestMonitorEnabled_.store(
+            false,
+            std::memory_order_release
+        );
+        return MicrophoneTestMonitorResult::Disabled;
+    }
+
+    if (microphoneToMonitor_)
+    {
+        microphoneTestMonitorEnabled_.store(
+            false,
+            std::memory_order_release
+        );
+        return MicrophoneTestMonitorResult::AlreadyRouted;
+    }
+
+    if (!microphoneEnabled_ || !microphoneCapture_.initialized ||
+        !monitorEngine_.initialized)
+    {
+        microphoneTestMonitorEnabled_.store(
+            false,
+            std::memory_order_release
+        );
+        return MicrophoneTestMonitorResult::Unavailable;
+    }
+
+    if (!microphoneTestMonitorRoute_.ringBufferInitialized ||
+        !microphoneTestMonitorRoute_.soundInitialized)
+    {
+        microphoneTestMonitorEnabled_.store(
+            false,
+            std::memory_order_release
+        );
+        return MicrophoneTestMonitorResult::Failed;
+    }
+
+    microphoneTestMonitorEnabled_.store(
+        true,
+        std::memory_order_release
+    );
+    return MicrophoneTestMonitorResult::Enabled;
+}
+
+bool Audio::IsMicrophoneTestMonitorEnabled() const noexcept
+{
+    return microphoneTestMonitorEnabled_.load(
+        std::memory_order_acquire
     );
 }
 
@@ -2206,7 +3231,23 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
         }
     }
 
-    const float microphonePeak = snapshot.microphoneAvailable
+    const bool processingActive =
+        snapshot.microphoneAvailable &&
+        microphoneProcessingActive_.load(
+            std::memory_order_acquire
+        );
+
+    snapshot.microphoneProcessingActive = processingActive;
+    snapshot.microphoneEchoCancellationRequested =
+        microphoneProcessingSettings_.echoCancellationEnabled;
+    snapshot.microphoneTestMonitorActive =
+        snapshot.microphoneAvailable &&
+        snapshot.monitorAvailable &&
+        microphoneTestMonitorEnabled_.load(
+            std::memory_order_acquire
+        );
+
+    float microphoneRawPeak = snapshot.microphoneAvailable
         ? std::clamp(
             microphonePeak_.load(std::memory_order_relaxed),
             0.0f,
@@ -2214,7 +3255,80 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
         )
         : 0.0f;
 
-    snapshot.microphone = microphonePeak;
+    float microphoneProcessedPeak = microphoneRawPeak;
+    float microphoneRawRms = 0.0f;
+    float microphoneProcessedRms = 0.0f;
+    float microphoneVoiceActivityProbability = 0.0f;
+
+    if (processingActive)
+    {
+        const MicrophoneProcessingSnapshot processingSnapshot =
+            microphoneProcessingRuntime_.GetSnapshot();
+
+        microphoneRawPeak = std::clamp(
+            processingSnapshot.rawPeak,
+            0.0f,
+            1.0f
+        );
+        microphoneProcessedPeak = std::clamp(
+            processingSnapshot.processedPeak,
+            0.0f,
+            1.0f
+        );
+        microphoneRawRms = std::clamp(
+            processingSnapshot.rawRms,
+            0.0f,
+            1.0f
+        );
+        microphoneProcessedRms = std::clamp(
+            processingSnapshot.processedRms,
+            0.0f,
+            1.0f
+        );
+        microphoneVoiceActivityProbability = std::clamp(
+            processingSnapshot.voiceActivityProbability,
+            0.0f,
+            1.0f
+        );
+        snapshot.microphoneNoiseSuppressionActive =
+            processingSnapshot.noiseSuppressionActive;
+        snapshot.microphoneNoiseSuppressionFailed =
+            processingSnapshot.noiseSuppressionFailed;
+        snapshot.microphoneEchoCancellationRequested =
+            processingSnapshot.echoCancellationRequested;
+        snapshot.microphoneEchoCancellationReady =
+            processingSnapshot.echoCancellationReady;
+        snapshot.microphoneEchoCancellationReferenceAvailable =
+            processingSnapshot.echoCancellationReferenceAvailable;
+        snapshot.microphoneEchoCancellationActive =
+            processingSnapshot.echoCancellationActive;
+        snapshot.microphoneEchoCancellationFailed =
+            processingSnapshot.echoCancellationFailed;
+        snapshot.microphoneEchoCancellationError =
+            processingSnapshot.echoCancellationError;
+        snapshot.microphoneEchoCancellationReferenceUnderruns =
+            processingSnapshot.echoCancellationReferenceUnderrunCount;
+        snapshot.microphoneEchoCancellationFailures =
+            processingSnapshot.echoCancellationFailureCount;
+        snapshot.microphoneAgcActive = processingSnapshot.agcActive;
+        snapshot.microphoneAgcGainDb = processingSnapshot.agcGainDb;
+        snapshot.microphoneInputClipped =
+            processingSnapshot.inputClipped;
+        snapshot.microphoneInvalidSampleDetected =
+            processingSnapshot.invalidSampleDetected;
+        snapshot.microphoneDroppedInputFrames =
+            microphoneProcessingRuntime_.GetDroppedInputFrameCount();
+    }
+
+    snapshot.microphoneRaw = microphoneRawPeak;
+    snapshot.microphoneProcessed = microphoneProcessedPeak;
+    snapshot.microphoneRawRms = microphoneRawRms;
+    snapshot.microphoneProcessedRms = microphoneProcessedRms;
+    snapshot.microphoneVoiceActivityProbability =
+        microphoneVoiceActivityProbability;
+    snapshot.microphone = microphoneProcessedPeak;
+
+    const float microphonePeak = microphoneProcessedPeak;
 
     if (microphoneToOutput_ && snapshot.microphoneAvailable)
     {
@@ -2224,7 +3338,8 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
         );
     }
 
-    if (microphoneToMonitor_ && snapshot.microphoneAvailable)
+    if ((microphoneToMonitor_ || snapshot.microphoneTestMonitorActive) &&
+        snapshot.microphoneAvailable)
     {
         activeMonitorSoundLevel = std::max(
             activeMonitorSoundLevel,
@@ -2254,11 +3369,21 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
 void Audio::DestroyRuntime()
 {
     microphonePeak_.store(0.0f, std::memory_order_relaxed);
+    microphoneTestMonitorEnabled_.store(
+        false,
+        std::memory_order_release
+    );
 
     if (microphoneCapture_.initialized)
     {
         ma_device_uninit(&microphoneCapture_.device);
     }
+
+    microphoneProcessingActive_.store(
+        false,
+        std::memory_order_release
+    );
+    microphoneProcessingRuntime_.Shutdown();
 
     microphoneCapture_.initialized = false;
     microphoneCapture_.deviceName.clear();
@@ -2270,6 +3395,7 @@ void Audio::DestroyRuntime()
 
     DestroyMicrophoneRoute(microphoneOutputRoute_);
     DestroyMicrophoneRoute(microphoneMonitorRoute_);
+    DestroyMicrophoneRoute(microphoneTestMonitorRoute_);
 
     for (auto& [soundId, loadedSound] : loadedSounds_)
     {
@@ -2278,6 +3404,10 @@ void Audio::DestroyRuntime()
     }
 
     loadedSounds_.clear();
+
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    aecRenderReferenceMixer_.Reset();
+#endif
 
     if (monitorEngine_.initialized)
     {
@@ -2333,6 +3463,7 @@ void Audio::Shutdown()
     microphoneVolume_ = 1.0f;
     microphoneToOutput_ = true;
     microphoneToMonitor_ = false;
+    microphoneProcessingSettings_ = {};
 
     sampleRate_ = 48000;
     bufferMilliseconds_ = 5;

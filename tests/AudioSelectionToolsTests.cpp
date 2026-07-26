@@ -1,0 +1,260 @@
+#include "editor/AudioSelectionTools.hpp"
+
+#include <cstdlib>
+#include <iostream>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
+
+namespace
+{
+    int failureCount = 0;
+
+    void Expect(const bool condition, const std::string_view message)
+    {
+        if (condition)
+        {
+            return;
+        }
+
+        ++failureCount;
+        std::cerr << "FAILED: " << message << '\n';
+    }
+
+    AudioDocument RequireDocument(
+        std::optional<AudioDocument> document,
+        const std::string_view message
+    )
+    {
+        if (!document.has_value())
+        {
+            Expect(false, message);
+            std::exit(1);
+        }
+        return std::move(*document);
+    }
+
+    void TestFormattingAndParsing()
+    {
+        Expect(
+            FormatAudioFrameTime(0U, 48000U) == "00:00.000",
+            "zero frame formats consistently"
+        );
+        Expect(
+            FormatAudioFrameTime(90000U, 48000U) == "00:01.875",
+            "frame time includes milliseconds"
+        );
+        Expect(
+            FormatAudioFrameTime(177120000U, 48000U) == "1:01:30.000",
+            "hour format is supported"
+        );
+
+        const auto seconds = ParseAudioFrameTime("1.250", 48000U, 96000U);
+        Expect(seconds.has_value() && seconds->frame == 60000U,
+            "plain seconds parse");
+
+        const auto minuteTime = ParseAudioFrameTime("01:02,500", 48000U, 4000000U);
+        Expect(minuteTime.has_value() && minuteTime->frame == 3000000U,
+            "minute time accepts comma decimal separator");
+
+        const auto hourTime = ParseAudioFrameTime("1:02:03.125", 48000U, 200000000U);
+        Expect(hourTime.has_value() && hourTime->frame == 178710000U,
+            "hour time parses");
+
+        const auto clamped = ParseAudioFrameTime("99:00", 1000U, 5000U);
+        Expect(clamped.has_value() && clamped->frame == 5000U && clamped->clamped,
+            "times beyond the document clamp safely");
+
+        Expect(!ParseAudioFrameTime("1:75", 48000U, 100000U).has_value(),
+            "invalid seconds are rejected");
+        Expect(!ParseAudioFrameTime("x", 48000U, 100000U).has_value(),
+            "non-numeric time is rejected");
+        Expect(!ParseAudioFrameTime("", 48000U, 100000U).has_value(),
+            "empty time is rejected");
+    }
+
+    void TestSelectionBoundaryMarkers()
+    {
+        const auto expectRange = [](
+            const std::optional<AudioFrameRange>& range,
+            const std::size_t beginFrame,
+            const std::size_t endFrame,
+            const std::string_view message
+        )
+        {
+            Expect(
+                range.has_value() && range->beginFrame == beginFrame &&
+                    range->endFrame == endFrame,
+                message
+            );
+        };
+
+        expectRange(
+            SetAudioSelectionBoundary(
+                std::nullopt, 25U, 100U, AudioSelectionBoundary::Begin
+            ),
+            25U,
+            100U,
+            "an in marker selects through the document end"
+        );
+        expectRange(
+            SetAudioSelectionBoundary(
+                std::nullopt, 75U, 100U, AudioSelectionBoundary::End
+            ),
+            0U,
+            75U,
+            "an out marker selects from the document start"
+        );
+
+        const std::optional<AudioFrameRange> existing =
+            AudioFrameRange{20U, 80U};
+        expectRange(
+            SetAudioSelectionBoundary(
+                existing, 30U, 100U, AudioSelectionBoundary::Begin
+            ),
+            30U,
+            80U,
+            "the in marker preserves a later out marker"
+        );
+        expectRange(
+            SetAudioSelectionBoundary(
+                existing, 70U, 100U, AudioSelectionBoundary::End
+            ),
+            20U,
+            70U,
+            "the out marker preserves an earlier in marker"
+        );
+        expectRange(
+            SetAudioSelectionBoundary(
+                existing, 90U, 100U, AudioSelectionBoundary::Begin
+            ),
+            90U,
+            100U,
+            "a crossed in marker resets the out marker to the document end"
+        );
+        expectRange(
+            SetAudioSelectionBoundary(
+                existing, 10U, 100U, AudioSelectionBoundary::End
+            ),
+            0U,
+            10U,
+            "a crossed out marker resets the in marker to the document start"
+        );
+
+        Expect(
+            !SetAudioSelectionBoundary(
+                existing, 100U, 100U, AudioSelectionBoundary::Begin
+            ).has_value(),
+            "an in marker at the document end is rejected"
+        );
+        Expect(
+            !SetAudioSelectionBoundary(
+                existing, 0U, 100U, AudioSelectionBoundary::End
+            ).has_value(),
+            "an out marker at the document start is rejected"
+        );
+    }
+
+    void TestZeroCrossingSnap()
+    {
+        std::string errorMessage;
+        AudioDocument document = RequireDocument(
+            AudioDocument::Create(
+                1000U,
+                1U,
+                {0.8f, 0.6f, 0.2f, -0.1f, -0.7f, -0.4f, 0.3f, 0.9f},
+                errorMessage
+            ),
+            "zero crossing fixture is valid"
+        );
+
+        Expect(
+            SnapAudioFrameToZeroCrossing(document, 2U, 3U) == 3U,
+            "nearest crossing is selected"
+        );
+        Expect(
+            SnapAudioFrameToZeroCrossing(document, 6U, 2U) == 6U,
+            "exact crossing boundary is retained"
+        );
+
+        const AudioFrameRange snapped = SnapAudioRangeToZeroCrossings(
+            document,
+            {2U, 5U},
+            2U
+        );
+        Expect(snapped.beginFrame == 3U && snapped.endFrame == 6U,
+            "both selection boundaries snap independently");
+    }
+
+    void TestAudibleRangeDetection()
+    {
+        std::string errorMessage;
+        AudioDocument document = RequireDocument(
+            AudioDocument::Create(
+                1000U,
+                2U,
+                {
+                    0.0f, 0.0f,
+                    0.001f, -0.001f,
+                    0.01f, 0.0f,
+                    0.5f, -0.25f,
+                    0.01f, 0.0f,
+                    0.001f, -0.001f,
+                    0.0f, 0.0f
+                },
+                errorMessage
+            ),
+            "audible range fixture is valid"
+        );
+
+        const auto range = FindAudibleAudioRange(document, -41.0f, 1U);
+        Expect(
+            range.has_value() && range->beginFrame == 1U &&
+                range->endFrame == 6U,
+            "audible range uses all channels and applies padding"
+        );
+
+        const auto strictRange = FindAudibleAudioRange(document, -7.0f, 0U);
+        Expect(
+            strictRange.has_value() && strictRange->beginFrame == 3U &&
+                strictRange->endFrame == 4U,
+            "higher threshold keeps only loud frames"
+        );
+
+        AudioDocument silence = RequireDocument(
+            AudioDocument::Create(
+                1000U,
+                1U,
+                {0.0f, 0.0f, 0.0f},
+                errorMessage
+            ),
+            "silence range fixture is valid"
+        );
+        Expect(
+            !FindAudibleAudioRange(silence).has_value(),
+            "fully silent audio has no audible range"
+        );
+        Expect(
+            !FindAudibleAudioRange(document, 1.0f).has_value(),
+            "invalid positive threshold is rejected"
+        );
+    }
+}
+
+int main()
+{
+    TestFormattingAndParsing();
+    TestSelectionBoundaryMarkers();
+    TestZeroCrossingSnap();
+    TestAudibleRangeDetection();
+
+    if (failureCount != 0)
+    {
+        std::cerr << failureCount << " test assertion(s) failed.\n";
+        return EXIT_FAILURE;
+    }
+
+    std::cout << "AudioSelectionTools tests passed.\n";
+    return EXIT_SUCCESS;
+}

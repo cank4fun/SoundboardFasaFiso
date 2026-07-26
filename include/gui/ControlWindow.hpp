@@ -8,7 +8,12 @@
 #define NOMINMAX
 #endif
 
+#include "audio/PlaybackState.hpp"
 #include "config/Config.hpp"
+#include "editor/AudioEditorWindow.hpp"
+#include "import/LocalMediaImportService.hpp"
+#include "import/UrlImportService.hpp"
+#include "platform/MediaToolManager.hpp"
 #include "update/UpdateChecker.hpp"
 
 #include <Windows.h>
@@ -50,7 +55,8 @@ public:
         const std::vector<std::string>& playbackDevices,
         const std::vector<std::string>& captureDevices,
         const ControlWindowCommandIds& commandIds,
-        Audio* audio
+        Audio* audio,
+        const std::optional<MediaToolBundleStatus>& mediaToolBundle
     );
 
     void Shutdown();
@@ -77,12 +83,14 @@ private:
     {
         Main,
         Settings,
-        Hotkeys
+        MicrophoneProcessing,
+        Hotkeys,
+        Playback
     };
 
     static constexpr int InitialClientWidth = 960;
     static constexpr int InitialClientHeight = 640;
-    static constexpr int MinimumClientWidth = 800;
+    static constexpr int MinimumClientWidth = 920;
     static constexpr int MinimumClientHeight = 540;
 
     static constexpr int IdApplySettings = 1000;
@@ -113,9 +121,25 @@ private:
     static constexpr int IdSettingsTab = 1025;
     static constexpr int IdHotkeysTab = 1026;
     static constexpr int IdCancelHotkeyCapture = 1027;
+    static constexpr int IdMicrophoneProcessingTab = 1028;
+    static constexpr int IdMicrophoneProcessingPreset = 1029;
+    static constexpr int IdMicrophoneTestMonitor = 1030;
+    static constexpr int IdMicrophoneNoiseSuppressionLevel = 1031;
+    static constexpr int IdPlaybackTab = 1032;
+    static constexpr int IdPlaybackList = 1033;
+    static constexpr int IdPlaybackPauseResume = 1034;
+    static constexpr int IdPlaybackStop = 1035;
+    static constexpr int IdPlaybackSeekSlider = 1036;
+    static constexpr int IdPlaybackVolumeSlider = 1037;
+    static constexpr int IdBindingFadeInEdit = 1038;
+    static constexpr int IdBindingFadeOutEdit = 1039;
+    static constexpr int IdImportUrl = 1040;
+    static constexpr int IdAudioEditor = 1041;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
+    static constexpr UINT UrlImportCompletedMessage = WM_APP + 65;
+    static constexpr UINT LocalMediaImportCompletedMessage = WM_APP + 66;
     static constexpr UINT LevelMeterIntervalMilliseconds = 40;
 
     static LRESULT CALLBACK WindowProcedure(
@@ -164,24 +188,48 @@ private:
     void PopulateEditorControls();
     void PopulateDeviceCombos();
     void PopulateNumericCombos();
+    void PopulateMicrophoneProcessingControls();
+    void PopulateMicrophoneProcessingPresetCombo();
+    void PopulateMicrophoneNoiseSuppressionLevelCombo();
+    void ApplySelectedMicrophoneProcessingPreset();
+    void MarkMicrophoneProcessingPresetCustom();
     void PopulateControlHotkeys();
     void UpdateVolumeLabels();
     void UpdateBindingVolumeLabel();
     void UpdateLevelMeters();
+    void UpdatePlaybackControls(bool force = false);
+    void LoadSelectedPlaybackIntoControls();
+    void ToggleSelectedPlaybackPause();
+    void StopSelectedPlayback();
+    void SeekSelectedPlayback();
+    void SetSelectedPlaybackVolume();
+    [[nodiscard]] PlaybackId SelectedPlaybackId() const noexcept;
+    void ToggleMicrophoneTestMonitor();
+    void StopMicrophoneTestMonitor();
     void HandleUpdateCheckCompleted();
+    void ToggleUrlImport();
+    void HandleUrlImportCompleted();
+    void UpdateUrlImportControls();
+    void HandleLocalMediaImportCompleted();
+    void UpdateLocalMediaImportControls();
+    void PresentLocalMediaImportResult(
+        const LocalMediaImportResult& result
+    );
     bool SavePendingSettings();
 
     void LoadSelectedBindingIntoEditor();
     void ClearBindingEditor();
     bool AddOrUpdateBinding(bool updateExisting);
-    bool RemoveSelectedBinding();
+    bool RemoveSelectedBinding(bool requireConfirmation = true);
     void BrowseForSoundFile();
+    void OpenAudioEditor();
     void BeginHotkeyCapture();
     bool CaptureHotkeyFromMessage(WPARAM virtualKey);
 
-    std::filesystem::path ImportSoundFile(
-        const std::filesystem::path& selectedPath
+    void ImportSoundItems(
+        const std::vector<std::filesystem::path>& selectedPaths
     );
+    void HandleDroppedSoundItems(WPARAM dropHandle);
 
     void PostApplicationCommand(int commandId) const;
     void OpenPath(const std::filesystem::path& path) const;
@@ -197,6 +245,7 @@ private:
         HWND control,
         unsigned int& value
     );
+    static bool ParseFloatControl(HWND control, float& value);
     static std::wstring VirtualKeyName(unsigned int virtualKey);
     static std::wstring NormalizeHotkeyText(std::wstring text);
 
@@ -212,6 +261,7 @@ private:
     std::filesystem::path pendingConfigPath_;
     std::filesystem::path soundsFolder_;
     std::filesystem::path logsFolder_;
+    std::optional<MediaToolBundleStatus> mediaToolBundle_;
 
     Config currentConfig_;
     std::vector<std::string> playbackDevices_;
@@ -223,7 +273,9 @@ private:
     HWND themeToggleButton_ = nullptr;
     HWND mainTabButton_ = nullptr;
     HWND settingsTabButton_ = nullptr;
+    HWND microphoneProcessingTabButton_ = nullptr;
     HWND hotkeysTabButton_ = nullptr;
+    HWND playbackTabButton_ = nullptr;
     HWND statusCaption_ = nullptr;
     HWND statusValue_ = nullptr;
 
@@ -234,6 +286,22 @@ private:
     HWND mainMonitorLevelMeter_ = nullptr;
     HWND mainMicrophoneMeterCaption_ = nullptr;
     HWND mainMicrophoneLevelMeter_ = nullptr;
+
+    HWND playbackGroup_ = nullptr;
+    HWND playbackList_ = nullptr;
+    HWND playbackDetailsGroup_ = nullptr;
+    HWND playbackSoundCaption_ = nullptr;
+    HWND playbackSoundValue_ = nullptr;
+    HWND playbackStatusCaption_ = nullptr;
+    HWND playbackStatusValue_ = nullptr;
+    HWND playbackPositionCaption_ = nullptr;
+    HWND playbackPositionValue_ = nullptr;
+    HWND playbackSeekSlider_ = nullptr;
+    HWND playbackVolumeCaption_ = nullptr;
+    HWND playbackVolumeSlider_ = nullptr;
+    HWND playbackVolumeValue_ = nullptr;
+    HWND playbackPauseResumeButton_ = nullptr;
+    HWND playbackStopButton_ = nullptr;
 
     HWND settingsGroup_ = nullptr;
     HWND outputCaption_ = nullptr;
@@ -268,6 +336,43 @@ private:
     HWND refreshDevicesButton_ = nullptr;
     HWND applySettingsButton_ = nullptr;
 
+    HWND microphoneProcessingGroup_ = nullptr;
+    HWND microphoneProcessingEnabledCheck_ = nullptr;
+    HWND microphoneProcessingPresetCaption_ = nullptr;
+    HWND microphoneProcessingPresetCombo_ = nullptr;
+    HWND microphoneProcessingStatusCaption_ = nullptr;
+    HWND microphoneProcessingStatusValue_ = nullptr;
+    HWND microphoneEchoCancellationEnabledCheck_ = nullptr;
+    HWND microphoneTestMonitorButton_ = nullptr;
+    HWND microphoneNoiseSuppressionEnabledCheck_ = nullptr;
+    HWND microphoneNoiseSuppressionLevelCaption_ = nullptr;
+    HWND microphoneNoiseSuppressionLevelCombo_ = nullptr;
+    HWND microphoneAgcEnabledCheck_ = nullptr;
+    HWND microphoneAgcTargetCaption_ = nullptr;
+    HWND microphoneAgcTargetEdit_ = nullptr;
+    HWND microphoneRawMeterCaption_ = nullptr;
+    HWND microphoneRawLevelMeter_ = nullptr;
+    HWND microphoneProcessedMeterCaption_ = nullptr;
+    HWND microphoneProcessedLevelMeter_ = nullptr;
+    HWND microphoneHighPassEnabledCheck_ = nullptr;
+    HWND microphoneHighPassHzCaption_ = nullptr;
+    HWND microphoneHighPassHzEdit_ = nullptr;
+    HWND microphoneCompressorEnabledCheck_ = nullptr;
+    HWND microphoneCompressorThresholdCaption_ = nullptr;
+    HWND microphoneCompressorThresholdEdit_ = nullptr;
+    HWND microphoneCompressorRatioCaption_ = nullptr;
+    HWND microphoneCompressorRatioEdit_ = nullptr;
+    HWND microphoneCompressorAttackCaption_ = nullptr;
+    HWND microphoneCompressorAttackEdit_ = nullptr;
+    HWND microphoneCompressorReleaseCaption_ = nullptr;
+    HWND microphoneCompressorReleaseEdit_ = nullptr;
+    HWND microphoneCompressorMakeupCaption_ = nullptr;
+    HWND microphoneCompressorMakeupEdit_ = nullptr;
+    HWND microphoneLimiterEnabledCheck_ = nullptr;
+    HWND microphoneLimiterCeilingCaption_ = nullptr;
+    HWND microphoneLimiterCeilingEdit_ = nullptr;
+    HWND microphoneUnavailableFeaturesCaption_ = nullptr;
+
     HWND controlHotkeysGroup_ = nullptr;
     HWND stopHotkeyCaption_ = nullptr;
     HWND stopHotkeyEdit_ = nullptr;
@@ -289,17 +394,23 @@ private:
     HWND bindingFileCaption_ = nullptr;
     HWND bindingFileEdit_ = nullptr;
     HWND browseSoundButton_ = nullptr;
+    HWND importUrlButton_ = nullptr;
     HWND bindingModeCaption_ = nullptr;
     HWND bindingModeCombo_ = nullptr;
     HWND bindingVolumeCaption_ = nullptr;
     HWND bindingVolumeSlider_ = nullptr;
     HWND bindingVolumeValue_ = nullptr;
+    HWND bindingFadeInCaption_ = nullptr;
+    HWND bindingFadeInEdit_ = nullptr;
+    HWND bindingFadeOutCaption_ = nullptr;
+    HWND bindingFadeOutEdit_ = nullptr;
     HWND addBindingButton_ = nullptr;
     HWND updateBindingButton_ = nullptr;
     HWND removeBindingButton_ = nullptr;
     HWND clearBindingButton_ = nullptr;
 
     HWND reloadButton_ = nullptr;
+    HWND audioEditorButton_ = nullptr;
     HWND stopButton_ = nullptr;
     HWND outputMuteButton_ = nullptr;
     HWND monitorMuteButton_ = nullptr;
@@ -337,15 +448,45 @@ private:
     float outputMeterLevel_ = 0.0f;
     float monitorMeterLevel_ = 0.0f;
     float microphoneMeterLevel_ = 0.0f;
+    float microphoneRawMeterLevel_ = 0.0f;
+    float microphoneProcessedMeterLevel_ = 0.0f;
     bool outputMeterAvailable_ = false;
     bool monitorMeterAvailable_ = false;
     bool microphoneMeterAvailable_ = false;
+    bool microphoneProcessingMeterAvailable_ = false;
+    bool populatingMicrophoneProcessingControls_ = false;
+
+    std::vector<PlaybackSnapshot> playbackSnapshots_;
+    PlaybackId selectedPlaybackId_ = InvalidPlaybackId;
+    ULONGLONG lastPlaybackRefreshTick_ = 0;
+    bool populatingPlaybackControls_ = false;
+    bool playbackSeekDragging_ = false;
+    PlaybackId playbackSeekInteractionId_ = InvalidPlaybackId;
+    int playbackSeekPreviewPosition_ = 0;
+    PlaybackId pendingPlaybackSeekId_ = InvalidPlaybackId;
+    float pendingPlaybackSeekSeconds_ = 0.0f;
+    ULONGLONG pendingPlaybackSeekTick_ = 0;
+
+    AudioEditorWindow audioEditorWindow_;
 
     std::jthread updateCheckThread_;
     std::mutex updateCheckMutex_;
     std::optional<UpdateCheckResult> pendingUpdateResult_;
     bool pendingUpdateShowCurrentResult_ = false;
     std::atomic_bool updateCheckRunning_{false};
+
+    std::jthread urlImportThread_;
+    std::mutex urlImportMutex_;
+    std::optional<UrlImportResult> pendingUrlImportResult_;
+    std::atomic_bool urlImportRunning_{false};
+    std::atomic_bool urlImportCancellationRequested_{false};
+
+    std::jthread localMediaImportThread_;
+    std::mutex localMediaImportMutex_;
+    std::optional<LocalMediaImportResult>
+        pendingLocalMediaImportResult_;
+    std::atomic_bool localMediaImportRunning_{false};
+    std::atomic_bool localMediaImportCancellationRequested_{false};
 
     int selectedBindingIndex_ = -1;
     bool capturingBindingHotkey_ = false;

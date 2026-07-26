@@ -40,7 +40,6 @@ public:
 
     void Shutdown();
 
-    bool ToggleConsoleVisibility();
     bool IsConsoleVisible() const;
 
 private:

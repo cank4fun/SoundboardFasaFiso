@@ -1,46 +1,83 @@
 # Creating a release
 
-The public version is defined by `SOUNDBOARD_VERSION` in `CMakeLists.txt`. The Git tag must match it exactly, including prerelease suffixes. Existing release tags are immutable and must never be moved or reused.
+The public version is defined by `SOUNDBOARD_VERSION` in `CMakeLists.txt`. The
+Git tag must match it exactly, including prerelease suffixes such as `-rc.1`.
+Existing release tags are immutable and must never be moved or reused.
+
+Official builds are currently unsigned. Code signing is not a release blocker;
+every release must preserve the GitHub Actions build record, immutable tag and
+published SHA-256 checksum. See `CODE_SIGNING_POLICY.md`.
 
 ## Release branches
 
-Prepare a release on a dedicated branch created from the intended stable base. For `v2.0.0`, the release branch must be based on `v2.0.0-rc.2` / `main` and must not contain v2.1 microphone-processing or WebRTC AEC3 work.
+Prepare each release on a dedicated branch created from the intended base. Keep
+the branch limited to the version being released and review its complete diff
+before opening a pull request.
 
-Before opening the pull request:
+For example:
 
 ```powershell
 git status --short --branch
-git diff v2.0.0-rc.2..HEAD --stat
-git log --oneline v2.0.0-rc.2..HEAD
+git diff main..HEAD --stat
+git log --oneline main..HEAD
 ```
 
-The stable release diff should contain only intentional version, documentation and release-workflow changes unless a separately reviewed blocker fix is required.
+The release diff should contain only intentional feature, fix, version,
+documentation and workflow changes for that release. Existing release tags and
+published assets must not be rewritten.
 
 ## Pre-release checks
 
-From **x64 Native Tools Command Prompt for VS 2022**:
+Official v2.1 builds include WebRTC AEC3 and use the pinned vcpkg manifest.
+Prepare the standalone vcpkg checkout exactly as documented in
+`docs/BUILDING_WITH_WEBRTC_AEC3.md`, then run from **x64 Native Tools Command
+Prompt for VS 2022**:
 
 ```cmd
+set "VCPKG_ROOT=C:\path\to\vcpkg"
 rmdir /S /Q out\build\x64-Release 2>nul
 
 cmake -S . -B out/build/x64-Release -G Ninja ^
   -DCMAKE_BUILD_TYPE=Release ^
+  "-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
+  -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
+  -DVCPKG_MANIFEST_FEATURES=webrtc-aec3 ^
+  -DSOUNDBOARD_ENABLE_WEBRTC_AEC3=ON ^
+  -DSOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS=ON ^
   -DSOUNDBOARD_WARNINGS_AS_ERRORS=ON
 
-cmake --build out/build/x64-Release --target PortableRelease --parallel
+cmake --build out/build/x64-Release ^
+  --target SoundBoardFasaFiso SoundBoardFasaFisoTests --parallel
+ctest --test-dir out/build/x64-Release --output-on-failure
+cmake --build out/build/x64-Release --target VerifyPortableRelease --parallel
 ```
+
+`ctest` runs existing test executables but does not build them. Always build the
+`SoundBoardFasaFisoTests` aggregate target before running the suite so no stale
+test binary can pass accidentally.
 
 Confirm that:
 
-- the Release build completes with warnings treated as errors
-- the executable version and portable filename contain the intended version
-- the portable ZIP opens from a newly extracted folder on Windows 10/11
-- no developer config, logs, build files or personal paths are present
-- audio playback, microphone routing, tray behavior, hotkeys, config rollback and device recovery work
-- the update check opens only the official GitHub Release page
-- the unsigned-build and Smart App Control limitation is present in both readmes
-- the portable package includes `LICENSE` and `THIRD_PARTY_NOTICES.txt`
-- the generated checksum matches the exact ZIP attached to the release
+- the Release build completes with warnings treated as errors and every
+  ordinary/AEC test passes;
+- the executable version and portable filename contain the intended version;
+- the portable ZIP opens from a newly extracted folder on Windows 10/11;
+- no developer config, logs, build files or personal paths are present;
+- audio playback, microphone routing, AEC, RNNoise, AGC, tray behavior,
+  hotkeys, config rollback and device recovery work;
+- AEC safely bypasses when the physical monitor reference is unavailable;
+- the update check opens only the official GitHub Release page;
+- the unsigned-build and Smart App Control limitation is present in both
+  readmes;
+- the package includes `LICENSE`, `THIRD_PARTY_NOTICES.txt` and generated
+  `WEBRTC_THIRD_PARTY_NOTICES.txt`; and
+- the generated checksum matches the exact portable ZIP attached to the
+  release.
+
+`VerifyPortableRelease` creates a fresh extraction under the build directory,
+checks the package allowlist, safe config defaults, example sounds, bundled
+media-tool hashes/licenses and build/runtime residue, then writes the matching
+`.zip.sha256` file. Do not publish a package if this target fails.
 
 The package name is versioned:
 
@@ -48,9 +85,11 @@ The package name is versioned:
 SoundBoardFasaFiso-v<version>-windows-x64-portable.zip
 ```
 
-## Merge the stable release
+## Merge the release
 
-Open a pull request from `release/v2.0.0` to `main`. Wait for the Windows workflow to pass, review the final diff, and merge the pull request without changing the prepared version.
+Open a pull request from the release branch to `main`. Wait for the Windows
+workflow to pass, review the final diff and merge without changing the prepared
+version.
 
 After the merge:
 
@@ -61,29 +100,41 @@ git status --short --branch
 git log -3 --oneline --decorate
 ```
 
-Build or inspect the workflow artifact from the exact merged commit before tagging.
+Build or inspect the workflow artifact from the exact merged commit before
+tagging.
 
-## Publish the stable release
+## Publish the release
 
-Create an annotated tag from the verified `main` commit:
+Create an annotated tag from the verified `main` commit. Replace `<version>`
+with the exact value from `SOUNDBOARD_VERSION`:
 
 ```powershell
-git tag -a v2.0.0 -m "SoundBoardFasaFiso v2.0.0"
-git show --stat v2.0.0
-git push origin v2.0.0
+git tag -a v<version> -m "SoundBoardFasaFiso v<version>"
+git show --stat v<version>
+git push origin v<version>
 ```
 
-The **Windows Build and Release** workflow verifies that the tag matches the project version, builds with MSVC and warnings as errors, validates the portable package, produces a SHA-256 checksum, uploads both files as workflow artifacts, and attaches them to the tagged GitHub Release. If `docs/releases/v2.0.0.md` exists, it is used as the release description.
+The **Windows Build and Release** workflow verifies that the tag matches the
+project version, checks out the pinned vcpkg baseline, builds WebRTC AEC3 with
+MSVC and warnings as errors, runs the complete test suite, validates the
+portable package, creates a SHA-256 checksum, uploads both files as workflow
+artifacts and attaches them to the tagged GitHub Release.
 
-The `v2.0.0` assets are intentionally unsigned. The GitHub Release description and both readmes must state this clearly.
+If `docs/releases/v<version>.md` exists, the workflow uses it as the release
+description; otherwise it generates release notes. Tags containing a hyphen,
+such as `v2.1.0-alpha.1` or `v2.1.0-rc.1`, are published as prereleases.
 
 After publication, verify:
 
-- the release is not marked as a prerelease
-- the ZIP is named `SoundBoardFasaFiso-v2.0.0-windows-x64-portable.zip`
-- the matching `.sha256` file is attached
-- the published checksum matches a freshly downloaded ZIP
-- the release description contains the unsigned-build warning
-- the update checker recognizes `v2.0.0` as the latest stable release
+- stable tags are not marked as prereleases and prerelease tags are;
+- the ZIP is named `SoundBoardFasaFiso-v<version>-windows-x64-portable.zip`;
+- the matching `.sha256` file is attached and matches a fresh download;
+- the release description contains the unsigned-build warning;
+- `THIRD_PARTY_NOTICES.txt` and `WEBRTC_THIRD_PARTY_NOTICES.txt` are present;
+  and
+- the update checker treats only the latest non-prerelease release as stable.
 
-If a tagged workflow fails because of a transient service error, rerun the same workflow. Do not move the tag. If the tagged source itself requires a correction, publish a new patch version instead of rewriting `v2.0.0`.
+If a tagged workflow fails because of a transient service error, rerun the same
+workflow. Do not move the tag. If the tagged source itself requires a
+correction, increment the version and publish a new tag instead of rewriting an
+existing release.

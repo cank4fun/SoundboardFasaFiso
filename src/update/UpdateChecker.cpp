@@ -402,18 +402,6 @@ namespace
     }
 }
 
-bool UpdateChecker::IsNewerVersion(
-    const std::string_view candidateVersion,
-    const std::string_view currentVersion
-)
-{
-    const auto candidate = ParseVersion(candidateVersion);
-    const auto current = ParseVersion(currentVersion);
-
-    return candidate.has_value() && current.has_value() &&
-        CompareVersions(*candidate, *current) > 0;
-}
-
 UpdateCheckResult UpdateChecker::CheckLatestRelease(
     const std::string_view currentVersion
 )

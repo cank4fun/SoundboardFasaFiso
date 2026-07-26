@@ -23,6 +23,27 @@ microphone_volume=1.00
 microphone_to_output=true
 microphone_to_monitor=false
 
+# MİKROFON İŞLEME
+# Ana anahtar varsayılan olarak kapalıdır; eski config davranışı korunur.
+# Tüm işlemler yerel çalışır; ana anahtar varsayılan olarak kapalıdır.
+microphone_processing_enabled=false
+microphone_processing_preset=natural
+microphone_echo_cancellation_enabled=false
+microphone_high_pass_enabled=true
+microphone_high_pass_hz=80.0
+microphone_noise_suppression_enabled=false
+microphone_noise_suppression_level=balanced
+microphone_agc_enabled=false
+microphone_agc_target_dbfs=-18.0
+microphone_compressor_enabled=true
+microphone_compressor_threshold_db=-24.0
+microphone_compressor_ratio=3.0
+microphone_compressor_attack_ms=10.0
+microphone_compressor_release_ms=120.0
+microphone_compressor_makeup_db=0.0
+microphone_limiter_enabled=true
+microphone_limiter_ceiling_db=-1.0
+
 # AUDIO GECİKME AYARLARI
 # 0 yazılırsa cihazın/Windows'un varsayılanı kullanılır.
 audio_sample_rate=48000
@@ -44,18 +65,20 @@ exit=CTRL+SHIFT+F12
 
 # TUŞ ATAMALARI
 # Varsayılan: volume=1.00 ve mode=restart
-F1=example.wav|volume=0.80|mode=restart
+F1=example.wav|volume=0.80|mode=restart|fade_in_ms=0|fade_out_ms=0
 F2=example2.wav|volume=1.00|mode=toggle
 F3=example.wav|volume=0.60|mode=loop
 F4=example2.wav|volume=1.00|mode=overlap
 F5=example.mp3|volume=0.80|mode=restart
 F6=example.flac|volume=1.00|mode=overlap
+# F7=example.wav|volume=1.00|mode=ignore
 
 # MODLAR
 # restart = Her basışta sesi baştan çalar.
 # toggle  = Bir basışta çalar, tekrar basışta durdurur.
 # loop    = Döngüye alır, tekrar basışta durdurur.
 # overlap = Her basışta yeni voice açar; en fazla 8 kopya aynı anda çalar.
+# ignore  = Pasifse çalar; aktif veya duraklatılmışsa yeni basışı yok sayar.
 
 # HOTKEY ÖRNEKLERİ
 # CTRL+F2=effects/example.wav|volume=0.50|mode=restart

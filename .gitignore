@@ -12,9 +12,10 @@ CMakeUserPresets.json
 .vscode/
 .idea/
 
-# CMake and Ninja
+# CMake, Ninja and manifest-mode vcpkg output
 out/
 build/
+vcpkg_installed/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
@@ -27,7 +28,7 @@ build.ninja
 Debug/
 Release/
 x64/
-x86/
+/x86/
 *.obj
 *.pdb
 *.ilk

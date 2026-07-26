@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.1.0 - 2026-07-27
+
+- Added a strict standalone runtime path layer with explicit portable mode, LocalAppData fallback, writability checks and first-run default copying.
+- Embedded an `asInvoker` manifest, added elevated-process warnings for drag-and-drop reliability, and packaged `portable.flag` plus a private `tools` directory.
+- Added application-path tests and documented the no-admin, no-runtime-install standalone contract.
+- Added per-binding fade-in and fade-out envelopes with millisecond controls.
+- Applied fade-out consistently to selected-session stop, toggle/loop stop, and Stop All while keeping shutdown/reload teardown immediate.
+
+- Added optional WebRTC AEC3 acoustic echo cancellation with a soundboard monitor-reference path.
+- Added high-pass filtering, RNNoise suppression, automatic gain control, compression and limiting.
+- Added raw/processed microphone meters, AEC telemetry, presets and temporary processed-microphone monitoring.
+- Added a pinned vcpkg manifest feature and production AEC build path.
+- Added generated license notices for WebRTC and its transitive static dependencies.
+- Kept a dependency-free build with AEC unavailable when WebRTC is disabled.
+- Added the playback-session foundation with stable runtime IDs, live position/duration snapshots and per-session pause, resume, stop, seek and volume APIs.
+- Added an Active Playbacks tab with live session rows, selection-preserving refresh, pause/resume, per-session stop, seek and volume controls.
+- Fixed sub-second playback timing display and made the seek thumb stable during mouse and keyboard interaction.
+- Prevented committed seeks from snapping back to stale runtime positions while the audio cursor catches up.
+- Added an `ignore` retrigger policy with deterministic behavior for playing and paused sessions.
+- Added dedicated playback-policy tests and config round-trip coverage for every serialized mode.
+- Made config replacement atomic on Windows and kept `config.txt.bak` as the last known-good saved configuration.
+- Added multi-file and recursive folder import through Windows drag and drop and the file picker.
+- Added a shared collision-safe importer that copies external audio into `sounds/Imported`, keeps in-tree files in place and rejects unsupported formats without overwriting existing files.
+- Added cancellable background URL import and local-media conversion to WAV through bundled `yt-dlp`, Deno, FFmpeg and ffprobe binaries verified against pinned SHA-256 hashes.
+- Added an audio editor embedded in the main window with asynchronous WAV load/save, monitor-output preview, buffered waveform rendering, transport, seek, zoom, selection and precision trim.
+- Added cut, copy, paste, undo, redo, gain, normalize, fade-in, fade-out, mono conversion, selection silencing and boundary-silence trimming.
+- Added `I` and `O` shortcuts to set trim start and end at the current playhead while preserving the opposite selection boundary when possible.
+- Polished the editor owner-draw controls to use the same dark surfaces, rounded geometry and redraw behavior as the main control panel.
+- Made the editor toolbar responsive, aligned glyph and text content, themed native edit/scroll controls, matched the light palette and moved recoverable validation errors into the inline status area.
+- Added a complete fresh-test aggregate target and hardened portable-release verification for package allowlists, tool hashes, x64 GUI PE metadata, hidden artifacts and generated SHA-256 files.
+
 ## 2.0.0
 
 - Published the first stable v2 release after the `2.0.0-rc.2` validation cycle.

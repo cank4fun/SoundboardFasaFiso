@@ -1,0 +1,21 @@
+{
+  "name": "soundboardfasafiso",
+  "version-string": "2.1.0",
+  "builtin-baseline": "cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3",
+  "default-features": [],
+  "features": {
+    "webrtc-aec3": {
+      "description": "Build acoustic echo cancellation with WebRTC Audio Processing",
+      "dependencies": [
+        "webrtc"
+      ]
+    }
+  },
+  "overrides": [
+    {
+      "name": "webrtc",
+      "version-date": "2026-03-17",
+      "port-version": 1
+    }
+  ]
+}
