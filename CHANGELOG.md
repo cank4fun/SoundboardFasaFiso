@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.0-alpha.1 - Unreleased
+## 2.1.0 - 2026-07-27
 
 - Added a strict standalone runtime path layer with explicit portable mode, LocalAppData fallback, writability checks and first-run default copying.
 - Embedded an `asInvoker` manifest, added elevated-process warnings for drag-and-drop reliability, and packaged `portable.flag` plus a private `tools` directory.
@@ -23,7 +23,13 @@
 - Made config replacement atomic on Windows and kept `config.txt.bak` as the last known-good saved configuration.
 - Added multi-file and recursive folder import through Windows drag and drop and the file picker.
 - Added a shared collision-safe importer that copies external audio into `sounds/Imported`, keeps in-tree files in place and rejects unsupported formats without overwriting existing files.
-- Added dedicated importer tests and documented the planned `yt-dlp` plus FFmpeg URL-import path.
+- Added cancellable background URL import and local-media conversion to WAV through bundled `yt-dlp`, Deno, FFmpeg and ffprobe binaries verified against pinned SHA-256 hashes.
+- Added an audio editor embedded in the main window with asynchronous WAV load/save, monitor-output preview, buffered waveform rendering, transport, seek, zoom, selection and precision trim.
+- Added cut, copy, paste, undo, redo, gain, normalize, fade-in, fade-out, mono conversion, selection silencing and boundary-silence trimming.
+- Added `I` and `O` shortcuts to set trim start and end at the current playhead while preserving the opposite selection boundary when possible.
+- Polished the editor owner-draw controls to use the same dark surfaces, rounded geometry and redraw behavior as the main control panel.
+- Made the editor toolbar responsive, aligned glyph and text content, themed native edit/scroll controls, matched the light palette and moved recoverable validation errors into the inline status area.
+- Added a complete fresh-test aggregate target and hardened portable-release verification for package allowlists, tool hashes, x64 GUI PE metadata, hidden artifacts and generated SHA-256 files.
 
 ## 2.0.0
 

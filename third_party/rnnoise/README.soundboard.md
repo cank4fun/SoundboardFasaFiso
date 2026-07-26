@@ -13,7 +13,11 @@ microphone noise-suppression spike.
 - Build mode: scalar C; SIMD/runtime dispatch is intentionally deferred
 
 The little model is provisional until real microphone A/B quality testing is
-complete. Run `tools/Import-RnNoiseV02.ps1` from the repository to populate the
-vendored source files from a verified local RNNoise checkout.
+complete. Run the importer from the repository and provide the verified local
+checkout explicitly:
+
+```powershell
+.\tools\Import-RnNoiseV02.ps1 -SourceRoot "C:\path\to\rnnoise"
+```
 
 The complete upstream BSD-3-Clause license is stored in `COPYING` after import.

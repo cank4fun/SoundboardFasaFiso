@@ -205,12 +205,14 @@ private:
         const std::optional<AudioFrameRange>& currentSelection
     );
     void DrawButton(const DRAWITEMSTRUCT& item) const;
-    [[nodiscard]] int DrawButtonGlyph(
+    void DrawButtonGlyph(
         HDC deviceContext,
         HWND button,
         const RECT& rectangle,
-        COLORREF color
+        COLORREF color,
+        COLORREF backgroundColor
     ) const;
+    [[nodiscard]] bool HasButtonGlyph(HWND button) const;
     [[nodiscard]] bool IsPrimaryButton(HWND control) const;
     [[nodiscard]] bool IsDangerButton(HWND control) const;
     void DrawSectionHeader(
@@ -346,10 +348,13 @@ private:
 
     COLORREF backgroundColor_ = RGB(15, 17, 23);
     COLORREF panelColor_ = RGB(24, 28, 36);
+    COLORREF inputColor_ = RGB(17, 21, 29);
     COLORREF textColor_ = RGB(244, 246, 250);
     COLORREF mutedTextColor_ = RGB(154, 164, 178);
     COLORREF borderColor_ = RGB(42, 49, 64);
     COLORREF accentColor_ = RGB(124, 92, 255);
+    COLORREF accentHoverColor_ = RGB(139, 108, 255);
+    COLORREF dangerColor_ = RGB(224, 82, 82);
     COLORREF waveformColor_ = RGB(139, 108, 255);
     COLORREF centerLineColor_ = RGB(70, 78, 96);
     COLORREF playheadColor_ = RGB(255, 93, 115);

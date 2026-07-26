@@ -5,7 +5,7 @@ Windows 10/11 için kurulumsuz, portable soundboard.
 
 SÜRÜM / VERSION
 ---------------
-2.1.0-alpha.1
+2.1.0
 
 DİL / LANGUAGE
 --------------
@@ -24,10 +24,11 @@ HIZLI KULLANIM
 --------------
 1. SoundBoardFasaFiso.exe dosyasını çalıştır; kontrol paneli açılır.
 2. WAV, MP3 veya FLAC dosyalarını ya da bunları içeren bir klasörü panelin üzerine bırak. Dışarıdaki dosyalar sounds\Imported altına güvenli biçimde kopyalanır; Gözat düğmesi birden fazla dosya seçebilir.
-3. Hotkey'ler sekmesinde her ses için bir atama oluştur. İçe aktarma ilk dosyayı düzenleyiciye doldurur ancak otomatik global hotkey atamaz.
-4. Çalan sesleri Oynatma sekmesinden duraklat, konumlandır, tek tek durdur veya geçici ses seviyesini değiştir.
-5. Ses cihazlarını ve kontrol hotkey'lerini panelden düzenle.
-6. Kaydet ve uygula'ya bas; yeni config doğrulanıp güvenli şekilde etkinleştirilir.
+3. İnternetten medya eklemek için ses alanına http:// veya https:// adresi yapıştırıp URL düğmesine bas. Paket içindeki doğrulanmış medya araçları medyayı arka planda indirip WAV'a dönüştürür.
+4. Ses editöründe monitör çıkışından önizle, seçim ve hassas kırpma yap, düzenleme ve efektleri uygula, ardından WAV olarak kaydet. I kırpma başlangıcını, O kırpma bitişini oynatma imlecine ayarlar.
+5. Hotkey'ler sekmesinde her ses için bir atama oluştur. İçe aktarma dosyayı editöre doldurur ancak otomatik global hotkey atamaz.
+6. Ses cihazlarını ve kontrol hotkey'lerini panelden düzenle.
+7. Kaydet ve uygula'ya bas; yeni config doğrulanıp güvenli şekilde etkinleştirilir.
 
 Hiç etkin ses ataması olmasa veya eski atamalardaki dosyalar kayıp olsa bile panel açık kalır; config.txt dosyasını elle düzeltmeden yeni atama ekleyebilirsin.
 
@@ -131,8 +132,8 @@ CTRL+SHIFT+F12  : Programı kapat
 
 KONTROL PANELİ
 ---------------
-Panel tek pencere içinde Ana ekran, Ayarlar, Mikrofon işleme, Hotkey'ler
-ve Oynatma sekmelerini kullanır. Açık/koyu tema, canlı sinyal göstergeleri ve DPI ölçeklendirme
+Panel tek pencere içinde Ana ekran, Ayarlar, Mikrofon filtreleri, Hotkey'ler
+ve Ses editörü sekmelerini kullanır. Açık/koyu tema, canlı sinyal göstergeleri ve DPI ölçeklendirme
 desteklenir. Panelden ana/monitör/mikrofon cihazı, ses seviyeleri,
 mikrofon yönlendirmesi, dil, örnekleme hızı, buffer, Windows başlangıcı,
 kontrol hotkey'leri ve ses atamaları düzenlenebilir. Ses ataması eklerken
@@ -145,8 +146,17 @@ Pencerenin X düğmesi programı kapatmaz; paneli tray'e gizler.
 PANEL KISAYOLLARI
 -----------------
 CTRL+1 ... CTRL+5       : Sekmeler arasında geç
-CTRL+S                    : Kaydet ve uygula
-ESC                       : Hotkey yakalamayı iptal et
+CTRL+S                  : Kaydet ve uygula
+ESC                     : Hotkey yakalamayı iptal et
+
+SES EDİTÖRÜ KISAYOLLARI
+-----------------------
+SPACE                   : Önizlemeyi oynat/duraklat
+I                       : Kırpma başlangıcını oynatma imlecine ayarla
+O                       : Kırpma bitişini oynatma imlecine ayarla
+CTRL+X / CTRL+C / CTRL+V: Kes / kopyala / yapıştır
+CTRL+Z / CTRL+Y         : Geri al / yinele
+CTRL+S                  : WAV dosyasını kaydet
 
 TRAY MENÜSÜ
 -----------
@@ -181,4 +191,4 @@ NOTLAR
 - Hatalı reload uygulanmaz; son çalışan ayarlar korunur.
 - Aynı anda uygulamanın yalnızca bir kopyası çalışır.
 
-Per-binding fade-in/fade-out: fade_in_ms and fade_out_ms accept values from 0 to 10000 milliseconds.
+- Her atama için fade_in_ms ve fade_out_ms değerleri 0-10000 milisaniye arasında ayarlanabilir.

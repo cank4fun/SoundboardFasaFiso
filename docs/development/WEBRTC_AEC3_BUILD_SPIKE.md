@@ -30,9 +30,9 @@ Do not add the dependency to a release build yet. First record:
 Install vcpkg once, outside this repository:
 
 ```bat
-cd /d C:\Dev
-git clone https://github.com/microsoft/vcpkg.git
-cd /d C:\Dev\vcpkg
+set "VCPKG_ROOT=C:\path\to\vcpkg"
+git clone https://github.com/microsoft/vcpkg.git "%VCPKG_ROOT%"
+cd /d "%VCPKG_ROOT%"
 bootstrap-vcpkg.bat -disableMetrics
 vcpkg install webrtc:x64-windows-static
 ```
@@ -40,11 +40,13 @@ vcpkg install webrtc:x64-windows-static
 Configure an isolated build directory:
 
 ```bat
-cd /d C:\Dev\SoundBoardFasaFiso-GitHub
+set "SOUNDBOARD_ROOT=C:\path\to\SoundBoardFasaFiso"
+set "VCPKG_ROOT=C:\path\to\vcpkg"
+cd /d "%SOUNDBOARD_ROOT%"
 
 cmake -S . -B out\build\x64-AEC3-Spike -G Ninja ^
   -DCMAKE_BUILD_TYPE=Release ^
-  -DCMAKE_TOOLCHAIN_FILE=C:\Dev\vcpkg\scripts\buildsystems\vcpkg.cmake ^
+  "-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
   -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
   -DSOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE=ON
 ```

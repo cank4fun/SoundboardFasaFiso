@@ -98,23 +98,11 @@ jobs:
           -DSOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS=ON
           -DSOUNDBOARD_WARNINGS_AS_ERRORS=ON
 
-      - name: Build microphone processing tests
+      - name: Build application and complete test suite
         shell: pwsh
         run: >-
           cmake --build out/build/ci-release
-          --target
-          SoundBoardFasaFisoMicrophoneProcessingSettingsTests
-          SoundBoardFasaFisoPlaybackModeTests
-          SoundBoardFasaFisoApplicationPathsTests
-          SoundBoardFasaFisoSoundImporterTests
-          SoundBoardFasaFisoConfigMicrophoneProcessingTests
-          SoundBoardFasaFisoMicrophoneProcessorTests
-          SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
-          SoundBoardFasaFisoRnNoiseSuppressorTests
-          SoundBoardFasaFisoWebRtcAec3Smoke
-          SoundBoardFasaFisoWebRtcAec3ProcessorTests
-          SoundBoardFasaFisoAecRenderReferenceMixerTests
-          SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+          --target SoundBoardFasaFiso SoundBoardFasaFisoTests
           --parallel
 
       - name: Run tests
@@ -123,14 +111,14 @@ jobs:
           ctest --test-dir out/build/ci-release
           --output-on-failure
 
-      - name: Build portable package
+      - name: Build and verify portable package
         shell: pwsh
         run: >-
           cmake --build out/build/ci-release
-          --target PortableRelease
+          --target VerifyPortableRelease
           --parallel
 
-      - name: Verify portable package and create checksum
+      - name: Locate verified portable artifacts
         shell: pwsh
         run: |
           $archives = @(
@@ -144,99 +132,16 @@ jobs:
           }
 
           $zip = $archives[0].FullName
-          $extract = Join-Path $env:RUNNER_TEMP "soundboard-portable-check"
-          Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
-          Expand-Archive -Path $zip -DestinationPath $extract
-
-          $root = Join-Path $extract "SoundBoardFasaFiso"
-          $required = @(
-            "SoundBoardFasaFiso.exe",
-            "portable.flag",
-            "config.txt",
-            "README.txt",
-            "LICENSE",
-            "THIRD_PARTY_NOTICES.txt",
-            "WEBRTC_THIRD_PARTY_NOTICES.txt",
-            "sounds",
-            "tools"
-          )
-
-          foreach ($item in $required) {
-            $path = Join-Path $root $item
-            if (-not (Test-Path $path)) {
-              throw "Portable package is missing: $item"
-            }
-          }
-
-          $portableMarker = Join-Path $root "portable.flag"
-          if ((Get-Item $portableMarker).Length -eq 0) {
-            throw "Portable marker is empty."
-          }
-
-          $mediaToolsReadme = Join-Path $root "tools\README.txt"
-          if (-not (Test-Path $mediaToolsReadme)) {
-            throw "Portable tools directory is missing its safety notice."
-          }
-
-          $unexpected = @(
-            Get-ChildItem $root |
-              Where-Object { $_.Name -notin $required }
-          )
-
-          if ($unexpected.Count -ne 0) {
-            $names = ($unexpected.Name -join ", ")
-            throw "Portable package contains unexpected top-level items: $names"
-          }
-
-          $config = Get-Content (Join-Path $root "config.txt") -Raw
-          $requiredDefaults = @(
-            '(?m)^output=default$',
-            '(?m)^monitor=none$',
-            '(?m)^microphone_processing_enabled=false$',
-            '(?m)^microphone_echo_cancellation_enabled=false$',
-            '(?m)^show_console_on_start=false$'
-          )
-
-          foreach ($pattern in $requiredDefaults) {
-            if ($config -notmatch $pattern) {
-              throw "Portable config is missing required safe default: $pattern"
-            }
-          }
-
-          $webrtcNotices = Join-Path $root "WEBRTC_THIRD_PARTY_NOTICES.txt"
-          if ((Get-Item $webrtcNotices).Length -lt 1024) {
-            throw "Generated WebRTC third-party notices are unexpectedly small."
-          }
-
-          $sounds = @(
-            Get-ChildItem (Join-Path $root "sounds") -File -Recurse
-          )
-
-          if ($sounds.Count -eq 0) {
-            throw "Portable package contains no example sounds."
-          }
-
-          $invalidSounds = @(
-            $sounds |
-              Where-Object { $_.Extension.ToLowerInvariant() -notin @(".wav", ".mp3", ".flac") }
-          )
-
-          if ($invalidSounds.Count -ne 0) {
-            $names = ($invalidSounds.FullName -join ", ")
-            throw "Portable package contains unsupported sound files: $names"
-          }
-
-          $hash = Get-FileHash $zip -Algorithm SHA256
           $checksum = "$zip.sha256"
-          "$($hash.Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($zip))" |
-            Set-Content $checksum -Encoding ascii
+          if (-not (Test-Path -LiteralPath $checksum -PathType Leaf)) {
+            throw "Verified portable checksum is missing: $checksum"
+          }
 
           "PORTABLE_ZIP=$zip" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           "PORTABLE_SHA256=$checksum" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
           Write-Host "Portable ZIP: $zip"
-          Write-Host "Size: $((Get-Item $zip).Length) bytes"
-          Write-Host "SHA-256: $($hash.Hash)"
+          Write-Host "Portable checksum: $checksum"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7

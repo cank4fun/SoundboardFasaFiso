@@ -8,6 +8,7 @@
 #include <commctrl.h>
 #include <commdlg.h>
 #include <dwmapi.h>
+#include <uxtheme.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -1349,28 +1350,130 @@ void AudioEditorWindow::LayoutControls(
         fileSectionTop_ = margin;
         int y = fileSectionTop_ + sectionHeight;
         int x = margin;
-        const auto placeButton = [&](const HWND control, const int width)
+
+        const int zoomButtonWidth = Scale(44);
+        const int zoomFitWidth = Scale(62);
+        const int zoomClusterWidth =
+            zoomButtonWidth * 2 + zoomFitWidth + gap * 2;
+        const int zoomLeft = clientWidth - margin - zoomClusterWidth;
+
+        int toolbarGap = gap;
+        int toolbarGroupGap = groupGap;
+        int openWidth = Scale(104);
+        int saveAsWidth = Scale(132);
+        int overwriteWidth = Scale(126);
+        int playWidth = Scale(92);
+        int stopWidth = Scale(84);
+        int undoWidth = Scale(84);
+        int redoWidth = Scale(84);
+
+        const auto toolbarWidth = [&]()
         {
-            MoveWindow(control, x, y, Scale(width), buttonHeight, TRUE);
-            x += Scale(width) + gap;
+            return openWidth + saveAsWidth + overwriteWidth + playWidth +
+                stopWidth + undoWidth + redoWidth + toolbarGap * 6 +
+                toolbarGroupGap * 2;
+        };
+        const int availableToolbarWidth = std::max(
+            1,
+            zoomLeft - gap - margin
+        );
+        int toolbarDeficit = std::max(
+            0,
+            toolbarWidth() - availableToolbarWidth
+        );
+
+        const auto compressRepeatedSpacing = [](
+            int& spacing,
+            const int minimumSpacing,
+            const int occurrenceCount,
+            int& remainingDeficit
+        )
+        {
+            if (remainingDeficit <= 0 || occurrenceCount <= 0)
+            {
+                return;
+            }
+
+            const int availableReduction = std::max(
+                0,
+                spacing - minimumSpacing
+            );
+            const int requestedReduction =
+                (remainingDeficit + occurrenceCount - 1) / occurrenceCount;
+            const int reduction = std::min(
+                availableReduction,
+                requestedReduction
+            );
+            spacing -= reduction;
+            remainingDeficit = std::max(
+                0,
+                remainingDeficit - reduction * occurrenceCount
+            );
         };
 
-        placeButton(openButton_, 104);
-        placeButton(saveAsButton_, 132);
-        placeButton(overwriteButton_, 126);
-        x += groupGap;
-        placeButton(playPauseButton_, 92);
-        placeButton(stopButton_, 84);
-        x += groupGap;
-        placeButton(undoButton_, 84);
-        placeButton(redoButton_, 84);
+        compressRepeatedSpacing(
+            toolbarGroupGap,
+            Scale(8),
+            2,
+            toolbarDeficit
+        );
+        compressRepeatedSpacing(
+            toolbarGap,
+            Scale(6),
+            6,
+            toolbarDeficit
+        );
 
-        int zoomX = clientWidth - margin - Scale(42);
-        MoveWindow(zoomInButton_, zoomX, y, Scale(44), buttonHeight, TRUE);
-        zoomX -= gap + Scale(62);
-        MoveWindow(zoomFitButton_, zoomX, y, Scale(62), buttonHeight, TRUE);
-        zoomX -= gap + Scale(44);
-        MoveWindow(zoomOutButton_, zoomX, y, Scale(44), buttonHeight, TRUE);
+        const auto shrinkToolbarButton = [this](
+            int& width,
+            const int minimumLogicalWidth,
+            int& remainingDeficit
+        )
+        {
+            if (remainingDeficit <= 0)
+            {
+                return;
+            }
+
+            const int minimumWidth = Scale(minimumLogicalWidth);
+            const int reduction = std::min(
+                remainingDeficit,
+                std::max(0, width - minimumWidth)
+            );
+            width -= reduction;
+            remainingDeficit -= reduction;
+        };
+
+        shrinkToolbarButton(saveAsWidth, 112, toolbarDeficit);
+        shrinkToolbarButton(overwriteWidth, 108, toolbarDeficit);
+        shrinkToolbarButton(openWidth, 92, toolbarDeficit);
+        shrinkToolbarButton(playWidth, 82, toolbarDeficit);
+        shrinkToolbarButton(undoWidth, 76, toolbarDeficit);
+        shrinkToolbarButton(redoWidth, 76, toolbarDeficit);
+        shrinkToolbarButton(stopWidth, 76, toolbarDeficit);
+
+        const auto placeToolbarButton = [&](const HWND control, const int width)
+        {
+            MoveWindow(control, x, y, width, buttonHeight, TRUE);
+            x += width + toolbarGap;
+        };
+
+        placeToolbarButton(openButton_, openWidth);
+        placeToolbarButton(saveAsButton_, saveAsWidth);
+        placeToolbarButton(overwriteButton_, overwriteWidth);
+        x += toolbarGroupGap;
+        placeToolbarButton(playPauseButton_, playWidth);
+        placeToolbarButton(stopButton_, stopWidth);
+        x += toolbarGroupGap;
+        placeToolbarButton(undoButton_, undoWidth);
+        placeToolbarButton(redoButton_, redoWidth);
+
+        int zoomX = zoomLeft;
+        MoveWindow(zoomOutButton_, zoomX, y, zoomButtonWidth, buttonHeight, TRUE);
+        zoomX += zoomButtonWidth + gap;
+        MoveWindow(zoomFitButton_, zoomX, y, zoomFitWidth, buttonHeight, TRUE);
+        zoomX += zoomFitWidth + gap;
+        MoveWindow(zoomInButton_, zoomX, y, zoomButtonWidth, buttonHeight, TRUE);
         const int informationTop = y + buttonHeight + Scale(8);
         const int hintWidth = std::min(
             Scale(360),
@@ -1427,14 +1530,19 @@ void AudioEditorWindow::LayoutControls(
         editSectionTop_ = informationTop + labelHeight * 2 + rowGap;
         y = editSectionTop_ + sectionHeight;
         x = margin;
-        placeButton(cutButton_, 76);
-        placeButton(copyButton_, 92);
-        placeButton(pasteButton_, 92);
+        const auto placeEditButton = [&](const HWND control, const int width)
+        {
+            MoveWindow(control, x, y, Scale(width), buttonHeight, TRUE);
+            x += Scale(width) + gap;
+        };
+        placeEditButton(cutButton_, 76);
+        placeEditButton(copyButton_, 92);
+        placeEditButton(pasteButton_, 92);
         x += groupGap;
-        placeButton(cropButton_, 112);
-        placeButton(deleteButton_, 112);
-        placeButton(silenceButton_, 104);
-        placeButton(trimSilenceButton_, 132);
+        placeEditButton(cropButton_, 112);
+        placeEditButton(deleteButton_, 112);
+        placeEditButton(silenceButton_, 104);
+        placeEditButton(trimSilenceButton_, 132);
 
         selectionSectionTop_ = y + buttonHeight + rowGap;
         y = selectionSectionTop_ + sectionHeight;
@@ -3179,22 +3287,24 @@ void AudioEditorWindow::DrawButton(
     const bool primaryButton = IsPrimaryButton(item.hwndItem);
     const bool dangerButton = IsDangerButton(item.hwndItem);
 
-    COLORREF fillColor = BlendColor(panelColor_, backgroundColor_, 12);
+    COLORREF fillColor = inputColor_;
     COLORREF buttonTextColor = textColor_;
 
-    if (primaryButton)
+    if (dangerButton)
     {
-        fillColor = hot ? BlendColor(accentColor_, RGB(255, 255, 255), 10) : accentColor_;
+        fillColor = hot
+            ? BlendColor(dangerColor_, RGB(255, 255, 255), 10)
+            : dangerColor_;
         buttonTextColor = RGB(255, 255, 255);
     }
-    else if (dangerButton)
+    else if (primaryButton)
     {
-        fillColor = hot ? BlendColor(playheadColor_, RGB(255, 255, 255), 10) : playheadColor_;
+        fillColor = hot ? accentHoverColor_ : accentColor_;
         buttonTextColor = RGB(255, 255, 255);
     }
     else if (hot)
     {
-        fillColor = BlendColor(fillColor, accentColor_, 10);
+        fillColor = BlendColor(inputColor_, accentColor_, 10);
     }
 
     if (pressed)
@@ -3222,65 +3332,108 @@ void AudioEditorWindow::DrawButton(
         focused ? 2 : 1
     );
 
-    RECT textRectangle = rectangle;
-    textRectangle.left += DrawButtonGlyph(
-        item.hDC,
-        item.hwndItem,
-        rectangle,
-        buttonTextColor
-    );
-    textRectangle.left += Scale(2);
-    textRectangle.right -= Scale(6);
-
     wchar_t textBuffer[128]{};
     GetWindowTextW(item.hwndItem, textBuffer, static_cast<int>(std::size(textBuffer)));
     SetBkMode(item.hDC, TRANSPARENT);
     SetTextColor(item.hDC, buttonTextColor);
     const HGDIOBJ oldFont = SelectObject(item.hDC, buttonFont_);
+
+    RECT textRectangle = rectangle;
+    textRectangle.left += Scale(10);
+    textRectangle.right -= Scale(10);
+    UINT textFlags = DT_CENTER | DT_VCENTER | DT_SINGLELINE |
+        DT_END_ELLIPSIS | DT_NOPREFIX;
+
+    if (HasButtonGlyph(item.hwndItem))
+    {
+        const int glyphSize = Scale(13);
+        const int glyphGap = Scale(6);
+        const int availableWidth = std::max(
+            0,
+            static_cast<int>(textRectangle.right - textRectangle.left)
+        );
+        SIZE textSize{};
+        const int textLength = static_cast<int>(wcslen(textBuffer));
+        GetTextExtentPoint32W(
+            item.hDC,
+            textBuffer,
+            textLength,
+            &textSize
+        );
+
+        const int requestedWidth = glyphSize + glyphGap + textSize.cx;
+        const bool contentFits = requestedWidth <= availableWidth;
+        const int contentLeft = textRectangle.left + (
+            contentFits
+                ? std::max(0, (availableWidth - requestedWidth) / 2)
+                : 0
+        );
+        const int glyphTop = rectangle.top + std::max(
+            0,
+            (static_cast<int>(rectangle.bottom - rectangle.top) - glyphSize) /
+                2
+        );
+        const RECT glyphRectangle{
+            contentLeft,
+            glyphTop,
+            contentLeft + glyphSize,
+            glyphTop + glyphSize
+        };
+        DrawButtonGlyph(
+            item.hDC,
+            item.hwndItem,
+            glyphRectangle,
+            buttonTextColor,
+            fillColor
+        );
+
+        textRectangle.left = glyphRectangle.right + glyphGap;
+        textFlags = DT_LEFT | DT_VCENTER | DT_SINGLELINE |
+            DT_END_ELLIPSIS | DT_NOPREFIX;
+    }
+
     DrawTextW(
         item.hDC,
         textBuffer,
         -1,
         &textRectangle,
-        DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS
+        textFlags
     );
     SelectObject(item.hDC, oldFont);
 }
 
-int AudioEditorWindow::DrawButtonGlyph(
+void AudioEditorWindow::DrawButtonGlyph(
     const HDC deviceContext,
     const HWND button,
     const RECT& rectangle,
-    const COLORREF color
+    const COLORREF color,
+    const COLORREF backgroundColor
 ) const
 {
-    const bool hasGlyph =
-        button == openButton_ || button == saveAsButton_ ||
-        button == overwriteButton_ || button == playPauseButton_ ||
-        button == stopButton_ || button == undoButton_ ||
-        button == redoButton_ || button == cutButton_ ||
-        button == copyButton_ || button == pasteButton_ ||
-        button == cropButton_ || button == deleteButton_ ||
-        button == silenceButton_ || button == trimSilenceButton_;
-    if (!hasGlyph)
-    {
-        return 0;
-    }
-
-    const int size = Scale(13);
-    const int left = static_cast<int>(rectangle.left) + Scale(9);
-    const int rectangleHeight = static_cast<int>(rectangle.bottom - rectangle.top);
-    const int top = static_cast<int>(rectangle.top) +
-        std::max(0, (rectangleHeight - size) / 2);
-    const int right = left + size;
-    const int bottom = top + size;
+    const int size = static_cast<int>(rectangle.right - rectangle.left);
+    const int left = rectangle.left;
+    const int top = rectangle.top;
+    const int right = rectangle.right;
+    const int bottom = rectangle.bottom;
     const int strokeWidth = std::max(1, Scale(2));
     HPEN pen = CreatePen(PS_SOLID, strokeWidth, color);
     HBRUSH brush = CreateSolidBrush(color);
+    HBRUSH backgroundBrush = CreateSolidBrush(backgroundColor);
     const HGDIOBJ oldPen = SelectObject(deviceContext, pen);
     const HGDIOBJ oldBrush = SelectObject(deviceContext, brush);
 
-    if (button == openButton_)
+    const bool cancelButton =
+        (button == openButton_ && IsLoadRunning()) ||
+        (button == overwriteButton_ && IsSaveRunning());
+
+    if (cancelButton)
+    {
+        MoveToEx(deviceContext, left + Scale(2), top + Scale(2), nullptr);
+        LineTo(deviceContext, right - Scale(2), bottom - Scale(2));
+        MoveToEx(deviceContext, right - Scale(2), top + Scale(2), nullptr);
+        LineTo(deviceContext, left + Scale(2), bottom - Scale(2));
+    }
+    else if (button == openButton_)
     {
         POINT points[]{
             {left, top + Scale(4)},
@@ -3296,9 +3449,9 @@ int AudioEditorWindow::DrawButtonGlyph(
     {
         Rectangle(deviceContext, left, top, right, bottom);
         RECT slot{left + Scale(3), top, right - Scale(3), top + Scale(5)};
-        FillRect(deviceContext, &slot, backgroundBrush_);
+        FillRect(deviceContext, &slot, backgroundBrush);
         RECT label{left + Scale(3), bottom - Scale(5), right - Scale(3), bottom - Scale(2)};
-        FillRect(deviceContext, &label, backgroundBrush_);
+        FillRect(deviceContext, &label, backgroundBrush);
     }
     else if (button == playPauseButton_)
     {
@@ -3462,9 +3615,20 @@ int AudioEditorWindow::DrawButtonGlyph(
 
     SelectObject(deviceContext, oldBrush);
     SelectObject(deviceContext, oldPen);
+    DeleteObject(backgroundBrush);
     DeleteObject(brush);
     DeleteObject(pen);
-    return Scale(26);
+}
+
+bool AudioEditorWindow::HasButtonGlyph(const HWND button) const
+{
+    return button == openButton_ || button == saveAsButton_ ||
+        button == overwriteButton_ || button == playPauseButton_ ||
+        button == stopButton_ || button == undoButton_ ||
+        button == redoButton_ || button == cutButton_ ||
+        button == copyButton_ || button == pasteButton_ ||
+        button == cropButton_ || button == deleteButton_ ||
+        button == silenceButton_ || button == trimSilenceButton_;
 }
 
 bool AudioEditorWindow::IsPrimaryButton(const HWND control) const
@@ -3542,10 +3706,13 @@ void AudioEditorWindow::ApplyTheme()
     {
         backgroundColor_ = RGB(15, 17, 23);
         panelColor_ = RGB(24, 28, 36);
+        inputColor_ = RGB(17, 21, 29);
         textColor_ = RGB(244, 246, 250);
         mutedTextColor_ = RGB(154, 164, 178);
         borderColor_ = RGB(42, 49, 64);
         accentColor_ = RGB(124, 92, 255);
+        accentHoverColor_ = RGB(139, 108, 255);
+        dangerColor_ = RGB(224, 82, 82);
         waveformColor_ = RGB(139, 108, 255);
         centerLineColor_ = RGB(70, 78, 96);
         playheadColor_ = RGB(255, 93, 115);
@@ -3554,12 +3721,15 @@ void AudioEditorWindow::ApplyTheme()
     }
     else
     {
-        backgroundColor_ = RGB(242, 245, 250);
+        backgroundColor_ = RGB(244, 246, 250);
         panelColor_ = RGB(255, 255, 255);
+        inputColor_ = RGB(249, 250, 252);
         textColor_ = RGB(27, 31, 40);
-        mutedTextColor_ = RGB(91, 101, 117);
-        borderColor_ = RGB(207, 214, 225);
-        accentColor_ = RGB(98, 70, 230);
+        mutedTextColor_ = RGB(104, 115, 134);
+        borderColor_ = RGB(221, 226, 234);
+        accentColor_ = RGB(93, 70, 215);
+        accentHoverColor_ = RGB(108, 85, 229);
+        dangerColor_ = RGB(201, 64, 64);
         waveformColor_ = RGB(98, 70, 230);
         centerLineColor_ = RGB(207, 214, 225);
         playheadColor_ = RGB(220, 55, 82);
@@ -3578,6 +3748,29 @@ void AudioEditorWindow::ApplyTheme()
 
     backgroundBrush_ = CreateSolidBrush(backgroundColor_);
     panelBrush_ = CreateSolidBrush(panelColor_);
+
+    const wchar_t* explorerTheme = theme_ == AppTheme::Dark
+        ? L"DarkMode_Explorer"
+        : L"Explorer";
+    const HWND nativeControls[]{
+        selectionStartEdit_,
+        selectionEndEdit_,
+        gainEdit_,
+        waveformScrollBar_
+    };
+    for (const HWND control : nativeControls)
+    {
+        if (control != nullptr)
+        {
+            SetWindowTheme(control, explorerTheme, nullptr);
+            RedrawWindow(
+                control,
+                nullptr,
+                nullptr,
+                RDW_INVALIDATE | RDW_ERASE | RDW_FRAME
+            );
+        }
+    }
 
     if (window_ != nullptr)
     {
@@ -4731,31 +4924,26 @@ void AudioEditorWindow::ApplySelectionTimes()
 
     if (!start.has_value() || !end.has_value())
     {
-        MessageBoxW(
-            window_,
-            Localization::Text(
-                L"Zamanı saniye, dk:sn.msn veya sa:dk:sn.msn biçiminde gir.",
-                L"Enter time as seconds, mm:ss.mmm, or hh:mm:ss.mmm."
-            ),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONINFORMATION
-        );
-        UpdateSelectionControls();
+        SetStatusText(Localization::Text(
+            L"Zamanı saniye, dk:sn.msn veya sa:dk:sn.msn biçiminde gir.",
+            L"Enter time as seconds, mm:ss.mmm, or hh:mm:ss.mmm."
+        ));
+        const HWND invalidEdit = !start.has_value()
+            ? selectionStartEdit_
+            : selectionEndEdit_;
+        SetFocus(invalidEdit);
+        SendMessageW(invalidEdit, EM_SETSEL, 0, -1);
         return;
     }
 
     if (end->frame < start->frame)
     {
-        MessageBoxW(
-            window_,
-            Localization::Text(
-                L"Bitiş zamanı başlangıçtan önce olamaz.",
-                L"The end time cannot be before the start time."
-            ),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONINFORMATION
-        );
-        UpdateSelectionControls();
+        SetStatusText(Localization::Text(
+            L"Bitiş zamanı başlangıçtan önce olamaz.",
+            L"The end time cannot be before the start time."
+        ));
+        SetFocus(selectionEndEdit_);
+        SendMessageW(selectionEndEdit_, EM_SETSEL, 0, -1);
         return;
     }
 
@@ -4853,8 +5041,10 @@ void AudioEditorWindow::ApplySelectionEdit(const SelectionEdit edit)
     if (!document_.has_value() || !HasSelection()) return;
     if (edit == SelectionEdit::Delete && selection_->FrameCount() >= document_->FrameCount())
     {
-        MessageBoxW(window_, Localization::Text(L"Tüm ses silinemez. Bunun yerine başka bir bölüm seç.", L"The entire audio cannot be deleted. Select a smaller range."),
-            L"SoundBoardFasaFiso", MB_OK | MB_ICONINFORMATION);
+        SetStatusText(Localization::Text(
+            L"Tüm ses silinemez. Bunun yerine başka bir bölüm seç.",
+            L"The entire audio cannot be deleted. Select a smaller range."
+        ));
         return;
     }
     if (!editHistory_.CanStore(*document_))
@@ -5003,15 +5193,10 @@ void AudioEditorWindow::PasteClipboard()
     if (clipboard_->SampleRate() != document_->SampleRate() ||
         clipboard_->ChannelCount() != document_->ChannelCount())
     {
-        MessageBoxW(
-            window_,
-            Localization::Text(
-                L"Panodaki sesin örnekleme hızı veya kanal sayısı açık dosyayla uyuşmuyor.",
-                L"The clipboard sample rate or channel count does not match the open file."
-            ),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONINFORMATION
-        );
+        SetStatusText(Localization::Text(
+            L"Panodaki sesin örnekleme hızı veya kanal sayısı açık dosyayla uyuşmuyor.",
+            L"The clipboard sample rate or channel count does not match the open file."
+        ));
         return;
     }
 
@@ -5183,15 +5368,10 @@ void AudioEditorWindow::TrimBoundarySilence()
     );
     if (!audibleRange.has_value())
     {
-        MessageBoxW(
-            window_,
-            Localization::Text(
-                L"Dosyada -50 dBFS eşiğinin üzerinde ses bulunamadı.",
-                L"No audio above the -50 dBFS threshold was found."
-            ),
-            L"SoundBoardFasaFiso",
-            MB_OK | MB_ICONINFORMATION
-        );
+        SetStatusText(Localization::Text(
+            L"Dosyada -50 dBFS eşiğinin üzerinde ses bulunamadı.",
+            L"No audio above the -50 dBFS threshold was found."
+        ));
         return;
     }
 
@@ -5378,15 +5558,12 @@ void AudioEditorWindow::ApplyAudioEffect(const AudioEffect effect)
         );
         if (!parsed.has_value())
         {
-            MessageBoxW(
-                window_,
-                Localization::Text(
-                    L"Kazancı -60 ile +24 dB arasında gir. Nokta veya virgül kullanabilirsin.",
-                    L"Enter gain between -60 and +24 dB. You can use a dot or comma."
-                ),
-                L"SoundBoardFasaFiso",
-                MB_OK | MB_ICONINFORMATION
-            );
+            SetStatusText(Localization::Text(
+                L"Kazancı -60 ile +24 dB arasında gir. Nokta veya virgül kullanabilirsin.",
+                L"Enter gain between -60 and +24 dB. You can use a dot or comma."
+            ));
+            SetFocus(gainEdit_);
+            SendMessageW(gainEdit_, EM_SETSEL, 0, -1);
             return;
         }
         gainDecibels = *parsed;

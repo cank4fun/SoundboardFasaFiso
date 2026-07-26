@@ -16,11 +16,6 @@ bool AudioEditorViewport::Empty() const noexcept
     return totalFrames_ == 0U;
 }
 
-std::size_t AudioEditorViewport::TotalFrames() const noexcept
-{
-    return totalFrames_;
-}
-
 AudioFrameRange AudioEditorViewport::VisibleRange() const noexcept
 {
     return AudioFrameRange{beginFrame_, endFrame_};

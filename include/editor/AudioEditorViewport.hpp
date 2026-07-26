@@ -13,7 +13,6 @@ public:
     void Reset(std::size_t totalFrames) noexcept;
 
     [[nodiscard]] bool Empty() const noexcept;
-    [[nodiscard]] std::size_t TotalFrames() const noexcept;
     [[nodiscard]] AudioFrameRange VisibleRange() const noexcept;
     [[nodiscard]] double VisibleRatio() const noexcept;
     [[nodiscard]] double ScrollRatio() const noexcept;

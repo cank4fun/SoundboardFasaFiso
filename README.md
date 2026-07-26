@@ -15,9 +15,7 @@
   <img alt="License" src="https://img.shields.io/badge/license-MIT-green">
 </p>
 
-**Development version:** `2.1.0-alpha.1` adds the opt-in microphone-processing pipeline, RNNoise, AGC and optional WebRTC AEC3 integration while the user-mode playback engine is expanded.
-
-**Latest stable release:** `2.0.0` is the first stable v2 release. It includes the native control panel, independent main and monitor routing, microphone mixing, resilient live configuration, device recovery and portable Windows packaging.
+**Latest stable release:** `2.1.0` adds verified background media import, an embedded WAV editor, expanded playback controls, and the opt-in microphone-processing pipeline with RNNoise, AGC and WebRTC AEC3.
 
 SoundBoardFasaFiso sends each sound to two independent Windows playback devices. A common setup routes the main output to **VB-CABLE** for voice chat or streaming and sends the monitor output to headphones.
 
@@ -34,6 +32,8 @@ There is no installer, database or GUI framework. The official ZIP is a self-con
 - Optional Windows startup registration and console-free launch
 - WAV, MP3 and FLAC playback
 - Multi-file and recursive folder import by dropping items onto the control panel
+- Background URL import and local-media conversion to WAV through bundled, SHA-256-verified media tools kept inside the portable package
+- Embedded WAV editor with asynchronous load/save, waveform navigation, selection, precision trim, clipboard editing, undo/redo, effects and monitor-output preview
 - Audio preloaded into RAM
 - Per-sound volume and playback mode
 - Active Playbacks tab with live progress, pause/resume, seek, per-session stop and temporary session volume
@@ -54,8 +54,10 @@ There is no installer, database or GUI framework. The official ZIP is a self-con
 1. Download and extract the latest portable ZIP.
 2. Run `SoundBoardFasaFiso.exe`; the control panel opens automatically.
 3. Drop WAV, MP3 or FLAC files, or a folder containing them, anywhere on the control panel. External files are copied into `sounds/Imported`; the **Browse** button also supports multi-select.
-4. Open the **Hotkeys** tab and create a binding for each sound. Importing a file fills the editor but does not assign a global hotkey automatically.
-5. Configure devices and control hotkeys, then click **Save and apply**. Invalid changes are rejected and the previous runtime is restored.
+4. To import online media, paste an `http://` or `https://` address into the sound field and choose **URL**. The bundled verified tools download and convert it to WAV in the background.
+5. Use the embedded audio editor to preview through the monitor output, select and trim audio, apply edits, and save the resulting WAV. `I` and `O` set the trim start and end at the playhead.
+6. Open the **Hotkeys** tab and create a binding for each sound. Importing media fills the editor but does not assign a global hotkey automatically.
+7. Configure devices and control hotkeys, then click **Save and apply**. Invalid changes are rejected and the previous runtime is restored.
 
 The control panel remains available even when no sound binding is active or previously configured files are missing, so a fresh portable folder can be repaired without editing `config.txt` manually.
 
@@ -82,7 +84,7 @@ SoundBoardFasaFiso/
 ├── LICENSE
 ├── THIRD_PARTY_NOTICES.txt
 ├── WEBRTC_THIRD_PARTY_NOTICES.txt  # AEC-enabled official builds
-├── tools/         # private verified media tools; never installed into PATH
+├── tools/         # verified media tools; never installed into PATH
 ├── logs/          # created automatically
 └── sounds/
 ```
@@ -268,7 +270,7 @@ cmake --build out/build/x64-Release --target PortableRelease
 The distributable archive is created at:
 
 ```text
-out/build/x64-Release/SoundBoardFasaFiso-v2.1.0-alpha.1-windows-x64-portable.zip
+out/build/x64-Release/SoundBoardFasaFiso-v2.1.0-windows-x64-portable.zip
 ```
 
 ## Repository layout

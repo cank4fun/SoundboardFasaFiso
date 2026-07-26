@@ -177,11 +177,6 @@ std::size_t AudioEditHistory::UndoCount() const noexcept
     return undoEntries_.size();
 }
 
-std::size_t AudioEditHistory::RedoCount() const noexcept
-{
-    return redoEntries_.size();
-}
-
 std::size_t AudioEditHistory::MemoryBytes() const noexcept
 {
     return memoryBytes_;

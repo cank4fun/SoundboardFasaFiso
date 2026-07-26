@@ -42,7 +42,6 @@ public:
     [[nodiscard]] bool CanUndo() const noexcept;
     [[nodiscard]] bool CanRedo() const noexcept;
     [[nodiscard]] std::size_t UndoCount() const noexcept;
-    [[nodiscard]] std::size_t RedoCount() const noexcept;
     [[nodiscard]] std::size_t MemoryBytes() const noexcept;
 
 private:

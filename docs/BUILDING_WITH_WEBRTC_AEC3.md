@@ -22,9 +22,9 @@ the manifest baseline.
 From **x64 Native Tools Command Prompt for VS 2022**:
 
 ```bat
-cd /d C:\Dev
-git clone https://github.com/microsoft/vcpkg.git
-cd /d C:\Dev\vcpkg
+set "VCPKG_ROOT=C:\path\to\vcpkg"
+git clone https://github.com/microsoft/vcpkg.git "%VCPKG_ROOT%"
+cd /d "%VCPKG_ROOT%"
 git checkout cd61e1e26a038e82d6550a3ebbe0fbbfe7da78e3
 bootstrap-vcpkg.bat -disableMetrics
 ```
@@ -35,21 +35,27 @@ commit and bootstrapping it again.
 ## Configure and build
 
 ```bat
-cd /d C:\Dev\SoundBoardFasaFiso-GitHub
+set "SOUNDBOARD_ROOT=C:\path\to\SoundBoardFasaFiso"
+set "VCPKG_ROOT=C:\path\to\vcpkg"
+cd /d "%SOUNDBOARD_ROOT%"
 
 cmake -S . -B out\build\x64-AEC3-Release -G Ninja ^
   -DCMAKE_BUILD_TYPE=Release ^
-  -DCMAKE_TOOLCHAIN_FILE=C:\Dev\vcpkg\scripts\buildsystems\vcpkg.cmake ^
+  "-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
   -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
   -DVCPKG_MANIFEST_FEATURES=webrtc-aec3 ^
   -DSOUNDBOARD_ENABLE_WEBRTC_AEC3=ON ^
   -DSOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS=ON ^
   -DSOUNDBOARD_WARNINGS_AS_ERRORS=ON
 
-cmake --build out\build\x64-AEC3-Release --parallel
+cmake --build out\build\x64-AEC3-Release ^
+  --target SoundBoardFasaFiso SoundBoardFasaFisoTests --parallel
 ctest --test-dir out\build\x64-AEC3-Release --output-on-failure
 cmake --build out\build\x64-AEC3-Release --target PortableRelease --parallel
 ```
+
+`ctest` does not compile test executables. Build `SoundBoardFasaFisoTests` first
+so the suite cannot run stale binaries from an earlier source revision.
 
 The first manifest install is large and can take a while. Later builds can reuse
 the vcpkg binary cache.

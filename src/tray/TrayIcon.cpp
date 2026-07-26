@@ -257,11 +257,6 @@ void TrayIcon::Shutdown()
     commandIds_ = {};
 }
 
-bool TrayIcon::ToggleConsoleVisibility()
-{
-    return DebugConsole::ToggleVisibility();
-}
-
 bool TrayIcon::IsConsoleVisible() const
 {
     return DebugConsole::IsVisible();

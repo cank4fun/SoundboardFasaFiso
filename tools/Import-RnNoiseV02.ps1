@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $false)]
-    [string]$SourceRoot = "C:\Dev\rnnoise-v0.2-spike",
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$SourceRoot,
 
     [Parameter(Mandatory = $false)]
     [string]$DestinationRoot = ""
@@ -9,6 +10,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+
+$SourceRoot = [System.IO.Path]::GetFullPath($SourceRoot)
 
 if ([string]::IsNullOrWhiteSpace($DestinationRoot)) {
     $DestinationRoot = Join-Path $PSScriptRoot "..\third_party\rnnoise"

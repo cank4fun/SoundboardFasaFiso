@@ -34,21 +34,27 @@ Prepare the standalone vcpkg checkout exactly as documented in
 Prompt for VS 2022**:
 
 ```cmd
-rmdir /S /Q outuildd-Release 2>nul
+set "VCPKG_ROOT=C:\path\to\vcpkg"
+rmdir /S /Q out\build\x64-Release 2>nul
 
 cmake -S . -B out/build/x64-Release -G Ninja ^
   -DCMAKE_BUILD_TYPE=Release ^
-  -DCMAKE_TOOLCHAIN_FILE=C:\Devcpkg\scriptsuildsystemscpkg.cmake ^
+  "-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
   -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
   -DVCPKG_MANIFEST_FEATURES=webrtc-aec3 ^
   -DSOUNDBOARD_ENABLE_WEBRTC_AEC3=ON ^
   -DSOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS=ON ^
   -DSOUNDBOARD_WARNINGS_AS_ERRORS=ON
 
-cmake --build out/build/x64-Release --parallel
+cmake --build out/build/x64-Release ^
+  --target SoundBoardFasaFiso SoundBoardFasaFisoTests --parallel
 ctest --test-dir out/build/x64-Release --output-on-failure
-cmake --build out/build/x64-Release --target PortableRelease --parallel
+cmake --build out/build/x64-Release --target VerifyPortableRelease --parallel
 ```
+
+`ctest` runs existing test executables but does not build them. Always build the
+`SoundBoardFasaFisoTests` aggregate target before running the suite so no stale
+test binary can pass accidentally.
 
 Confirm that:
 
@@ -67,6 +73,11 @@ Confirm that:
   `WEBRTC_THIRD_PARTY_NOTICES.txt`; and
 - the generated checksum matches the exact portable ZIP attached to the
   release.
+
+`VerifyPortableRelease` creates a fresh extraction under the build directory,
+checks the package allowlist, safe config defaults, example sounds, bundled
+media-tool hashes/licenses and build/runtime residue, then writes the matching
+`.zip.sha256` file. Do not publish a package if this target fails.
 
 The package name is versioned:
 

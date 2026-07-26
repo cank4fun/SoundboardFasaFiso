@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(SOUNDBOARD_VERSION "2.1.0-alpha.1")
+set(SOUNDBOARD_VERSION "2.1.0")
 
 project(SoundBoardFasaFiso VERSION 2.1.0 LANGUAGES C CXX)
 
@@ -1844,6 +1844,47 @@ if(BUILD_TESTING)
         NAME RnNoiseSuppressor
         COMMAND SoundBoardFasaFisoRnNoiseSuppressorTests
     )
+
+    set(
+        SOUNDBOARD_TEST_TARGETS
+        SoundBoardFasaFisoMicrophoneProcessingSettingsTests
+        SoundBoardFasaFisoAudioDocumentTests
+        SoundBoardFasaFisoAudioEditHistoryTests
+        SoundBoardFasaFisoAudioSelectionToolsTests
+        SoundBoardFasaFisoAudioEditorEffectsTests
+        SoundBoardFasaFisoAudioPreviewDeviceSelectionTests
+        SoundBoardFasaFisoAudioDocumentWavTests
+        SoundBoardFasaFisoAudioWaveformCacheTests
+        SoundBoardFasaFisoAudioEditorViewportTests
+        SoundBoardFasaFisoPlaybackModeTests
+        SoundBoardFasaFisoApplicationPathsTests
+        SoundBoardFasaFisoMediaToolManagerTests
+        SoundBoardFasaFisoProcessRunnerTests
+        SoundBoardFasaFisoMediaToolExecutorTests
+        SoundBoardFasaFisoMediaToolCommandBuilderTests
+        SoundBoardFasaFisoMediaImportWorkspaceTests
+        SoundBoardFasaFisoUrlImportServiceTests
+        SoundBoardFasaFisoLocalMediaImportServiceTests
+        SoundBoardFasaFisoSoundImporterTests
+        SoundBoardFasaFisoConfigMicrophoneProcessingTests
+        SoundBoardFasaFisoMicrophoneProcessorTests
+        SoundBoardFasaFisoMicrophoneProcessingRuntimeTests
+        SoundBoardFasaFisoRnNoiseSuppressorTests
+    )
+
+    if(SOUNDBOARD_ENABLE_WEBRTC_AEC3 AND SOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS)
+        list(APPEND SOUNDBOARD_TEST_TARGETS
+            SoundBoardFasaFisoWebRtcAec3Smoke
+            SoundBoardFasaFisoWebRtcAec3ProcessorTests
+            SoundBoardFasaFisoAecRenderReferenceMixerTests
+            SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests
+        )
+    endif()
+
+    add_custom_target(
+        SoundBoardFasaFisoTests
+        DEPENDS ${SOUNDBOARD_TEST_TARGETS}
+    )
 endif()
 
 if(SOUNDBOARD_BUNDLE_MEDIA_TOOLS)
@@ -1962,6 +2003,26 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 
         DEPENDS ${SOUNDBOARD_PORTABLE_DEPENDENCIES}
         COMMENT "Creating portable release folder and ZIP archive..."
+        VERBATIM
+    )
+
+    set(PORTABLE_RELEASE_VERIFY_DIR "${CMAKE_CURRENT_BINARY_DIR}/portable-verify")
+    set(PORTABLE_RELEASE_SHA256 "${PORTABLE_RELEASE_ZIP}.sha256")
+
+    add_custom_target(
+        VerifyPortableRelease
+
+        COMMAND ${CMAKE_COMMAND}
+            "-DARCHIVE_PATH=${PORTABLE_RELEASE_ZIP}"
+            "-DVERIFY_ROOT=${PORTABLE_RELEASE_VERIFY_DIR}"
+            "-DCHECKSUM_PATH=${PORTABLE_RELEASE_SHA256}"
+            "-DEXPECTED_VERSION=${SOUNDBOARD_VERSION}"
+            "-DEXPECT_WEBRTC_NOTICES=${SOUNDBOARD_ENABLE_WEBRTC_AEC3}"
+            "-DEXPECT_MEDIA_TOOLS=${SOUNDBOARD_BUNDLE_MEDIA_TOOLS}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/VerifyPortableRelease.cmake"
+
+        DEPENDS PortableRelease
+        COMMENT "Verifying portable release contents and SHA-256 checksum..."
         VERBATIM
     )
 endif()
