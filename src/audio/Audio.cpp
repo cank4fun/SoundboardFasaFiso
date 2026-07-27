@@ -10,6 +10,9 @@
 #include <iomanip>
 #include <iostream>
 #include <optional>
+#if defined(_WIN32)
+#include <process.h>
+#endif
 #include <sstream>
 #include <string>
 #include <utility>
@@ -20,6 +23,15 @@ std::atomic<Audio*> Audio::activeInstance_{nullptr};
 namespace
 {
     constexpr std::size_t OverlapVoiceCount = 8;
+
+    ma_uint32 CurrentProcessId() noexcept
+    {
+#if defined(_WIN32)
+        return static_cast<ma_uint32>(_getpid());
+#else
+        return 0;
+#endif
+    }
 
     std::string ToLower(std::string text)
     {
@@ -714,13 +726,29 @@ bool Audio::ReadAecRenderReferenceCallback(
         return false;
     }
 
+    const bool temporaryMonitorEnabled =
+        instance->microphoneTestMonitorEnabled_.load(
+            std::memory_order_acquire
+        );
+    const bool allowEndpointLoopback =
+        !instance->aecRenderReferenceMixer_
+            .LoopbackIncludesCurrentProcess() ||
+        (!instance->microphoneToMonitor_ &&
+            !temporaryMonitorEnabled);
+
     return instance->aecRenderReferenceMixer_.ReadMonoBlock(
-        std::span<float>(monoFrames, frameCount)
+        std::span<float>(monoFrames, frameCount),
+        allowEndpointLoopback
     );
 }
 
 int Audio::EstimateAecStreamDelayMilliseconds() const noexcept
 {
+    if (aecRenderReferenceMixer_.IsLoopbackInitialized())
+    {
+        return 10;
+    }
+
     const ma_uint32 periodMilliseconds =
         bufferMilliseconds_ == 0 ? 10U : bufferMilliseconds_;
     const ma_uint32 estimatedDelay = 10U + periodMilliseconds * 2U;
@@ -1475,10 +1503,45 @@ bool Audio::InitializeRuntime()
             }
             else
             {
-                std::cout << Localization::Text(
-                    "AEC render referansı: Hazır\n",
-                    "AEC render reference: Ready\n"
-                );
+                const ma_device_id* const monitorDeviceId =
+                    IsDefaultDeviceRequest(requestedMonitorDevice_)
+                        ? nullptr
+                        : &monitorEngine_.deviceId;
+                const bool excludeCurrentProcess =
+                    microphoneToMonitor_;
+                const ma_uint32 currentProcessId =
+                    CurrentProcessId();
+
+                if (!aecRenderReferenceMixer_.InitializeLoopback(
+                        context_,
+                        monitorDeviceId,
+                        excludeCurrentProcess,
+                        currentProcessId
+                    ))
+                {
+                    std::cerr
+                        << Localization::Text(
+                            "Uyarı: WASAPI sistem ses referansı başlatılamadı. AEC yalnızca soundboard monitör sesini kullanacak. Hata: ",
+                            "Warning: The WASAPI system-audio reference could not be started. AEC will use only soundboard audio sent to the monitor. Error: "
+                        )
+                        << aecRenderReferenceMixer_.LastError()
+                        << '\n';
+                }
+                else if (aecRenderReferenceMixer_
+                    .LoopbackIncludesCurrentProcess())
+                {
+                    std::cout << Localization::Text(
+                        "AEC render referansı: Monitör çıkışının tamamı (WASAPI loopback)\n",
+                        "AEC render reference: Complete monitor output (WASAPI loopback)\n"
+                    );
+                }
+                else
+                {
+                    std::cout << Localization::Text(
+                        "AEC render referansı: Harici sistem sesi + soundboard monitör sesi\n",
+                        "AEC render reference: External system audio + soundboard monitor audio\n"
+                    );
+                }
             }
         }
 #endif

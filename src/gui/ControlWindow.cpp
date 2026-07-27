@@ -5007,8 +5007,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         microphoneUnavailableFeaturesCaption_,
         Localization::Text(
-            L"Yankı engelleme monitör çıkışındaki soundboard sesini referans alır. Referans yoksa mikrofon güvenli biçimde bypass edilir. RNNoise, AGC ve test monitörü bağımsız çalışır.",
-            L"Echo cancellation uses soundboard audio sent to the monitor as its reference. Without a reference, the microphone safely bypasses AEC. RNNoise, AGC, and test monitoring remain independent."
+            L"AEC monitör çıkışını WASAPI ile referans alır. Mikrofon monitörü hariç tutulur; loopback açılamazsa soundboard referansı kullanılır.",
+            L"AEC uses the monitor output through WASAPI. Microphone monitoring is excluded; if loopback fails, the soundboard reference is used."
         )
     );
 
