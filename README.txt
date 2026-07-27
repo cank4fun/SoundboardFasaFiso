@@ -6,7 +6,7 @@ medya aktarıcısı ve WAV editörü.
 
 SÜRÜM / VERSION
 ---------------
-2.1.0
+2.1.1
 
 GENEL BAKIŞ
 -----------
@@ -266,7 +266,7 @@ Control yeni ve imzasız EXE'yi engelleyebilir.
 ZIP'i yalnızca resmi GitHub Release sayfasından indir ve yanında yayınlanan
 .sha256 dosyasıyla karşılaştır:
 
-Get-FileHash .\SoundBoardFasaFiso-v2.1.0-windows-x64-portable.zip -Algorithm SHA256
+Get-FileHash .\SoundBoardFasaFiso-v2.1.1-windows-x64-portable.zip -Algorithm SHA256
 
 Eşleşen SHA-256, arşivin yayınlanan Release dosyasıyla aynı olduğunu
 doğrular; kod imzasının yerini tutmaz. Programı çalıştırmak için Windows

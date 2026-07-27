@@ -27,10 +27,18 @@ int main()
     AecRenderReferenceMixer mixer;
     std::array<float, AecRenderReferenceMixer::FramesPerBlock> mono{};
 
+    if (mixer.IsLoopbackInitialized() ||
+        mixer.LoopbackIncludesCurrentProcess() ||
+        mixer.GetLoopbackMode() !=
+            AecRenderReferenceMixer::LoopbackMode::None)
+    {
+        return Fail(1, "New mixer reported an active loopback reference.");
+    }
+
     mono.fill(1.0f);
     if (mixer.ReadMonoBlock(mono))
     {
-        return Fail(1, "Uninitialized mixer unexpectedly produced audio.");
+        return Fail(2, "Uninitialized mixer unexpectedly produced audio.");
     }
 
     if (!std::ranges::all_of(mono, [](const float sample)
@@ -38,32 +46,39 @@ int main()
             return sample == 0.0f;
         }))
     {
-        return Fail(2, "Uninitialized mixer did not return a silent block.");
+        return Fail(3, "Uninitialized mixer did not return a silent block.");
     }
 
     if (mixer.Initialize(-0.1f))
     {
-        return Fail(3, "Mixer accepted a negative volume.");
+        return Fail(4, "Mixer accepted a negative volume.");
     }
 
     if (mixer.Initialize(std::numeric_limits<float>::quiet_NaN()))
     {
-        return Fail(4, "Mixer accepted a non-finite volume.");
+        return Fail(5, "Mixer accepted a non-finite volume.");
     }
 
     if (!mixer.Initialize(1.0f))
     {
-        return Fail(5, "Mixer initialization failed.");
+        return Fail(6, "Mixer initialization failed.");
     }
 
     if (!mixer.IsInitialized() || mixer.GetEngine() == nullptr)
     {
-        return Fail(6, "Mixer initialization state is inconsistent.");
+        return Fail(7, "Mixer initialization state is inconsistent.");
+    }
+
+    if (mixer.IsLoopbackInitialized() ||
+        mixer.GetLoopbackMode() !=
+            AecRenderReferenceMixer::LoopbackMode::None)
+    {
+        return Fail(8, "Internal mixer initialization enabled loopback unexpectedly.");
     }
 
     if (!mixer.ReadMonoBlock(mono))
     {
-        return Fail(7, "Initialized mixer failed to produce a block.");
+        return Fail(9, "Initialized mixer failed to produce a block.");
     }
 
     if (!std::ranges::all_of(mono, [](const float sample)
@@ -71,7 +86,7 @@ int main()
             return sample == 0.0f;
         }))
     {
-        return Fail(8, "Idle mixer did not produce silence.");
+        return Fail(10, "Idle mixer did not produce silence.");
     }
 
     std::array<float,
@@ -100,7 +115,7 @@ int main()
     ma_audio_buffer buffer{};
     if (ma_audio_buffer_init(&bufferConfig, &buffer) != MA_SUCCESS)
     {
-        return Fail(9, "Failed to initialize the test audio buffer.");
+        return Fail(11, "Failed to initialize the test audio buffer.");
     }
 
     ma_sound sound{};
@@ -117,21 +132,21 @@ int main()
     ) != MA_SUCCESS)
     {
         ma_audio_buffer_uninit(&buffer);
-        return Fail(10, "Failed to initialize the test sound.");
+        return Fail(12, "Failed to initialize the test sound.");
     }
 
     if (ma_sound_start(&sound) != MA_SUCCESS)
     {
         ma_sound_uninit(&sound);
         ma_audio_buffer_uninit(&buffer);
-        return Fail(11, "Failed to start the test sound.");
+        return Fail(13, "Failed to start the test sound.");
     }
 
     if (!mixer.ReadMonoBlock(mono))
     {
         ma_sound_uninit(&sound);
         ma_audio_buffer_uninit(&buffer);
-        return Fail(12, "Mixer failed to render the test sound.");
+        return Fail(14, "Mixer failed to render the test sound.");
     }
 
     for (const float sample : mono)
@@ -140,7 +155,7 @@ int main()
         {
             ma_sound_uninit(&sound);
             ma_audio_buffer_uninit(&buffer);
-            return Fail(13, "Stereo-to-mono downmix produced an unexpected sample.");
+            return Fail(15, "Stereo-to-mono downmix produced an unexpected sample.");
         }
     }
 
@@ -149,18 +164,22 @@ int main()
 
     if (!mixer.SetVolume(0.5f))
     {
-        return Fail(14, "Mixer rejected a valid volume.");
+        return Fail(16, "Mixer rejected a valid volume.");
     }
 
     if (mixer.SetVolume(1.1f))
     {
-        return Fail(15, "Mixer accepted an out-of-range volume.");
+        return Fail(17, "Mixer accepted an out-of-range volume.");
     }
 
     mixer.Reset();
-    if (mixer.IsInitialized() || mixer.GetEngine() != nullptr)
+    if (mixer.IsInitialized() || mixer.GetEngine() != nullptr ||
+        mixer.IsLoopbackInitialized() ||
+        mixer.LoopbackIncludesCurrentProcess() ||
+        mixer.GetLoopbackMode() !=
+            AecRenderReferenceMixer::LoopbackMode::None)
     {
-        return Fail(16, "Mixer reset did not clear its initialized state.");
+        return Fail(18, "Mixer reset did not clear its initialized state.");
     }
 
     std::cout

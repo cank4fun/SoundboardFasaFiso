@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.1 - 2026-07-27
+
+- Fixed AEC3 echo cancellation so voice-chat, game and other system audio played through the selected monitor device is captured through WASAPI loopback and supplied as the far-end reference.
+- Kept microphone monitoring out of the endpoint reference to prevent the user's own processed voice from being treated as echo.
+- Preserved the previous soundboard-only render reference as a safe fallback when WASAPI loopback is unavailable.
+- Reduced the AEC stream-delay hint for post-render loopback references and bounded the loopback queue to avoid stale reference audio.
+
 ## 2.1.0 - 2026-07-27
 
 - Added a strict standalone runtime path layer with explicit portable mode, LocalAppData fallback, writability checks and first-run default copying.

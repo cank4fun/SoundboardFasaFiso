@@ -27,10 +27,14 @@ The minimum user-facing result is:
   playback;
 - processing remains local and offline.
 
-Acoustic echo cancellation is implemented as an optional WebRTC AEC3 stage. It uses
-only soundboard audio sent to the physical monitor as the far-end render reference;
-microphone monitoring and the virtual main-output route are never fed back as a
-reference. Missing reference audio causes safe bypass rather than microphone loss.
+Acoustic echo cancellation is implemented as an optional WebRTC AEC3 stage. On
+Windows/WASAPI, the selected physical monitor endpoint is captured through loopback so
+voice-chat, game and other system audio can be supplied as the far-end render reference.
+When microphone monitoring is enabled, process-excluded loopback is combined with the
+internal soundboard monitor reference so the user's own processed microphone is not fed
+back into AEC. If loopback initialization fails, the previous soundboard-only reference
+remains available; missing reference audio still causes safe bypass rather than
+microphone loss.
 
 ## Current v2.0 audio path
 
