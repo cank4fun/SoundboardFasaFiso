@@ -177,7 +177,8 @@ bool MicrophoneProcessor::ProcessBlock(
     if (echoCancellationRequested_ && echoCancellationAvailable_)
     {
         const bool referenceIsValid =
-            renderReference.size() == SamplesPerBlock &&
+            renderReference.size() ==
+                WebRtcAec3Processor::RenderSamplesPerBlock &&
             streamDelayMilliseconds >= 0 &&
             streamDelayMilliseconds <= 500;
 

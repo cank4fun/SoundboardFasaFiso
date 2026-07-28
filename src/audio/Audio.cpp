@@ -24,6 +24,17 @@ namespace
 {
     constexpr std::size_t OverlapVoiceCount = 8;
 
+#if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    static_assert(
+        AecRenderReferenceMixer::FramesPerBlock ==
+            WebRtcAec3Processor::SamplesPerBlock
+    );
+    static_assert(
+        AecRenderReferenceMixer::ChannelCount ==
+            WebRtcAec3Processor::RenderChannelCount
+    );
+#endif
+
     ma_uint32 CurrentProcessId() noexcept
     {
 #if defined(_WIN32)
@@ -706,19 +717,24 @@ void Audio::ProcessedMicrophoneOutputCallback(
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
 bool Audio::ReadAecRenderReferenceCallback(
     void* const context,
-    float* const monoFrames,
+    float* const interleavedStereoFrames,
     const ma_uint32 frameCount
 ) noexcept
 {
     auto* const instance = static_cast<Audio*>(context);
 
-    if (monoFrames == nullptr ||
+    if (interleavedStereoFrames == nullptr ||
         frameCount != AecRenderReferenceMixer::FramesPerBlock)
     {
         return false;
     }
 
-    std::fill_n(monoFrames, frameCount, 0.0f);
+    std::fill_n(
+        interleavedStereoFrames,
+        static_cast<std::size_t>(frameCount) *
+            AecRenderReferenceMixer::ChannelCount,
+        0.0f
+    );
 
     if (instance == nullptr ||
         !instance->aecRenderReferenceMixer_.IsInitialized())
@@ -736,8 +752,12 @@ bool Audio::ReadAecRenderReferenceCallback(
         (!instance->microphoneToMonitor_ &&
             !temporaryMonitorEnabled);
 
-    return instance->aecRenderReferenceMixer_.ReadMonoBlock(
-        std::span<float>(monoFrames, frameCount),
+    return instance->aecRenderReferenceMixer_.ReadStereoBlock(
+        std::span<float>(
+            interleavedStereoFrames,
+            static_cast<std::size_t>(frameCount) *
+                AecRenderReferenceMixer::ChannelCount
+        ),
         allowEndpointLoopback
     );
 }
@@ -746,7 +766,10 @@ int Audio::EstimateAecStreamDelayMilliseconds() const noexcept
 {
     if (aecRenderReferenceMixer_.IsLoopbackInitialized())
     {
-        return 10;
+        // Endpoint loopback is already post-render. A zero hint lets AEC3's
+        // internal delay controller track the real USB/driver path instead
+        // of forcing a fixed estimate that can be wrong for each device.
+        return 0;
     }
 
     const ma_uint32 periodMilliseconds =

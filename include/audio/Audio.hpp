@@ -231,7 +231,7 @@ private:
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
     static bool ReadAecRenderReferenceCallback(
         void* context,
-        float* monoFrames,
+        float* interleavedStereoFrames,
         ma_uint32 frameCount
     ) noexcept;
 

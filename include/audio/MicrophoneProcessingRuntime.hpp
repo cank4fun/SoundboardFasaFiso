@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <thread>
 
 class MicrophoneProcessingRuntime
@@ -21,7 +22,7 @@ public:
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
     using RenderReferenceCallback = bool (*)(
         void* context,
-        float* monoFrames,
+        float* interleavedStereoFrames,
         ma_uint32 frameCount
     ) noexcept;
 #endif
@@ -31,7 +32,7 @@ public:
     static constexpr ma_uint32 RequiredInputChannels = 2;
     static constexpr ma_uint32 InputRingBufferFrames = 4800;
 
-    MicrophoneProcessingRuntime() = default;
+    MicrophoneProcessingRuntime();
     ~MicrophoneProcessingRuntime();
 
     MicrophoneProcessingRuntime(
@@ -74,6 +75,8 @@ public:
     void Shutdown();
 
 private:
+    struct AecDiagnosticRecorder;
+
     void WorkerMain();
     void ProcessAndDispatchBlock(
         const std::array<float,
@@ -91,6 +94,7 @@ private:
     void* outputContext_ = nullptr;
 
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
+    std::unique_ptr<AecDiagnosticRecorder> aecDiagnosticRecorder_;
     RenderReferenceCallback renderReferenceCallback_ = nullptr;
     void* renderReferenceContext_ = nullptr;
     int streamDelayMilliseconds_ = 20;

@@ -28,11 +28,18 @@ A common setup sends the main mix to **VB-CABLE** for voice chat or streaming wh
 
 There is no installer, database, background service, .NET runtime or Qt dependency. The official build is distributed as a portable ZIP and keeps its configuration, sounds, logs, and imported media beside the executable.
 
-**Current stable release:** `v2.1.1`
+**Current stable release:** `v2.1.2`
 
-## Hotfix in v2.1.1
+## AEC hardening in v2.1.2
 
-- AEC3 now uses WASAPI loopback from the selected monitor output, so remote voice-chat and game audio can be cancelled instead of only soundboard playback.
+- AEC3 now receives the selected monitor endpoint as a true two-channel render reference instead of collapsing it to mono.
+- An automatic stereo crosstalk layer measures each device path at runtime, validates its adaptive leakage model before mixing it in, and suppresses remaining far-end-only residue without a PC-specific fixed delay.
+- Residual-echo suppression is tuned more aggressively for USB-headset playback bleed while WebRTC's near-end speech protection remains intact.
+- Missing loopback blocks no longer masquerade as valid silent references, and endpoint delay tracking is left to AEC3's internal estimator.
+
+## Hotfix foundation from v2.1.1
+
+- WASAPI loopback from the selected monitor output supplies voice-chat, game and other system audio as the AEC render reference.
 - Microphone monitoring is kept out of the endpoint reference, with the previous soundboard reference retained as a safe fallback.
 
 ## Highlights from v2.1.0
@@ -48,7 +55,7 @@ There is no installer, database, background service, .NET runtime or Qt dependen
 - `I` and `O` shortcuts for setting trim-selection boundaries
 - Fresh test-binary builds and complete portable-release verification
 
-See [docs/releases/v2.1.1.md](docs/releases/v2.1.1.md) and [CHANGELOG.md](CHANGELOG.md) for the complete release notes.
+See [docs/releases/v2.1.2.md](docs/releases/v2.1.2.md) and [CHANGELOG.md](CHANGELOG.md) for the complete release notes.
 
 ## Features
 
@@ -347,7 +354,7 @@ Official GitHub release artifacts are currently unsigned. Microsoft Defender Sma
 Download the application only from this repository and compare the ZIP with its attached checksum:
 
 ```powershell
-Get-FileHash .\SoundBoardFasaFiso-v2.1.1-windows-x64-portable.zip -Algorithm SHA256
+Get-FileHash .\SoundBoardFasaFiso-v2.1.2-windows-x64-portable.zip -Algorithm SHA256
 ```
 
 A matching checksum confirms that the archive matches the published release asset. It does not replace code signing. Do not permanently weaken Windows security to run the application.
@@ -412,8 +419,8 @@ The verified files are created under:
 
 ```text
 out/build/x64-Release/
-├── SoundBoardFasaFiso-v2.1.1-windows-x64-portable.zip
-└── SoundBoardFasaFiso-v2.1.1-windows-x64-portable.zip.sha256
+├── SoundBoardFasaFiso-v2.1.2-windows-x64-portable.zip
+└── SoundBoardFasaFiso-v2.1.2-windows-x64-portable.zip.sha256
 ```
 
 ## Repository layout
@@ -445,7 +452,7 @@ VB-CABLE is optional and is not bundled.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) and [docs/releases/v2.1.1.md](docs/releases/v2.1.1.md).
+See [CHANGELOG.md](CHANGELOG.md) and [docs/releases/v2.1.2.md](docs/releases/v2.1.2.md).
 
 ## License
 

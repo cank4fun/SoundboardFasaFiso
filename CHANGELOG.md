@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.2 - 2026-07-28
+
+- Preserved the selected monitor output as an immediately active two-channel WebRTC AEC3 render reference so channel-specific USB-headset crosstalk is not lost during mono downmix or delayed stereo detection.
+- Added an automatic stereo crosstalk canceller ahead of AEC3: GCC-PHAT delay discovery, validated dual-channel NLMS leakage modeling, and a double-talk-aware residual blocker adapt to each output/microphone device without hard-coded latency values.
+- Added an aggressive, validated AEC3 suppressor profile for strong playback bleed while retaining WebRTC's default near-end tuning for double-talk protection.
+- Fixed endpoint and process-excluded loopback underruns being reported as valid silent reference blocks.
+- Switched post-render loopback to AEC3's internal delay tracking instead of forcing a fixed 10 ms device-independent hint.
+- Extended AEC processor, runtime and render-reference tests for stereo references and safe underrun recovery.
+
 ## 2.1.1 - 2026-07-27
 
 - Fixed AEC3 echo cancellation so voice-chat, game and other system audio played through the selected monitor device is captured through WASAPI loopback and supplied as the far-end reference.

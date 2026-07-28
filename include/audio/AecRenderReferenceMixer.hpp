@@ -7,6 +7,8 @@
 #include <cstddef>
 #include <span>
 
+class AecRenderReferenceMixerTestAccess;
+
 class AecRenderReferenceMixer
 {
 public:
@@ -43,6 +45,11 @@ public:
     ) noexcept;
     bool SetVolume(float volume) noexcept;
 
+    bool ReadStereoBlock(
+        std::span<float> interleavedStereoOutput,
+        bool allowEndpointLoopback = true
+    ) noexcept;
+
     bool ReadMonoBlock(
         std::span<float> output,
         bool allowEndpointLoopback = true
@@ -59,6 +66,8 @@ public:
     void Reset() noexcept;
 
 private:
+    friend class AecRenderReferenceMixerTestAccess;
+
     static constexpr std::size_t SamplesPerStereoBlock =
         FramesPerBlock * ChannelCount;
     static constexpr ma_uint32 LoopbackRingBufferFrames =
@@ -84,22 +93,21 @@ private:
         ma_uint32 frameCount
     ) noexcept;
     bool DiscardLoopbackFrames(ma_uint32 frameCount) noexcept;
-    bool ReadInternalMonoBlock(std::span<float> output) noexcept;
-    bool ReadLoopbackMonoBlock(std::span<float> output) noexcept;
+    bool ReadInternalStereoBlock(std::span<float> output) noexcept;
+    bool ReadLoopbackStereoBlock(std::span<float> output) noexcept;
     void ResetLoopback() noexcept;
 
     ma_engine engine_{};
     ma_device loopbackDevice_{};
     ma_pcm_rb loopbackRingBuffer_{};
 
-    std::array<float, SamplesPerStereoBlock> stereoScratch_{};
+    std::array<float, SamplesPerStereoBlock> mixedStereoScratch_{};
+    std::array<float, SamplesPerStereoBlock> internalStereoScratch_{};
     std::array<float, SamplesPerStereoBlock> loopbackStereoScratch_{};
-    std::array<float, FramesPerBlock> internalMonoScratch_{};
-    std::array<float, FramesPerBlock> loopbackMonoScratch_{};
 
     std::atomic<ma_result> lastError_{MA_SUCCESS};
     LoopbackMode loopbackMode_ = LoopbackMode::None;
-    ma_uint32 loopbackUnderflowStreak_ = 0;
+    bool loopbackPrimed_ = false;
     bool initialized_ = false;
     bool loopbackDeviceInitialized_ = false;
     bool loopbackRingBufferInitialized_ = false;
