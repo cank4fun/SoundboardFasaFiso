@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(SOUNDBOARD_VERSION "2.1.1")
+set(SOUNDBOARD_VERSION "2.1.2")
 
-project(SoundBoardFasaFiso VERSION 2.1.1 LANGUAGES C CXX)
+project(SoundBoardFasaFiso VERSION 2.1.2 LANGUAGES C CXX)
 
 if(SOUNDBOARD_VERSION MATCHES "-")
     set(SOUNDBOARD_VERSION_FILE_FLAGS "VS_FF_PRERELEASE")
@@ -407,6 +407,7 @@ if(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
         SoundBoardFasaFiso
         PRIVATE
             src/audio/AecRenderReferenceMixer.cpp
+            src/audio/StereoCrosstalkCanceller.cpp
             src/audio/WebRtcAec3Processor.cpp
     )
 
@@ -492,8 +493,46 @@ if(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
         endif()
 
         add_executable(
+            SoundBoardFasaFisoStereoCrosstalkCancellerTests
+            tests/StereoCrosstalkCancellerTests.cpp
+            src/audio/StereoCrosstalkCanceller.cpp
+        )
+
+        target_include_directories(
+            SoundBoardFasaFisoStereoCrosstalkCancellerTests
+            PRIVATE
+                "${CMAKE_CURRENT_SOURCE_DIR}/include"
+        )
+
+        if(MSVC)
+            target_compile_options(
+                SoundBoardFasaFisoStereoCrosstalkCancellerTests
+                PRIVATE
+                    /W4
+                    /permissive-
+                    /utf-8
+                    /sdl
+            )
+
+            if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+                target_compile_options(
+                    SoundBoardFasaFisoStereoCrosstalkCancellerTests
+                    PRIVATE
+                        /WX
+                )
+            endif()
+
+            set_property(
+                TARGET SoundBoardFasaFisoStereoCrosstalkCancellerTests
+                PROPERTY MSVC_RUNTIME_LIBRARY
+                    "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+            )
+        endif()
+
+        add_executable(
             SoundBoardFasaFisoWebRtcAec3ProcessorTests
             tests/WebRtcAec3ProcessorTests.cpp
+            src/audio/StereoCrosstalkCanceller.cpp
             src/audio/WebRtcAec3Processor.cpp
         )
 
@@ -599,6 +638,7 @@ if(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
             src/audio/MicrophoneProcessor.cpp
             src/audio/MicrophoneProcessingSettings.cpp
             src/audio/RnNoiseSuppressor.cpp
+            src/audio/StereoCrosstalkCanceller.cpp
             src/audio/WebRtcAec3Processor.cpp
             $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
         )
@@ -659,6 +699,11 @@ if(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
         add_test(
             NAME WebRtcAec3BuildSmoke
             COMMAND SoundBoardFasaFisoWebRtcAec3Smoke
+        )
+
+        add_test(
+            NAME StereoCrosstalkCanceller
+            COMMAND SoundBoardFasaFisoStereoCrosstalkCancellerTests
         )
 
         add_test(
@@ -1875,6 +1920,7 @@ if(BUILD_TESTING)
     if(SOUNDBOARD_ENABLE_WEBRTC_AEC3 AND SOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS)
         list(APPEND SOUNDBOARD_TEST_TARGETS
             SoundBoardFasaFisoWebRtcAec3Smoke
+            SoundBoardFasaFisoStereoCrosstalkCancellerTests
             SoundBoardFasaFisoWebRtcAec3ProcessorTests
             SoundBoardFasaFisoAecRenderReferenceMixerTests
             SoundBoardFasaFisoMicrophoneProcessingAecRuntimeTests

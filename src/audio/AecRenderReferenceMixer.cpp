@@ -143,6 +143,92 @@ bool AecRenderReferenceMixer::SetVolume(const float volume) noexcept
     return result == MA_SUCCESS;
 }
 
+bool AecRenderReferenceMixer::ReadStereoBlock(
+    const std::span<float> interleavedStereoOutput,
+    const bool allowEndpointLoopback
+) noexcept
+{
+    std::fill(
+        interleavedStereoOutput.begin(),
+        interleavedStereoOutput.end(),
+        0.0f
+    );
+
+    if (interleavedStereoOutput.size() != SamplesPerStereoBlock)
+    {
+        lastError_.store(MA_INVALID_ARGS, std::memory_order_relaxed);
+        return false;
+    }
+
+    const bool internalAvailable =
+        ReadInternalStereoBlock(internalStereoScratch_);
+    const bool endpointLoopbackAllowed =
+        loopbackMode_ != LoopbackMode::Endpoint ||
+        allowEndpointLoopback;
+    const bool loopbackBlockAvailable =
+        loopbackDeviceInitialized_ && endpointLoopbackAllowed &&
+        ReadLoopbackStereoBlock(loopbackStereoScratch_);
+
+    if (loopbackMode_ == LoopbackMode::Endpoint &&
+        endpointLoopbackAllowed)
+    {
+        if (!loopbackBlockAvailable)
+        {
+            return false;
+        }
+
+        std::copy(
+            loopbackStereoScratch_.begin(),
+            loopbackStereoScratch_.end(),
+            interleavedStereoOutput.begin()
+        );
+        lastError_.store(MA_SUCCESS, std::memory_order_relaxed);
+        return true;
+    }
+
+    if (loopbackMode_ == LoopbackMode::ProcessExcluded &&
+        loopbackDeviceInitialized_ && !loopbackBlockAvailable)
+    {
+        return false;
+    }
+
+    if (internalAvailable)
+    {
+        std::copy(
+            internalStereoScratch_.begin(),
+            internalStereoScratch_.end(),
+            interleavedStereoOutput.begin()
+        );
+    }
+
+    if (loopbackMode_ == LoopbackMode::ProcessExcluded &&
+        loopbackBlockAvailable)
+    {
+        for (std::size_t sample = 0;
+            sample < SamplesPerStereoBlock;
+            ++sample)
+        {
+            interleavedStereoOutput[sample] = std::clamp(
+                interleavedStereoOutput[sample] +
+                    loopbackStereoScratch_[sample],
+                -1.0f,
+                1.0f
+            );
+        }
+    }
+
+    const bool referenceAvailable = internalAvailable ||
+        (loopbackMode_ == LoopbackMode::ProcessExcluded &&
+            loopbackBlockAvailable);
+
+    if (referenceAvailable)
+    {
+        lastError_.store(MA_SUCCESS, std::memory_order_relaxed);
+    }
+
+    return referenceAvailable;
+}
+
 bool AecRenderReferenceMixer::ReadMonoBlock(
     const std::span<float> output,
     const bool allowEndpointLoopback
@@ -156,64 +242,24 @@ bool AecRenderReferenceMixer::ReadMonoBlock(
         return false;
     }
 
-    const bool internalAvailable =
-        ReadInternalMonoBlock(internalMonoScratch_);
-    const bool endpointLoopbackAllowed =
-        loopbackMode_ != LoopbackMode::Endpoint ||
-        allowEndpointLoopback;
-    const bool loopbackSelected =
-        loopbackDeviceInitialized_ && endpointLoopbackAllowed;
-    const bool loopbackBlockAvailable = loopbackSelected &&
-        ReadLoopbackMonoBlock(loopbackMonoScratch_);
-
-    if (loopbackMode_ == LoopbackMode::Endpoint &&
-        endpointLoopbackAllowed)
+    if (!ReadStereoBlock(
+            mixedStereoScratch_,
+            allowEndpointLoopback
+        ))
     {
-        if (loopbackBlockAvailable)
-        {
-            std::copy(
-                loopbackMonoScratch_.begin(),
-                loopbackMonoScratch_.end(),
-                output.begin()
-            );
-        }
-
-        lastError_.store(MA_SUCCESS, std::memory_order_relaxed);
-        return loopbackDeviceInitialized_;
+        return false;
     }
 
-    if (internalAvailable)
+    for (std::size_t frame = 0; frame < FramesPerBlock; ++frame)
     {
-        std::copy(
-            internalMonoScratch_.begin(),
-            internalMonoScratch_.end(),
-            output.begin()
-        );
+        const std::size_t sampleIndex = frame * ChannelCount;
+        output[frame] = (
+            mixedStereoScratch_[sampleIndex] +
+            mixedStereoScratch_[sampleIndex + 1]
+        ) * 0.5f;
     }
 
-    if (loopbackMode_ == LoopbackMode::ProcessExcluded &&
-        loopbackBlockAvailable)
-    {
-        for (std::size_t frame = 0; frame < FramesPerBlock; ++frame)
-        {
-            output[frame] = std::clamp(
-                output[frame] + loopbackMonoScratch_[frame],
-                -1.0f,
-                1.0f
-            );
-        }
-    }
-
-    const bool referenceAvailable = internalAvailable ||
-        (loopbackMode_ == LoopbackMode::ProcessExcluded &&
-            loopbackDeviceInitialized_);
-
-    if (referenceAvailable)
-    {
-        lastError_.store(MA_SUCCESS, std::memory_order_relaxed);
-    }
-
-    return referenceAvailable;
+    return true;
 }
 
 ma_engine* AecRenderReferenceMixer::GetEngine() noexcept
@@ -262,8 +308,8 @@ void AecRenderReferenceMixer::Reset() noexcept
     }
 
     initialized_ = false;
-    stereoScratch_.fill(0.0f);
-    internalMonoScratch_.fill(0.0f);
+    mixedStereoScratch_.fill(0.0f);
+    internalStereoScratch_.fill(0.0f);
     std::memset(&engine_, 0, sizeof(engine_));
     lastError_.store(MA_SUCCESS, std::memory_order_relaxed);
 }
@@ -440,13 +486,13 @@ bool AecRenderReferenceMixer::DiscardLoopbackFrames(
     return true;
 }
 
-bool AecRenderReferenceMixer::ReadInternalMonoBlock(
+bool AecRenderReferenceMixer::ReadInternalStereoBlock(
     const std::span<float> output
 ) noexcept
 {
     std::fill(output.begin(), output.end(), 0.0f);
 
-    if (!initialized_ || output.size() != FramesPerBlock)
+    if (!initialized_ || output.size() != SamplesPerStereoBlock)
     {
         return false;
     }
@@ -454,14 +500,14 @@ bool AecRenderReferenceMixer::ReadInternalMonoBlock(
     ma_uint64 framesRead = 0;
     const ma_result result = ma_engine_read_pcm_frames(
         &engine_,
-        stereoScratch_.data(),
+        output.data(),
         FramesPerBlock,
         &framesRead
     );
 
     if (result != MA_SUCCESS)
     {
-        stereoScratch_.fill(0.0f);
+        std::fill(output.begin(), output.end(), 0.0f);
         lastError_.store(result, std::memory_order_relaxed);
         return false;
     }
@@ -474,26 +520,26 @@ bool AecRenderReferenceMixer::ReadInternalMonoBlock(
     if (validFrames < FramesPerBlock)
     {
         std::fill(
-            stereoScratch_.begin() +
-                static_cast<std::ptrdiff_t>(validFrames * ChannelCount),
-            stereoScratch_.end(),
+            output.begin() + static_cast<std::ptrdiff_t>(
+                validFrames * ChannelCount
+            ),
+            output.end(),
             0.0f
         );
     }
 
-    for (std::size_t frame = 0; frame < FramesPerBlock; ++frame)
+    for (float& sample : output)
     {
-        const std::size_t sampleIndex = frame * ChannelCount;
-        const float left = stereoScratch_[sampleIndex];
-        const float right = stereoScratch_[sampleIndex + 1];
-        const float mono = (left + right) * 0.5f;
-        output[frame] = std::isfinite(mono) ? mono : 0.0f;
+        if (!std::isfinite(sample))
+        {
+            sample = 0.0f;
+        }
     }
 
     return true;
 }
 
-bool AecRenderReferenceMixer::ReadLoopbackMonoBlock(
+bool AecRenderReferenceMixer::ReadLoopbackStereoBlock(
     const std::span<float> output
 ) noexcept
 {
@@ -501,7 +547,7 @@ bool AecRenderReferenceMixer::ReadLoopbackMonoBlock(
 
     if (!loopbackDeviceInitialized_ ||
         !loopbackRingBufferInitialized_ ||
-        output.size() != FramesPerBlock)
+        output.size() != SamplesPerStereoBlock)
     {
         return false;
     }
@@ -523,20 +569,25 @@ bool AecRenderReferenceMixer::ReadLoopbackMonoBlock(
         availableFrames -= staleFrames;
     }
 
-    if (availableFrames < MaximumQueuedLoopbackFrames)
+    // Build a one-block scheduling cushion once, then consume one 10 ms
+    // block at a time. Requiring the two-block high-water mark on every
+    // read creates periodic false underruns even while WASAPI is producing
+    // audio normally. Keep partial data across a real underrun instead of
+    // discarding it so the next callback can complete the block.
+    if (!loopbackPrimed_)
     {
-        ++loopbackUnderflowStreak_;
-
-        if (loopbackUnderflowStreak_ >= 3 && availableFrames != 0)
+        if (availableFrames < MaximumQueuedLoopbackFrames)
         {
-            static_cast<void>(DiscardLoopbackFrames(availableFrames));
-            loopbackUnderflowStreak_ = 0;
+            return false;
         }
 
-        return false;
+        loopbackPrimed_ = true;
     }
 
-    loopbackUnderflowStreak_ = 0;
+    if (availableFrames < FramesPerBlock)
+    {
+        return false;
+    }
     ma_uint32 readFrames = 0;
 
     while (readFrames < FramesPerBlock)
@@ -555,12 +606,12 @@ bool AecRenderReferenceMixer::ReadLoopbackMonoBlock(
         if (acquireResult != MA_SUCCESS || readableFrames == 0 ||
             source == nullptr)
         {
-            loopbackStereoScratch_.fill(0.0f);
+            std::fill(output.begin(), output.end(), 0.0f);
             return false;
         }
 
         std::memcpy(
-            loopbackStereoScratch_.data() +
+            output.data() +
                 static_cast<std::size_t>(readFrames) * ChannelCount,
             source,
             static_cast<std::size_t>(readableFrames) *
@@ -572,20 +623,19 @@ bool AecRenderReferenceMixer::ReadLoopbackMonoBlock(
                 readableFrames
             ) != MA_SUCCESS)
         {
-            loopbackStereoScratch_.fill(0.0f);
+            std::fill(output.begin(), output.end(), 0.0f);
             return false;
         }
 
         readFrames += readableFrames;
     }
 
-    for (std::size_t frame = 0; frame < FramesPerBlock; ++frame)
+    for (float& sample : output)
     {
-        const std::size_t sampleIndex = frame * ChannelCount;
-        const float left = loopbackStereoScratch_[sampleIndex];
-        const float right = loopbackStereoScratch_[sampleIndex + 1];
-        const float mono = (left + right) * 0.5f;
-        output[frame] = std::isfinite(mono) ? mono : 0.0f;
+        if (!std::isfinite(sample))
+        {
+            sample = 0.0f;
+        }
     }
 
     return true;
@@ -600,7 +650,7 @@ void AecRenderReferenceMixer::ResetLoopback() noexcept
 
     loopbackDeviceInitialized_ = false;
     loopbackMode_ = LoopbackMode::None;
-    loopbackUnderflowStreak_ = 0;
+    loopbackPrimed_ = false;
     std::memset(&loopbackDevice_, 0, sizeof(loopbackDevice_));
 
     if (loopbackRingBufferInitialized_)
@@ -615,5 +665,4 @@ void AecRenderReferenceMixer::ResetLoopback() noexcept
         sizeof(loopbackRingBuffer_)
     );
     loopbackStereoScratch_.fill(0.0f);
-    loopbackMonoScratch_.fill(0.0f);
 }

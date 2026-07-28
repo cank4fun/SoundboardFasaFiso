@@ -41,7 +41,8 @@ int main()
         return 1;
     }
 
-    std::array<float, WebRtcAec3Processor::SamplesPerBlock> render{};
+    std::array<float, WebRtcAec3Processor::RenderSamplesPerBlock>
+        render{};
     std::array<float, WebRtcAec3Processor::SamplesPerBlock> capture{};
     std::array<float, WebRtcAec3Processor::SamplesPerBlock> output{};
 
@@ -63,7 +64,10 @@ int main()
             const float nearEnd =
                 0.08F * std::sin(2.0F * Pi * 880.0F * time);
 
-            render[frame] = farEnd;
+            const std::size_t renderIndex =
+                frame * WebRtcAec3Processor::RenderChannelCount;
+            render[renderIndex] = farEnd;
+            render[renderIndex + 1] = farEnd * 0.85F;
             capture[frame] = nearEnd + 0.35F * farEnd;
             ++absoluteSample;
         }
@@ -84,7 +88,7 @@ int main()
         }
     }
 
-    std::array<float, WebRtcAec3Processor::SamplesPerBlock - 1>
+    std::array<float, WebRtcAec3Processor::RenderSamplesPerBlock - 1>
         shortRender{};
     output.fill(0.0F);
 

@@ -187,7 +187,6 @@ void ControlWindow::PresentLocalMediaImportResult(
 
     if (!summary.importedRelativePaths.empty())
     {
-        SetActivePage(ControlPage::Hotkeys);
         SetControlText(
             bindingFileEdit_,
             summary.importedRelativePaths.front().wstring()

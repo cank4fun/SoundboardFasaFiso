@@ -23,7 +23,10 @@ namespace
 
     struct RenderSource
     {
-        std::array<float, MicrophoneProcessor::SamplesPerBlock> samples{};
+        std::array<
+            float,
+            WebRtcAec3Processor::RenderSamplesPerBlock
+        > samples{};
         std::atomic_uint32_t callCount{0};
         bool fail = false;
     };
@@ -62,13 +65,17 @@ namespace
 
         source->callCount.fetch_add(1, std::memory_order_relaxed);
 
+        const std::size_t sampleCount =
+            static_cast<std::size_t>(frameCount) *
+            WebRtcAec3Processor::RenderChannelCount;
+
         if (source->fail)
         {
-            std::fill_n(samples, frameCount, 0.0f);
+            std::fill_n(samples, sampleCount, 0.0f);
             return false;
         }
 
-        std::copy(source->samples.begin(), source->samples.end(), samples);
+        std::copy_n(source->samples.begin(), sampleCount, samples);
         return true;
     }
 
@@ -190,7 +197,10 @@ namespace
             frame < MicrophoneProcessor::SamplesPerBlock;
             ++frame)
         {
-            source.samples[frame] = input[frame * 2];
+            const std::size_t index =
+                frame * WebRtcAec3Processor::RenderChannelCount;
+            source.samples[index] = input[frame * 2];
+            source.samples[index + 1] = input[frame * 2 + 1];
         }
 
         if (!runtime.Initialize(
@@ -254,7 +264,10 @@ namespace
             frame < MicrophoneProcessor::SamplesPerBlock;
             ++frame)
         {
-            source.samples[frame] = input[frame * 2];
+            const std::size_t index =
+                frame * WebRtcAec3Processor::RenderChannelCount;
+            source.samples[index] = input[frame * 2];
+            source.samples[index + 1] = input[frame * 2 + 1];
         }
 
         if (!runtime.Initialize(

@@ -9,6 +9,9 @@ class WebRtcAec3Processor
 public:
     static constexpr int ProcessingSampleRate = 48'000;
     static constexpr std::size_t SamplesPerBlock = 480;
+    static constexpr std::size_t RenderChannelCount = 2;
+    static constexpr std::size_t RenderSamplesPerBlock =
+        SamplesPerBlock * RenderChannelCount;
 
     WebRtcAec3Processor();
     ~WebRtcAec3Processor();

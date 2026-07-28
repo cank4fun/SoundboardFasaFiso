@@ -32,9 +32,13 @@ Windows/WASAPI, the selected physical monitor endpoint is captured through loopb
 voice-chat, game and other system audio can be supplied as the far-end render reference.
 When microphone monitoring is enabled, process-excluded loopback is combined with the
 internal soundboard monitor reference so the user's own processed microphone is not fed
-back into AEC. If loopback initialization fails, the previous soundboard-only reference
-remains available; missing reference audio still causes safe bypass rather than
-microphone loss.
+back into AEC. The monitor reference remains stereo through the AEC3 reverse path, which
+preserves channel-specific headset leakage. v2.1.2 also adds a device-independent
+stereo crosstalk stage that uses GCC-PHAT delay discovery, a validated dual-channel
+NLMS leakage model, and double-talk-aware residual suppression before/after AEC3.
+AEC3 keeps its internal post-render delay tracking. If loopback
+initialization fails, the previous soundboard-only reference remains available; missing
+reference audio still causes safe bypass rather than microphone loss.
 
 ## Current v2.0 audio path
 
