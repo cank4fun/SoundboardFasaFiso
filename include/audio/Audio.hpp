@@ -51,6 +51,14 @@ enum class MicrophoneTestMonitorResult
     Failed
 };
 
+enum class VoiceEffectSettingsUpdateResult
+{
+    Applied,
+    RuntimeUnavailable,
+    QueueBusy,
+    Invalid
+};
+
 struct AudioLevelSnapshot
 {
     float output = 0.0f;
@@ -83,6 +91,14 @@ struct AudioLevelSnapshot
     std::uint64_t microphoneDroppedInputFrames = 0;
     std::uint64_t microphoneEchoCancellationReferenceUnderruns = 0;
     std::uint64_t microphoneEchoCancellationFailures = 0;
+
+    bool microphoneProcessingDiagnosticsAvailable = false;
+    std::uint64_t microphoneProcessedBlockCount = 0;
+    std::uint64_t microphoneProcessingDeadlineMissCount = 0;
+    std::uint64_t microphoneTotalProcessingTimeNanoseconds = 0;
+    std::uint64_t microphoneMaximumProcessingTimeNanoseconds = 0;
+    std::uint32_t microphonePeakQueuedInputFrames = 0;
+    std::uint64_t microphoneRejectedVoiceEffectUpdateCount = 0;
 };
 
 class Audio
@@ -111,6 +127,7 @@ public:
         bool microphoneToOutput,
         bool microphoneToMonitor,
         const MicrophoneProcessingSettings& microphoneProcessingSettings,
+        const VoiceEffectSettings& voiceEffectSettings,
         unsigned int sampleRate,
         unsigned int bufferMilliseconds
     );
@@ -142,6 +159,10 @@ public:
         bool enabled
     );
     bool IsMicrophoneTestMonitorEnabled() const noexcept;
+
+    VoiceEffectSettingsUpdateResult UpdateVoiceEffectSettings(
+        const VoiceEffectSettings& settings
+    ) noexcept;
 
     AudioRecoveryResult MaintainDeviceConnection();
     AudioLevelSnapshot GetLevelSnapshot() const;
@@ -360,6 +381,7 @@ private:
     bool microphoneToOutput_ = true;
     bool microphoneToMonitor_ = false;
     MicrophoneProcessingSettings microphoneProcessingSettings_{};
+    VoiceEffectSettings voiceEffectSettings_{};
 
     ma_uint32 sampleRate_ = 48000;
     ma_uint32 bufferMilliseconds_ = 5;

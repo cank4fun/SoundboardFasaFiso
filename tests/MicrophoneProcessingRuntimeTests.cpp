@@ -296,6 +296,234 @@ namespace
             !snapshot.bypassed;
     }
 
+    bool TestInitialVoiceEffectSettingsAreApplied()
+    {
+        MicrophoneProcessingRuntime runtime;
+        TestSink sink;
+        MicrophoneProcessingSettings microphoneSettings;
+        microphoneSettings.enabled = false;
+        const auto voiceSettings = BuildVoiceEffectPreset(
+            VoiceEffectPreset::Radio,
+            true
+        );
+
+        if (!voiceSettings.has_value() ||
+            !runtime.Initialize(
+                MicrophoneProcessingRuntime::RequiredSampleRate,
+                MicrophoneProcessingRuntime::RequiredInputChannels,
+                microphoneSettings,
+                &CaptureOutput,
+                &sink,
+                *voiceSettings
+            ))
+        {
+            return false;
+        }
+
+        std::array<float, StereoSampleCount> input{};
+        for (std::size_t index = 0; index < input.size(); ++index)
+        {
+            input[index] = static_cast<float>(index % 29) / 28.0f - 0.5f;
+        }
+
+        const ma_uint32 written = runtime.PushInputFrames(
+            input.data(),
+            static_cast<ma_uint32>(MicrophoneProcessor::SamplesPerBlock)
+        );
+        const bool received = WaitForOutput(sink);
+        const MicrophoneProcessingSnapshot snapshot = runtime.GetSnapshot();
+        bool outputProcessed = received;
+        bool outputChanged = false;
+        for (std::size_t frame = 0;
+            frame < MicrophoneProcessor::SamplesPerBlock && outputProcessed;
+            ++frame)
+        {
+            const std::size_t index = frame * 2;
+            outputProcessed = std::isfinite(sink.samples[index]) &&
+                std::isfinite(sink.samples[index + 1]) &&
+                NearlyEqual(sink.samples[index], sink.samples[index + 1]);
+            outputChanged = outputChanged ||
+                !NearlyEqual(sink.samples[index], input[index], 0.000001f);
+        }
+        runtime.Shutdown();
+
+        return written == MicrophoneProcessor::SamplesPerBlock &&
+            outputProcessed &&
+            outputChanged &&
+            snapshot.voiceEffectsEnabled &&
+            !snapshot.voiceEffectsBypassed &&
+            snapshot.voiceEffectPreset == VoiceEffectPreset::Radio &&
+            !snapshot.bypassed;
+    }
+
+    bool TestVoiceEffectSettingsApplyAtBlockBoundary()
+    {
+        MicrophoneProcessingRuntime runtime;
+        TestSink sink;
+        MicrophoneProcessingSettings microphoneSettings;
+        microphoneSettings.enabled = false;
+
+        if (!runtime.Initialize(
+                MicrophoneProcessingRuntime::RequiredSampleRate,
+                MicrophoneProcessingRuntime::RequiredInputChannels,
+                microphoneSettings,
+                &CaptureOutput,
+                &sink
+            ))
+        {
+            return false;
+        }
+
+        const auto voiceSettings = BuildVoiceEffectPreset(
+            VoiceEffectPreset::DarkVocal,
+            true
+        );
+        if (!voiceSettings.has_value() ||
+            !runtime.UpdateVoiceEffectSettings(*voiceSettings))
+        {
+            runtime.Shutdown();
+            return false;
+        }
+
+        std::array<float, StereoSampleCount> input{};
+        for (std::size_t index = 0; index < input.size(); ++index)
+        {
+            input[index] = static_cast<float>(index % 31) / 30.0f - 0.5f;
+        }
+
+        const ma_uint32 written = runtime.PushInputFrames(
+            input.data(),
+            static_cast<ma_uint32>(MicrophoneProcessor::SamplesPerBlock)
+        );
+        const bool received = WaitForOutput(sink);
+        const MicrophoneProcessingSnapshot snapshot = runtime.GetSnapshot();
+        bool outputProcessed = received;
+        bool outputChanged = false;
+        for (std::size_t frame = 0;
+            frame < MicrophoneProcessor::SamplesPerBlock && outputProcessed;
+            ++frame)
+        {
+            const std::size_t index = frame * 2;
+            outputProcessed = std::isfinite(sink.samples[index]) &&
+                std::isfinite(sink.samples[index + 1]) &&
+                NearlyEqual(sink.samples[index], sink.samples[index + 1]);
+            outputChanged = outputChanged ||
+                !NearlyEqual(sink.samples[index], input[index], 0.000001f);
+        }
+        const std::uint64_t rejectedUpdates =
+            runtime.GetRejectedVoiceEffectUpdateCount();
+        runtime.Shutdown();
+
+        return written == MicrophoneProcessor::SamplesPerBlock &&
+            outputProcessed &&
+            outputChanged &&
+            snapshot.voiceEffectsEnabled &&
+            !snapshot.voiceEffectsBypassed &&
+            snapshot.voiceEffectPreset == VoiceEffectPreset::DarkVocal &&
+            !snapshot.bypassed &&
+            rejectedUpdates == 0;
+    }
+
+
+    bool TestRuntimeDiagnosticsTrackProcessingBudget()
+    {
+        MicrophoneProcessingRuntime runtime;
+        TestSink sink;
+        MicrophoneProcessingSettings microphoneSettings;
+        microphoneSettings.enabled = false;
+        const auto voiceSettings = BuildVoiceEffectPreset(
+            VoiceEffectPreset::Robot,
+            true
+        );
+
+        if (!voiceSettings.has_value() ||
+            !runtime.Initialize(
+                MicrophoneProcessingRuntime::RequiredSampleRate,
+                MicrophoneProcessingRuntime::RequiredInputChannels,
+                microphoneSettings,
+                &CaptureOutput,
+                &sink,
+                *voiceSettings
+            ))
+        {
+            return false;
+        }
+
+        const auto initialDiagnostics = runtime.GetDiagnostics();
+        std::array<float, StereoSampleCount> input{};
+        for (std::size_t index = 0; index < input.size(); ++index)
+        {
+            input[index] = static_cast<float>(index % 43) / 42.0f - 0.5f;
+        }
+
+        const ma_uint32 written = runtime.PushInputFrames(
+            input.data(),
+            static_cast<ma_uint32>(MicrophoneProcessor::SamplesPerBlock)
+        );
+        const bool received = WaitForOutput(sink);
+        const auto diagnostics = runtime.GetDiagnostics();
+        runtime.Shutdown();
+
+        if (written != MicrophoneProcessor::SamplesPerBlock ||
+            !received ||
+            initialDiagnostics.processedBlockCount != 0 ||
+            initialDiagnostics.processingDeadlineMissCount != 0 ||
+            initialDiagnostics.totalProcessingTimeNanoseconds != 0 ||
+            initialDiagnostics.maximumProcessingTimeNanoseconds != 0 ||
+            initialDiagnostics.peakQueuedInputFrames != 0 ||
+            diagnostics.processedBlockCount == 0 ||
+            diagnostics.maximumProcessingTimeNanoseconds == 0 ||
+            diagnostics.totalProcessingTimeNanoseconds <
+                diagnostics.maximumProcessingTimeNanoseconds ||
+            diagnostics.processingDeadlineMissCount >
+                diagnostics.processedBlockCount ||
+            diagnostics.peakQueuedInputFrames == 0 ||
+            diagnostics.peakQueuedInputFrames >
+                MicrophoneProcessingRuntime::InputRingBufferFrames)
+        {
+            return false;
+        }
+
+        if (!runtime.Initialize(
+                MicrophoneProcessingRuntime::RequiredSampleRate,
+                MicrophoneProcessingRuntime::RequiredInputChannels,
+                microphoneSettings,
+                &CaptureOutput,
+                &sink,
+                *voiceSettings
+            ))
+        {
+            return false;
+        }
+
+        const auto resetDiagnostics = runtime.GetDiagnostics();
+        runtime.Shutdown();
+        return resetDiagnostics.processedBlockCount == 0 &&
+            resetDiagnostics.processingDeadlineMissCount == 0 &&
+            resetDiagnostics.totalProcessingTimeNanoseconds == 0 &&
+            resetDiagnostics.maximumProcessingTimeNanoseconds == 0 &&
+            resetDiagnostics.peakQueuedInputFrames == 0;
+    }
+
+    bool TestRejectsInvalidInitialVoiceEffectSettings()
+    {
+        MicrophoneProcessingRuntime runtime;
+        TestSink sink;
+        MicrophoneProcessingSettings microphoneSettings;
+        VoiceEffectSettings voiceSettings;
+        voiceSettings.pitchSemitones =
+            VoiceEffectLimits::MaximumPitchSemitones + 1.0f;
+
+        return !runtime.Initialize(
+            MicrophoneProcessingRuntime::RequiredSampleRate,
+            MicrophoneProcessingRuntime::RequiredInputChannels,
+            microphoneSettings,
+            &CaptureOutput,
+            &sink,
+            voiceSettings
+        );
+    }
+
     bool TestRejectsInvalidSettings()
     {
         MicrophoneProcessingRuntime runtime;
@@ -328,6 +556,14 @@ int main()
         {"Limiter emits mono stereo", &TestLimiterProducesMonoStereoOutput},
         {"Noise suppression emits processed stereo",
             &TestNoiseSuppressionProducesProcessedStereo},
+        {"Initial voice-effect settings are applied",
+            &TestInitialVoiceEffectSettingsAreApplied},
+        {"Voice-effect update applies at block boundary",
+            &TestVoiceEffectSettingsApplyAtBlockBoundary},
+        {"Runtime diagnostics track processing budget",
+            &TestRuntimeDiagnosticsTrackProcessingBudget},
+        {"Rejects invalid initial voice-effect settings",
+            &TestRejectsInvalidInitialVoiceEffectSettings},
         {"Rejects invalid settings", &TestRejectsInvalidSettings}
     };
 

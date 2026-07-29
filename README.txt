@@ -6,14 +6,15 @@ medya aktarıcısı ve WAV editörü.
 
 SÜRÜM / VERSION
 ---------------
-2.1.2
+2.2.0
 
 GENEL BAKIŞ
 -----------
 SoundBoardFasaFiso; global hotkey tabanlı ses oynatma, bağımsız ana ve
 monitor çıkışları, fiziksel mikrofon miksleme, RNNoise gürültü engelleme,
-WebRTC AEC3 yankı giderme, local/URL medya aktarımı ve gömülü WAV editörünü
-tek bir native Windows uygulamasında birleştirir.
+WebRTC AEC3 yankı giderme, düşük gecikmeli Voice Effects / Voice Changer,
+local/URL medya aktarımı ve gömülü WAV editörünü tek bir native Windows
+uygulamasında birleştirir.
 
 Kurulum, veritabanı, arka plan servisi, .NET veya harici GUI framework'ü
 gerekmez. Config, sesler, loglar ve içe aktarılan dosyalar EXE'nin yanındaki
@@ -138,6 +139,26 @@ Desteklenen mikrofon işleme sistemi:
 - Canlı mikrofon ve çıkış seviye göstergeleri
 - Hatalı yeni ayarda önceki çalışan sisteme geri dönme
 
+VOICE EFFECTS / VOICE CHANGER
+-----------------------------
+Voice Effects, crosstalk cancellation, AEC3, high-pass ve RNNoise temizliğinden
+sonra; AGC, compressor ve limiter'dan önce çalışır. Output gain limiter'dan
+önce uygulanır.
+
+Özellikler:
+
+- Pitch: -12 ile +12 semitone
+- Formant: -6 ile +6 semitone; pitch'ten bağımsızdır
+- Deep / Heavy, High / Nasal Rap, Dark Vocal, Radio, Robot ve Tiny / High Voice
+- Character EQ, drive, dry/wet ve output gain
+- Kullanıcı preset'i kaydetme, güncelleme ve silme
+- Önceki/sonraki preset ve bypass hotkey'leri
+- 48 kHz işlemde sabit 16 ms Voice Effects DSP gecikmesi
+- Deadline, kuyruk ve düşen frame için inline runtime telemetry
+
+Voice Effects yeni bir servis, DLL kurulumu veya harici runtime gerektirmez.
+Ayarlar config.txt içinde portable olarak saklanır.
+
 Mikrofon monitor çıkışına veriliyorsa geri beslemeyi önlemek için kulaklık
 kullanılması önerilir.
 
@@ -204,11 +225,14 @@ CTRL+SHIFT+F9   : Ana çıkışı mute/unmute
 CTRL+SHIFT+F10  : Monitor çıkışını mute/unmute
 CTRL+SHIFT+F11  : Config'i yeniden yükle
 CTRL+SHIFT+F12  : Programı kapat
+CTRL+ALT+F21    : Önceki Voice Effects preset'i
+CTRL+ALT+F22    : Sonraki Voice Effects preset'i
+CTRL+ALT+F23    : Voice Effects bypass aç/kapat
 
 KONTROL PANELİ
 --------------
-Panel tek pencere içinde Ana ekran, Ayarlar ve Hotkey'ler sekmelerini
-kullanır. Ses editörü de ana pencereye gömülüdür.
+Panel tek pencere içinde Ana ekran, Ayarlar, Hotkey'ler, Mikrofon filtreleri,
+Voice Effects ve Ses editörü sekmelerini kullanır. Ayrı efekt popup'ı açılmaz.
 
 Panel özellikleri:
 
@@ -233,7 +257,7 @@ Pencerenin X düğmesi programı kapatmaz; paneli tray'e gizler.
 
 PANEL KISAYOLLARI
 -----------------
-CTRL+1 / CTRL+2 / CTRL+3 : Sekmeler arasında geç
+CTRL+1 ... CTRL+6          : Sekmeler arasında geç
 CTRL+S                    : Kaydet ve uygula
 ESC                       : Hotkey yakalamayı iptal et
 
@@ -266,7 +290,7 @@ Control yeni ve imzasız EXE'yi engelleyebilir.
 ZIP'i yalnızca resmi GitHub Release sayfasından indir ve yanında yayınlanan
 .sha256 dosyasıyla karşılaştır:
 
-Get-FileHash .\SoundBoardFasaFiso-v2.1.2-windows-x64-portable.zip -Algorithm SHA256
+Get-FileHash .\SoundBoardFasaFiso-v2.2.0-windows-x64-portable.zip -Algorithm SHA256
 
 Eşleşen SHA-256, arşivin yayınlanan Release dosyasıyla aynı olduğunu
 doğrular; kod imzasının yerini tutmaz. Programı çalıştırmak için Windows

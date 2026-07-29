@@ -27,6 +27,7 @@
 #include <vector>
 
 class Audio;
+struct AudioLevelSnapshot;
 
 struct ControlWindowCommandIds
 {
@@ -84,6 +85,7 @@ private:
         Main,
         Settings,
         MicrophoneProcessing,
+        VoiceEffects,
         Hotkeys,
         Playback
     };
@@ -135,6 +137,18 @@ private:
     static constexpr int IdBindingFadeOutEdit = 1039;
     static constexpr int IdImportUrl = 1040;
     static constexpr int IdAudioEditor = 1041;
+    static constexpr int IdVoiceEffectsTab = 1042;
+    static constexpr int IdVoiceEffectsPreset = 1043;
+    static constexpr int IdVoiceEffectsPitchSlider = 1044;
+    static constexpr int IdVoiceEffectsFormantSlider = 1045;
+    static constexpr int IdVoiceEffectsCharacterSlider = 1046;
+    static constexpr int IdVoiceEffectsDriveSlider = 1047;
+    static constexpr int IdVoiceEffectsDryWetSlider = 1048;
+    static constexpr int IdVoiceEffectsOutputGainSlider = 1049;
+    static constexpr int IdVoiceEffectsReset = 1050;
+    static constexpr int IdVoiceEffectsSavePreset = 1051;
+    static constexpr int IdVoiceEffectsDeletePreset = 1052;
+    static constexpr int IdVoiceEffectsPresetName = 1053;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -157,8 +171,15 @@ private:
     );
 
     bool CreateControls();
+    bool CreateVoiceEffectsControls();
     bool CreateAccelerators();
     void LayoutControls(int clientWidth, int clientHeight);
+    void LayoutVoiceEffectsControls(
+        int contentX,
+        int pageY,
+        int contentWidth,
+        int pageHeight
+    );
     void HandleDpiChanged(UINT dpi, const RECT& suggestedRectangle);
     int Scale(int value) const noexcept;
     int Unscale(int value) const noexcept;
@@ -193,6 +214,28 @@ private:
     void PopulateMicrophoneNoiseSuppressionLevelCombo();
     void ApplySelectedMicrophoneProcessingPreset();
     void MarkMicrophoneProcessingPresetCustom();
+    void PopulateVoiceEffectsControls();
+    void PopulateVoiceEffectsPresetCombo();
+    void ApplySelectedVoiceEffectsPreset();
+    void MarkVoiceEffectsPresetCustom();
+    void UpdateVoiceEffectsValueLabels();
+    void UpdateVoiceEffectsRuntimeDiagnostics(
+        const AudioLevelSnapshot& snapshot
+    );
+    void SubmitVoiceEffectsPreview(bool showStatus = true);
+    void RetryPendingVoiceEffectsPreview();
+    void ResetVoiceEffectsControls();
+    void UpdateVoiceEffectsPresetButtons();
+    void SaveVoiceEffectUserPreset();
+    void DeleteVoiceEffectUserPreset();
+    void CancelPendingVoiceEffectPresetDelete();
+    std::optional<std::size_t>
+        SelectedVoiceEffectUserPresetIndex() const;
+    bool ReadVoiceEffectSettingsFromControls(
+        VoiceEffectSettings& settings,
+        bool showErrors
+    ) const;
+    bool IsVoiceEffectsSlider(HWND control) const noexcept;
     void PopulateControlHotkeys();
     void UpdateVolumeLabels();
     void UpdateBindingVolumeLabel();
@@ -274,6 +317,7 @@ private:
     HWND mainTabButton_ = nullptr;
     HWND settingsTabButton_ = nullptr;
     HWND microphoneProcessingTabButton_ = nullptr;
+    HWND voiceEffectsTabButton_ = nullptr;
     HWND hotkeysTabButton_ = nullptr;
     HWND playbackTabButton_ = nullptr;
     HWND statusCaption_ = nullptr;
@@ -373,6 +417,38 @@ private:
     HWND microphoneLimiterCeilingEdit_ = nullptr;
     HWND microphoneUnavailableFeaturesCaption_ = nullptr;
 
+    HWND voiceEffectsGroup_ = nullptr;
+    HWND voiceEffectsEnabledCheck_ = nullptr;
+    HWND voiceEffectsBypassCheck_ = nullptr;
+    HWND voiceEffectsStatusCaption_ = nullptr;
+    HWND voiceEffectsStatusValue_ = nullptr;
+    HWND voiceEffectsPresetCaption_ = nullptr;
+    HWND voiceEffectsPresetCombo_ = nullptr;
+    HWND voiceEffectsPresetNameCaption_ = nullptr;
+    HWND voiceEffectsPresetNameEdit_ = nullptr;
+    HWND voiceEffectsPitchCaption_ = nullptr;
+    HWND voiceEffectsPitchSlider_ = nullptr;
+    HWND voiceEffectsPitchValue_ = nullptr;
+    HWND voiceEffectsFormantCaption_ = nullptr;
+    HWND voiceEffectsFormantSlider_ = nullptr;
+    HWND voiceEffectsFormantValue_ = nullptr;
+    HWND voiceEffectsCharacterCaption_ = nullptr;
+    HWND voiceEffectsCharacterSlider_ = nullptr;
+    HWND voiceEffectsCharacterValue_ = nullptr;
+    HWND voiceEffectsDriveCaption_ = nullptr;
+    HWND voiceEffectsDriveSlider_ = nullptr;
+    HWND voiceEffectsDriveValue_ = nullptr;
+    HWND voiceEffectsDryWetCaption_ = nullptr;
+    HWND voiceEffectsDryWetSlider_ = nullptr;
+    HWND voiceEffectsDryWetValue_ = nullptr;
+    HWND voiceEffectsOutputGainCaption_ = nullptr;
+    HWND voiceEffectsOutputGainSlider_ = nullptr;
+    HWND voiceEffectsOutputGainValue_ = nullptr;
+    HWND voiceEffectsResetButton_ = nullptr;
+    HWND voiceEffectsSavePresetButton_ = nullptr;
+    HWND voiceEffectsDeletePresetButton_ = nullptr;
+    HWND voiceEffectsInfoCaption_ = nullptr;
+
     HWND controlHotkeysGroup_ = nullptr;
     HWND stopHotkeyCaption_ = nullptr;
     HWND stopHotkeyEdit_ = nullptr;
@@ -380,6 +456,12 @@ private:
     HWND outputMuteHotkeyEdit_ = nullptr;
     HWND monitorMuteHotkeyCaption_ = nullptr;
     HWND monitorMuteHotkeyEdit_ = nullptr;
+    HWND voiceEffectsPreviousPresetHotkeyCaption_ = nullptr;
+    HWND voiceEffectsPreviousPresetHotkeyEdit_ = nullptr;
+    HWND voiceEffectsNextPresetHotkeyCaption_ = nullptr;
+    HWND voiceEffectsNextPresetHotkeyEdit_ = nullptr;
+    HWND voiceEffectsBypassHotkeyCaption_ = nullptr;
+    HWND voiceEffectsBypassHotkeyEdit_ = nullptr;
     HWND reloadHotkeyCaption_ = nullptr;
     HWND reloadHotkeyEdit_ = nullptr;
     HWND exitHotkeyCaption_ = nullptr;
@@ -455,6 +537,10 @@ private:
     bool microphoneMeterAvailable_ = false;
     bool microphoneProcessingMeterAvailable_ = false;
     bool populatingMicrophoneProcessingControls_ = false;
+    bool populatingVoiceEffectsControls_ = false;
+    std::optional<std::string> pendingVoiceEffectPresetDeleteName_;
+    std::optional<VoiceEffectSettings> pendingVoiceEffectPreview_;
+    ULONGLONG lastVoiceEffectsDiagnosticsRefreshTick_ = 0;
 
     std::vector<PlaybackSnapshot> playbackSnapshots_;
     PlaybackId selectedPlaybackId_ = InvalidPlaybackId;

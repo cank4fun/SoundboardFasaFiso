@@ -145,6 +145,21 @@ namespace
         return settings;
     }
 
+    VoiceEffectSettings ActiveNeutralVoiceEffectSettings()
+    {
+        VoiceEffectSettings settings;
+        settings.enabled = true;
+        settings.bypassed = false;
+        settings.preset = VoiceEffectPreset::Custom;
+        settings.pitchSemitones = 0.0f;
+        settings.formantSemitones = 0.0f;
+        settings.character = 0.0f;
+        settings.drive = 0.0f;
+        settings.dryWet = 0.0f;
+        settings.outputGainDb = 0.0f;
+        return settings;
+    }
+
     void TestEnabledWithoutNativeStagesIsTransparent()
     {
         MicrophoneProcessor processor;
@@ -667,6 +682,149 @@ namespace
         );
     }
 
+    void TestVoiceEffectOutputGainRunsAfterAgc()
+    {
+        MicrophoneProcessingSettings processing = NativeStageSettings();
+        processing.highPassEnabled = false;
+        processing.agcEnabled = true;
+        processing.agcTargetDbfs = -18.0f;
+        processing.compressorEnabled = false;
+        processing.limiterEnabled = false;
+
+        MicrophoneProcessor unityProcessor;
+        MicrophoneProcessor boostedProcessor;
+        Expect(unityProcessor.Initialize(processing),
+            "unity final-gain processor initializes");
+        Expect(boostedProcessor.Initialize(processing),
+            "boosted final-gain processor initializes");
+
+        VoiceEffectSettings unity = ActiveNeutralVoiceEffectSettings();
+        VoiceEffectSettings boosted = unity;
+        boosted.outputGainDb = 6.0f;
+        Expect(unityProcessor.UpdateVoiceEffectSettings(unity),
+            "unity final-gain settings update");
+        Expect(boostedProcessor.UpdateVoiceEffectSettings(boosted),
+            "boosted final-gain settings update");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> unityOutput{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> boostedOutput{};
+        input.fill(0.05f);
+
+        for (int block = 0; block < 240; ++block)
+        {
+            Expect(unityProcessor.ProcessBlock(input, unityOutput),
+                "unity AGC/final-gain block is processed");
+            Expect(boostedProcessor.ProcessBlock(input, boostedOutput),
+                "boosted AGC/final-gain block is processed");
+        }
+
+        const MicrophoneProcessingSnapshot unitySnapshot =
+            unityProcessor.GetSnapshot();
+        const MicrophoneProcessingSnapshot boostedSnapshot =
+            boostedProcessor.GetSnapshot();
+        Expect(
+            std::abs(unitySnapshot.agcGainDb - boostedSnapshot.agcGainDb) <
+                0.05f,
+            "output gain does not change the AGC detector or gain"
+        );
+        const float gainRatio = boostedSnapshot.processedRms /
+            std::max(unitySnapshot.processedRms, 0.000001f);
+        Expect(gainRatio > 1.94f && gainRatio < 2.05f,
+            "six dB output gain remains after AGC");
+    }
+
+    void TestVoiceEffectOutputGainRunsBeforeLimiter()
+    {
+        MicrophoneProcessingSettings processing = NativeStageSettings();
+        processing.highPassEnabled = false;
+        processing.compressorEnabled = false;
+        processing.limiterEnabled = true;
+        processing.limiterCeilingDb = -6.0f;
+
+        MicrophoneProcessor processor;
+        Expect(processor.Initialize(processing),
+            "limited final-gain processor initializes");
+
+        VoiceEffectSettings settings = ActiveNeutralVoiceEffectSettings();
+        settings.outputGainDb = 12.0f;
+        Expect(processor.UpdateVoiceEffectSettings(settings),
+            "limited final-gain settings update");
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        input.fill(0.40f);
+
+        for (int block = 0; block < 20; ++block)
+        {
+            Expect(processor.ProcessBlock(input, output),
+                "limited final-gain block is processed");
+        }
+
+        const float ceiling = std::pow(10.0f, -6.0f / 20.0f);
+        const float outputPeak = *std::max_element(
+            output.begin(),
+            output.end()
+        );
+        Expect(outputPeak <= ceiling + 0.00001f,
+            "limiter contains positive output gain");
+        Expect(outputPeak >= ceiling - 0.00001f,
+            "output gain reaches the limiter ceiling");
+    }
+
+    void TestVoiceEffectSettingsUpdateAtBlockBoundary()
+    {
+        MicrophoneProcessor processor;
+        Expect(processor.Initialize({}), "default settings initialize");
+
+        const auto settings = BuildVoiceEffectPreset(
+            VoiceEffectPreset::Radio,
+            true
+        );
+        Expect(settings.has_value(), "radio preset exists");
+        if (!settings.has_value())
+        {
+            return;
+        }
+
+        VoiceEffectSettings enabled = *settings;
+        enabled.bypassed = true;
+        Expect(
+            processor.UpdateVoiceEffectSettings(enabled),
+            "valid voice-effect settings update is accepted"
+        );
+
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> input{};
+        std::array<float, MicrophoneProcessor::SamplesPerBlock> output{};
+        input[0] = 0.25f;
+        input[1] = -0.125f;
+
+        Expect(
+            processor.ProcessBlock(input, output),
+            "voice-effect settings are observed on the next block"
+        );
+        Expect(input == output,
+            "the infrastructure stage remains transparent");
+
+        const MicrophoneProcessingSnapshot snapshot =
+            processor.GetSnapshot();
+        Expect(snapshot.voiceEffectsEnabled,
+            "snapshot reports enabled voice effects");
+        Expect(snapshot.voiceEffectsBypassed,
+            "snapshot reports the independent effect bypass");
+        Expect(snapshot.voiceEffectPreset == VoiceEffectPreset::Radio,
+            "snapshot reports the applied preset");
+        Expect(snapshot.bypassed,
+            "the no-op infrastructure stage does not force mono routing");
+
+        VoiceEffectSettings invalid = enabled;
+        invalid.formantSemitones = 7.0f;
+        Expect(
+            !processor.UpdateVoiceEffectSettings(invalid),
+            "invalid voice-effect settings update is rejected"
+        );
+    }
+
     void TestNonFiniteAndClippedSamplesAreContained()
     {
         MicrophoneProcessor processor;
@@ -743,6 +901,9 @@ int main()
     TestInvalidConfigurationFallsBackSafely();
     TestInvalidUpdatesAreTransactional();
     TestInvalidBuffersAreRejected();
+    TestVoiceEffectOutputGainRunsAfterAgc();
+    TestVoiceEffectOutputGainRunsBeforeLimiter();
+    TestVoiceEffectSettingsUpdateAtBlockBoundary();
     TestNonFiniteAndClippedSamplesAreContained();
     TestResetClearsPublishedState();
 

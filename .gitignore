@@ -41,6 +41,7 @@ x64/
 
 # Generated packages
 SoundBoardFasaFiso-v*-windows-x64-portable.zip
+SBFF-AEC-Diagnostics-*.zip
 *.sha256
 portable/
 

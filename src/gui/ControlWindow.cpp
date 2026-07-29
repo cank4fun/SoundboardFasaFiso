@@ -42,7 +42,7 @@ namespace
     constexpr int StatusHeight = 38;
     constexpr int SettingsGroupHeight = 300;
     constexpr int SettingsToolsGroupHeight = 112;
-    constexpr int ControlHotkeysGroupHeight = 188;
+    constexpr int ControlHotkeysGroupHeight = 226;
     constexpr int MainQuickGroupHeight = 112;
     constexpr int BindingEditorWidth = 420;
     constexpr int ButtonHeight = 34;
@@ -621,6 +621,9 @@ void ControlWindow::Shutdown()
     pendingBindings_.clear();
     selectedBindingIndex_ = -1;
     capturingBindingHotkey_ = false;
+    pendingVoiceEffectPreview_.reset();
+    pendingVoiceEffectPresetDeleteName_.reset();
+    populatingVoiceEffectsControls_ = false;
 
     headerLabel_ = nullptr;
     subtitleLabel_ = nullptr;
@@ -628,6 +631,7 @@ void ControlWindow::Shutdown()
     mainTabButton_ = nullptr;
     settingsTabButton_ = nullptr;
     microphoneProcessingTabButton_ = nullptr;
+    voiceEffectsTabButton_ = nullptr;
     hotkeysTabButton_ = nullptr;
     playbackTabButton_ = nullptr;
     statusCaption_ = nullptr;
@@ -721,6 +725,37 @@ void ControlWindow::Shutdown()
     microphoneLimiterCeilingCaption_ = nullptr;
     microphoneLimiterCeilingEdit_ = nullptr;
     microphoneUnavailableFeaturesCaption_ = nullptr;
+    voiceEffectsGroup_ = nullptr;
+    voiceEffectsEnabledCheck_ = nullptr;
+    voiceEffectsBypassCheck_ = nullptr;
+    voiceEffectsStatusCaption_ = nullptr;
+    voiceEffectsStatusValue_ = nullptr;
+    voiceEffectsPresetCaption_ = nullptr;
+    voiceEffectsPresetCombo_ = nullptr;
+    voiceEffectsPresetNameCaption_ = nullptr;
+    voiceEffectsPresetNameEdit_ = nullptr;
+    voiceEffectsPitchCaption_ = nullptr;
+    voiceEffectsPitchSlider_ = nullptr;
+    voiceEffectsPitchValue_ = nullptr;
+    voiceEffectsFormantCaption_ = nullptr;
+    voiceEffectsFormantSlider_ = nullptr;
+    voiceEffectsFormantValue_ = nullptr;
+    voiceEffectsCharacterCaption_ = nullptr;
+    voiceEffectsCharacterSlider_ = nullptr;
+    voiceEffectsCharacterValue_ = nullptr;
+    voiceEffectsDriveCaption_ = nullptr;
+    voiceEffectsDriveSlider_ = nullptr;
+    voiceEffectsDriveValue_ = nullptr;
+    voiceEffectsDryWetCaption_ = nullptr;
+    voiceEffectsDryWetSlider_ = nullptr;
+    voiceEffectsDryWetValue_ = nullptr;
+    voiceEffectsOutputGainCaption_ = nullptr;
+    voiceEffectsOutputGainSlider_ = nullptr;
+    voiceEffectsOutputGainValue_ = nullptr;
+    voiceEffectsResetButton_ = nullptr;
+    voiceEffectsSavePresetButton_ = nullptr;
+    voiceEffectsDeletePresetButton_ = nullptr;
+    voiceEffectsInfoCaption_ = nullptr;
     controlHotkeysGroup_ = nullptr;
     stopHotkeyCaption_ = nullptr;
     stopHotkeyEdit_ = nullptr;
@@ -728,6 +763,12 @@ void ControlWindow::Shutdown()
     outputMuteHotkeyEdit_ = nullptr;
     monitorMuteHotkeyCaption_ = nullptr;
     monitorMuteHotkeyEdit_ = nullptr;
+    voiceEffectsPreviousPresetHotkeyCaption_ = nullptr;
+    voiceEffectsPreviousPresetHotkeyEdit_ = nullptr;
+    voiceEffectsNextPresetHotkeyCaption_ = nullptr;
+    voiceEffectsNextPresetHotkeyEdit_ = nullptr;
+    voiceEffectsBypassHotkeyCaption_ = nullptr;
+    voiceEffectsBypassHotkeyEdit_ = nullptr;
     reloadHotkeyCaption_ = nullptr;
     reloadHotkeyEdit_ = nullptr;
     exitHotkeyCaption_ = nullptr;
@@ -885,6 +926,7 @@ void ControlWindow::UpdateConfig(const Config& config)
     PopulateDeviceCombos();
     PopulateNumericCombos();
     PopulateEditorControls();
+    PopulateVoiceEffectsControls();
     PopulateControlHotkeys();
     PopulateBindings();
     ClearBindingEditor();
@@ -1270,6 +1312,7 @@ LRESULT ControlWindow::HandleWindowMessage(
             if (wParam == LevelMeterTimerId)
             {
                 UpdateLevelMeters();
+                RetryPendingVoiceEffectsPreview();
                 return 0;
             }
             break;
@@ -1325,6 +1368,22 @@ LRESULT ControlWindow::HandleWindowMessage(
                 return 0;
             }
 
+            if (controlId == IdVoiceEffectsPreset &&
+                notificationCode == CBN_SELCHANGE)
+            {
+                ApplySelectedVoiceEffectsPreset();
+                return 0;
+            }
+
+            if (controlId == IdVoiceEffectsPresetName &&
+                notificationCode == EN_CHANGE &&
+                !populatingVoiceEffectsControls_)
+            {
+                pendingVoiceEffectPresetDeleteName_.reset();
+                UpdateVoiceEffectsPresetButtons();
+                return 0;
+            }
+
             const HWND commandControl = reinterpret_cast<HWND>(lParam);
             const bool nativeFilterEditChanged =
                 notificationCode == EN_CHANGE &&
@@ -1351,6 +1410,19 @@ LRESULT ControlWindow::HandleWindowMessage(
                 MarkMicrophoneProcessingPresetCustom();
             }
 
+            const bool voiceEffectsToggleChanged =
+                notificationCode == BN_CLICKED &&
+                (commandControl == voiceEffectsEnabledCheck_ ||
+                    commandControl == voiceEffectsBypassCheck_);
+
+            if (!populatingVoiceEffectsControls_ &&
+                voiceEffectsToggleChanged)
+            {
+                CancelPendingVoiceEffectPresetDelete();
+                SubmitVoiceEffectsPreview();
+                return 0;
+            }
+
             constexpr int AcceleratorNotificationCode = 1;
             if (notificationCode != BN_CLICKED &&
                 notificationCode != AcceleratorNotificationCode)
@@ -1372,6 +1444,10 @@ LRESULT ControlWindow::HandleWindowMessage(
                     SetActivePage(ControlPage::MicrophoneProcessing);
                     return 0;
 
+                case IdVoiceEffectsTab:
+                    SetActivePage(ControlPage::VoiceEffects);
+                    return 0;
+
                 case IdMicrophoneTestMonitor:
                     ToggleMicrophoneTestMonitor();
                     return 0;
@@ -1390,6 +1466,18 @@ LRESULT ControlWindow::HandleWindowMessage(
 
                 case IdPlaybackStop:
                     StopSelectedPlayback();
+                    return 0;
+
+                case IdVoiceEffectsReset:
+                    ResetVoiceEffectsControls();
+                    return 0;
+
+                case IdVoiceEffectsSavePreset:
+                    SaveVoiceEffectUserPreset();
+                    return 0;
+
+                case IdVoiceEffectsDeletePreset:
+                    DeleteVoiceEffectUserPreset();
                     return 0;
 
                 case IdApplySettings:
@@ -1586,6 +1674,20 @@ LRESULT ControlWindow::HandleWindowMessage(
                 slider == microphoneVolumeSlider_)
             {
                 UpdateVolumeLabels();
+                RedrawWindow(
+                    slider,
+                    nullptr,
+                    nullptr,
+                    RDW_INVALIDATE | RDW_ERASE | RDW_UPDATENOW
+                );
+                return 0;
+            }
+
+            if (IsVoiceEffectsSlider(slider))
+            {
+                UpdateVoiceEffectsValueLabels();
+                MarkVoiceEffectsPresetCustom();
+                SubmitVoiceEffectsPreview(false);
                 RedrawWindow(
                     slider,
                     nullptr,
@@ -1858,6 +1960,10 @@ bool ControlWindow::CreateControls()
     microphoneProcessingTabButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
         IdMicrophoneProcessingTab
+    );
+    voiceEffectsTabButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
+        IdVoiceEffectsTab
     );
     hotkeysTabButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdHotkeysTab
@@ -2180,6 +2286,11 @@ bool ControlWindow::CreateControls()
         L"STATIC", L"", SS_LEFT, 0
     );
 
+    if (!CreateVoiceEffectsControls())
+    {
+        return false;
+    }
+
     SendMessageW(outputVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
     SendMessageW(monitorVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
     SendMessageW(microphoneVolumeSlider_, TBM_SETRANGE, TRUE, MAKELPARAM(0, 100));
@@ -2198,6 +2309,24 @@ bool ControlWindow::CreateControls()
     );
     monitorMuteHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
     monitorMuteHotkeyEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
+    );
+    voiceEffectsPreviousPresetHotkeyCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    voiceEffectsPreviousPresetHotkeyEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
+    );
+    voiceEffectsNextPresetHotkeyCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    voiceEffectsNextPresetHotkeyEdit_ = createControl(
+        L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
+    );
+    voiceEffectsBypassHotkeyCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    voiceEffectsBypassHotkeyEdit_ = createControl(
         L"EDIT", L"", ES_AUTOHSCROLL | WS_TABSTOP, 0, WS_EX_CLIENTEDGE
     );
     reloadHotkeyCaption_ = createControl(L"STATIC", L"", SS_LEFT, 0);
@@ -2326,8 +2455,8 @@ bool ControlWindow::CreateControls()
     const HWND controls[] = {
         headerLabel_, subtitleLabel_, themeToggleButton_,
         mainTabButton_, settingsTabButton_,
-        microphoneProcessingTabButton_, hotkeysTabButton_,
-        playbackTabButton_,
+        microphoneProcessingTabButton_, voiceEffectsTabButton_,
+        hotkeysTabButton_, playbackTabButton_,
         statusCaption_, statusValue_, mainQuickGroup_,
         mainOutputMeterCaption_, mainOutputLevelMeter_,
         mainMonitorMeterCaption_, mainMonitorLevelMeter_,
@@ -2382,7 +2511,14 @@ bool ControlWindow::CreateControls()
         microphoneUnavailableFeaturesCaption_, controlHotkeysGroup_,
         stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
         outputMuteHotkeyEdit_, monitorMuteHotkeyCaption_,
-        monitorMuteHotkeyEdit_, reloadHotkeyCaption_, reloadHotkeyEdit_,
+        monitorMuteHotkeyEdit_,
+        voiceEffectsPreviousPresetHotkeyCaption_,
+        voiceEffectsPreviousPresetHotkeyEdit_,
+        voiceEffectsNextPresetHotkeyCaption_,
+        voiceEffectsNextPresetHotkeyEdit_,
+        voiceEffectsBypassHotkeyCaption_,
+        voiceEffectsBypassHotkeyEdit_,
+        reloadHotkeyCaption_, reloadHotkeyEdit_,
         exitHotkeyCaption_, exitHotkeyEdit_, bindingsGroup_, bindingsList_,
         bindingEditorGroup_, bindingHotkeyCaption_, bindingHotkeyEdit_,
         captureHotkeyButton_, bindingFileCaption_, bindingFileEdit_,
@@ -2422,7 +2558,9 @@ bool ControlWindow::CreateAccelerators()
         {FCONTROL | FVIRTKEY, static_cast<WORD>('3'), IdHotkeysTab},
         {FCONTROL | FVIRTKEY, static_cast<WORD>('4'),
             IdMicrophoneProcessingTab},
-        {FCONTROL | FVIRTKEY, static_cast<WORD>('5'), IdPlaybackTab},
+        {FCONTROL | FVIRTKEY, static_cast<WORD>('5'),
+            IdVoiceEffectsTab},
+        {FCONTROL | FVIRTKEY, static_cast<WORD>('6'), IdPlaybackTab},
         {FCONTROL | FVIRTKEY, static_cast<WORD>('S'), IdApplySettings},
         {FVIRTKEY, VK_ESCAPE, IdCancelHotkeyCapture}
     };
@@ -2507,12 +2645,18 @@ void ControlWindow::LayoutControls(
     );
     y += HeaderHeight + SubtitleHeight + 8;
 
-    constexpr int tabWidth = 142;
     constexpr int tabGap = 6;
     const HWND tabs[]{
         mainTabButton_, settingsTabButton_, hotkeysTabButton_,
-        microphoneProcessingTabButton_, playbackTabButton_
+        microphoneProcessingTabButton_, voiceEffectsTabButton_,
+        playbackTabButton_
     };
+    const int tabWidth = std::max(
+        100,
+        (contentWidth - tabGap *
+            (static_cast<int>(std::size(tabs)) - 1)) /
+            static_cast<int>(std::size(tabs))
+    );
 
     for (std::size_t index = 0; index < std::size(tabs); ++index)
     {
@@ -3301,6 +3445,15 @@ void ControlWindow::LayoutControls(
             TRUE
         );
     }
+    else if (activePage_ == ControlPage::VoiceEffects)
+    {
+        LayoutVoiceEffectsControls(
+            contentX,
+            pageY,
+            contentWidth,
+            pageHeight
+        );
+    }
     else
     {
         moveWindow(
@@ -3351,12 +3504,27 @@ void ControlWindow::LayoutControls(
             innerX, pageY + 76
         );
         layoutHotkeyField(
-            reloadHotkeyCaption_, reloadHotkeyEdit_,
+            voiceEffectsBypassHotkeyCaption_,
+            voiceEffectsBypassHotkeyEdit_,
             rightX, pageY + 76
         );
         layoutHotkeyField(
-            exitHotkeyCaption_, exitHotkeyEdit_,
+            voiceEffectsPreviousPresetHotkeyCaption_,
+            voiceEffectsPreviousPresetHotkeyEdit_,
             innerX, pageY + 114
+        );
+        layoutHotkeyField(
+            voiceEffectsNextPresetHotkeyCaption_,
+            voiceEffectsNextPresetHotkeyEdit_,
+            rightX, pageY + 114
+        );
+        layoutHotkeyField(
+            reloadHotkeyCaption_, reloadHotkeyEdit_,
+            innerX, pageY + 152
+        );
+        layoutHotkeyField(
+            exitHotkeyCaption_, exitHotkeyEdit_,
+            rightX, pageY + 152
         );
 
         moveWindow(
@@ -3481,6 +3649,10 @@ void ControlWindow::SetActivePage(const ControlPage page)
     {
         activeTab = microphoneProcessingTabButton_;
     }
+    else if (activePage_ == ControlPage::VoiceEffects)
+    {
+        activeTab = voiceEffectsTabButton_;
+    }
     else if (activePage_ == ControlPage::Hotkeys)
     {
         activeTab = hotkeysTabButton_;
@@ -3583,10 +3755,35 @@ void ControlWindow::UpdatePageVisibility()
         microphoneUnavailableFeaturesCaption_
     };
 
+    const HWND voiceEffectsControls[]{
+        voiceEffectsGroup_, voiceEffectsEnabledCheck_,
+        voiceEffectsBypassCheck_, voiceEffectsStatusCaption_,
+        voiceEffectsStatusValue_, voiceEffectsPresetCaption_,
+        voiceEffectsPresetCombo_, voiceEffectsPresetNameCaption_,
+        voiceEffectsPresetNameEdit_, voiceEffectsPitchCaption_,
+        voiceEffectsPitchSlider_, voiceEffectsPitchValue_,
+        voiceEffectsFormantCaption_, voiceEffectsFormantSlider_,
+        voiceEffectsFormantValue_, voiceEffectsCharacterCaption_,
+        voiceEffectsCharacterSlider_, voiceEffectsCharacterValue_,
+        voiceEffectsDriveCaption_, voiceEffectsDriveSlider_,
+        voiceEffectsDriveValue_, voiceEffectsDryWetCaption_,
+        voiceEffectsDryWetSlider_, voiceEffectsDryWetValue_,
+        voiceEffectsOutputGainCaption_, voiceEffectsOutputGainSlider_,
+        voiceEffectsOutputGainValue_, voiceEffectsResetButton_,
+        voiceEffectsSavePresetButton_, voiceEffectsDeletePresetButton_,
+        voiceEffectsInfoCaption_
+    };
+
     const HWND hotkeyControls[]{
         controlHotkeysGroup_, stopHotkeyCaption_, stopHotkeyEdit_,
         outputMuteHotkeyCaption_, outputMuteHotkeyEdit_,
         monitorMuteHotkeyCaption_, monitorMuteHotkeyEdit_,
+        voiceEffectsPreviousPresetHotkeyCaption_,
+        voiceEffectsPreviousPresetHotkeyEdit_,
+        voiceEffectsNextPresetHotkeyCaption_,
+        voiceEffectsNextPresetHotkeyEdit_,
+        voiceEffectsBypassHotkeyCaption_,
+        voiceEffectsBypassHotkeyEdit_,
         reloadHotkeyCaption_, reloadHotkeyEdit_,
         exitHotkeyCaption_, exitHotkeyEdit_
     };
@@ -3613,6 +3810,10 @@ void ControlWindow::UpdatePageVisibility()
             activePage_ == ControlPage::MicrophoneProcessing
         );
     }
+    for (const HWND control : voiceEffectsControls)
+    {
+        setVisible(control, activePage_ == ControlPage::VoiceEffects);
+    }
     for (const HWND control : hotkeyControls)
     {
         setVisible(control, activePage_ == ControlPage::Hotkeys);
@@ -3633,6 +3834,10 @@ void ControlWindow::UpdatePageVisibility()
     );
     RedrawWindow(
         microphoneProcessingTabButton_, nullptr, nullptr,
+        RDW_INVALIDATE | RDW_UPDATENOW
+    );
+    RedrawWindow(
+        voiceEffectsTabButton_, nullptr, nullptr,
         RDW_INVALIDATE | RDW_UPDATENOW
     );
     RedrawWindow(
@@ -3670,10 +3875,10 @@ void ControlWindow::ApplyTheme()
         ? L"DarkMode_CFD"
         : L"Explorer";
 
-    const std::array<HWND, 7> combos{
+    const std::array<HWND, 8> combos{
         outputCombo_, monitorCombo_, microphoneCombo_,
         sampleRateCombo_, bufferCombo_, microphoneProcessingPresetCombo_,
-        microphoneNoiseSuppressionLevelCombo_
+        microphoneNoiseSuppressionLevelCombo_, voiceEffectsPresetCombo_
     };
 
     for (const HWND control : combos)
@@ -3694,7 +3899,7 @@ void ControlWindow::ApplyTheme()
         SetWindowTheme(bindingModeCombo_, comboTheme, nullptr);
     }
 
-    const std::array<HWND, 19> edits{
+    const std::array<HWND, 20> edits{
         stopHotkeyEdit_, outputMuteHotkeyEdit_, monitorMuteHotkeyEdit_,
         reloadHotkeyEdit_, exitHotkeyEdit_, bindingHotkeyEdit_,
         bindingFileEdit_, bindingFadeInEdit_, bindingFadeOutEdit_,
@@ -3703,7 +3908,7 @@ void ControlWindow::ApplyTheme()
         microphoneCompressorRatioEdit_, microphoneCompressorAttackEdit_,
         microphoneCompressorReleaseEdit_,
         microphoneCompressorMakeupEdit_, microphoneLimiterCeilingEdit_,
-        playbackList_
+        voiceEffectsPresetNameEdit_, playbackList_
     };
 
     for (const HWND control : edits)
@@ -3714,10 +3919,13 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 6> sliders{
+    const std::array<HWND, 12> sliders{
         outputVolumeSlider_, monitorVolumeSlider_,
         microphoneVolumeSlider_, bindingVolumeSlider_,
-        playbackSeekSlider_, playbackVolumeSlider_
+        playbackSeekSlider_, playbackVolumeSlider_,
+        voiceEffectsPitchSlider_, voiceEffectsFormantSlider_,
+        voiceEffectsCharacterSlider_, voiceEffectsDriveSlider_,
+        voiceEffectsDryWetSlider_, voiceEffectsOutputGainSlider_
     };
 
     for (const HWND control : sliders)
@@ -3729,14 +3937,15 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 12> checkBoxes{
+    const std::array<HWND, 14> checkBoxes{
         microphoneEnabledCheck_, microphoneToOutputCheck_,
         microphoneToMonitorCheck_, startWithWindowsCheck_,
         checkUpdatesOnStartCheck_, microphoneProcessingEnabledCheck_,
         microphoneEchoCancellationEnabledCheck_,
         microphoneNoiseSuppressionEnabledCheck_,
         microphoneAgcEnabledCheck_, microphoneHighPassEnabledCheck_,
-        microphoneCompressorEnabledCheck_, microphoneLimiterEnabledCheck_
+        microphoneCompressorEnabledCheck_, microphoneLimiterEnabledCheck_,
+        voiceEffectsEnabledCheck_, voiceEffectsBypassCheck_
     };
 
     for (const HWND control : checkBoxes)
@@ -3839,9 +4048,30 @@ void ControlWindow::ApplyFonts()
         microphoneCompressorMakeupEdit_, microphoneLimiterEnabledCheck_,
         microphoneLimiterCeilingCaption_, microphoneLimiterCeilingEdit_,
         microphoneUnavailableFeaturesCaption_,
+        voiceEffectsEnabledCheck_, voiceEffectsBypassCheck_,
+        voiceEffectsStatusCaption_, voiceEffectsStatusValue_,
+        voiceEffectsPresetCaption_, voiceEffectsPresetCombo_,
+        voiceEffectsPresetNameCaption_, voiceEffectsPresetNameEdit_,
+        voiceEffectsPitchCaption_, voiceEffectsPitchSlider_,
+        voiceEffectsPitchValue_, voiceEffectsFormantCaption_,
+        voiceEffectsFormantSlider_, voiceEffectsFormantValue_,
+        voiceEffectsCharacterCaption_, voiceEffectsCharacterSlider_,
+        voiceEffectsCharacterValue_, voiceEffectsDriveCaption_,
+        voiceEffectsDriveSlider_, voiceEffectsDriveValue_,
+        voiceEffectsDryWetCaption_, voiceEffectsDryWetSlider_,
+        voiceEffectsDryWetValue_, voiceEffectsOutputGainCaption_,
+        voiceEffectsOutputGainSlider_, voiceEffectsOutputGainValue_,
+        voiceEffectsInfoCaption_,
         stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
         outputMuteHotkeyEdit_, monitorMuteHotkeyCaption_,
-        monitorMuteHotkeyEdit_, reloadHotkeyCaption_, reloadHotkeyEdit_,
+        monitorMuteHotkeyEdit_,
+        voiceEffectsPreviousPresetHotkeyCaption_,
+        voiceEffectsPreviousPresetHotkeyEdit_,
+        voiceEffectsNextPresetHotkeyCaption_,
+        voiceEffectsNextPresetHotkeyEdit_,
+        voiceEffectsBypassHotkeyCaption_,
+        voiceEffectsBypassHotkeyEdit_,
+        reloadHotkeyCaption_, reloadHotkeyEdit_,
         exitHotkeyCaption_, exitHotkeyEdit_, bindingsList_,
         bindingHotkeyCaption_, bindingHotkeyEdit_, bindingFileCaption_,
         bindingFileEdit_, bindingModeCaption_, bindingModeCombo_,
@@ -3870,9 +4100,11 @@ void ControlWindow::ApplyFonts()
 
     const HWND buttons[]{
         themeToggleButton_, mainTabButton_, settingsTabButton_,
-        microphoneProcessingTabButton_, hotkeysTabButton_,
-        playbackTabButton_, refreshDevicesButton_, applySettingsButton_,
-        microphoneTestMonitorButton_,
+        microphoneProcessingTabButton_, voiceEffectsTabButton_,
+        hotkeysTabButton_, playbackTabButton_, refreshDevicesButton_,
+        applySettingsButton_, microphoneTestMonitorButton_,
+        voiceEffectsResetButton_, voiceEffectsSavePresetButton_,
+        voiceEffectsDeletePresetButton_,
         captureHotkeyButton_, browseSoundButton_, importUrlButton_,
         addBindingButton_, updateBindingButton_, removeBindingButton_,
         clearBindingButton_,
@@ -3911,7 +4143,8 @@ void ControlWindow::ApplyFonts()
 
     const HWND cards[]{
         mainQuickGroup_, settingsGroup_, settingsToolsGroup_,
-        microphoneProcessingGroup_, controlHotkeysGroup_, bindingsGroup_,
+        microphoneProcessingGroup_, voiceEffectsGroup_,
+        controlHotkeysGroup_, bindingsGroup_,
         bindingEditorGroup_
     };
 
@@ -4203,6 +4436,8 @@ void ControlWindow::DrawModernButton(const DRAWITEMSTRUCT& item)
                 activePage_ == ControlPage::Settings) ||
             (item.hwndItem == microphoneProcessingTabButton_ &&
                 activePage_ == ControlPage::MicrophoneProcessing) ||
+            (item.hwndItem == voiceEffectsTabButton_ &&
+                activePage_ == ControlPage::VoiceEffects) ||
             (item.hwndItem == hotkeysTabButton_ &&
                 activePage_ == ControlPage::Hotkeys) ||
             (item.hwndItem == playbackTabButton_ &&
@@ -4391,7 +4626,8 @@ bool ControlWindow::IsSliderControl(const HWND control) const
         control == microphoneVolumeSlider_ ||
         control == bindingVolumeSlider_ ||
         control == playbackSeekSlider_ ||
-        control == playbackVolumeSlider_;
+        control == playbackVolumeSlider_ ||
+        IsVoiceEffectsSlider(control);
 }
 
 bool ControlWindow::IsLevelMeterControl(const HWND control) const
@@ -4653,6 +4889,7 @@ bool ControlWindow::IsCardControl(const HWND control) const
         control == settingsGroup_ ||
         control == settingsToolsGroup_ ||
         control == microphoneProcessingGroup_ ||
+        control == voiceEffectsGroup_ ||
         control == controlHotkeysGroup_ ||
         control == bindingsGroup_ ||
         control == bindingEditorGroup_;
@@ -4672,6 +4909,7 @@ bool ControlWindow::IsNavigationTab(const HWND control) const
     return control == mainTabButton_ ||
         control == settingsTabButton_ ||
         control == microphoneProcessingTabButton_ ||
+        control == voiceEffectsTabButton_ ||
         control == hotkeysTabButton_ ||
         control == playbackTabButton_;
 }
@@ -4680,6 +4918,7 @@ bool ControlWindow::IsDangerButton(const HWND control) const
 {
     return control == exitButton_ ||
         control == removeBindingButton_ ||
+        control == voiceEffectsDeletePresetButton_ ||
         control == playbackStopButton_ ||
         (control == importUrlButton_ &&
             urlImportRunning_.load());
@@ -4719,8 +4958,8 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         subtitleLabel_,
         Localization::Text(
-            L"Ctrl+1–5: sekmeler • Editör: Ctrl+X/C/V · Space · Ctrl+S",
-            L"Ctrl+1–5: tabs • Editor: Ctrl+X/C/V · Space · Ctrl+S"
+            L"Ctrl+1–6: sekmeler • Editör: Ctrl+X/C/V · Space · Ctrl+S",
+            L"Ctrl+1–6: tabs • Editor: Ctrl+X/C/V · Space · Ctrl+S"
         )
     );
     SetControlText(
@@ -4740,6 +4979,10 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         microphoneProcessingTabButton_,
         Localization::Text(L"Mikrofon filtreleri", L"Mic filters")
+    );
+    SetControlText(
+        voiceEffectsTabButton_,
+        Localization::Text(L"Ses efektleri", L"Voice effects")
     );
     SetControlText(
         hotkeysTabButton_,
@@ -5016,12 +5259,98 @@ void ControlWindow::RefreshLocalizedText()
     PopulateMicrophoneNoiseSuppressionLevelCombo();
 
     SetControlText(
+        voiceEffectsGroup_,
+        Localization::Text(L"Voice Effects / Voice Changer", L"Voice Effects / Voice Changer")
+    );
+    SetControlText(
+        voiceEffectsEnabledCheck_,
+        Localization::Text(L"Voice Effects'i etkinleştir", L"Enable Voice Effects")
+    );
+    SetControlText(
+        voiceEffectsBypassCheck_,
+        Localization::Text(L"Bypass", L"Bypass")
+    );
+    SetControlText(
+        voiceEffectsStatusCaption_,
+        Localization::Text(L"Durum:", L"Status:")
+    );
+    SetControlText(
+        voiceEffectsStatusValue_,
+        Localization::Text(
+            L"Tüm Voice Effects DSP aktif • 16 ms sabit gecikme",
+            L"All Voice Effects DSP active • fixed 16 ms latency"
+        )
+    );
+    SetControlText(
+        voiceEffectsPresetCaption_,
+        Localization::Text(L"Preset:", L"Preset:")
+    );
+    SetControlText(
+        voiceEffectsPresetNameCaption_,
+        Localization::Text(L"Preset adı:", L"Preset name:")
+    );
+    SetControlText(
+        voiceEffectsPitchCaption_,
+        Localization::Text(L"Pitch", L"Pitch")
+    );
+    SetControlText(
+        voiceEffectsFormantCaption_,
+        Localization::Text(L"Formant", L"Formant")
+    );
+    SetControlText(
+        voiceEffectsCharacterCaption_,
+        Localization::Text(L"Karakter", L"Character")
+    );
+    SetControlText(
+        voiceEffectsDriveCaption_,
+        Localization::Text(L"Drive", L"Drive")
+    );
+    SetControlText(
+        voiceEffectsDryWetCaption_,
+        Localization::Text(L"Dry / Wet", L"Dry / Wet")
+    );
+    SetControlText(
+        voiceEffectsOutputGainCaption_,
+        Localization::Text(L"Çıkış gain", L"Output gain")
+    );
+    SetControlText(
+        voiceEffectsResetButton_,
+        Localization::Text(L"Sıfırla", L"Reset")
+    );
+    UpdateVoiceEffectsPresetButtons();
+    SetControlText(
+        voiceEffectsInfoCaption_,
+        Localization::Text(
+            L"Pitch, formant, karakter, drive, Radio, Robot, Dry/Wet ve çıkış "
+            L"gain canlıdır. Kullanıcı presetleri ad alanından kaydedilir; "
+            L"silme işlemi ikinci tıklamayla inline onaylanır.",
+            L"Pitch, formant, character, drive, Dry/Wet and output gain are "
+            L"live alongside Radio and Robot. User presets are saved from the "
+            L"name field; deletion is confirmed inline with a second click."
+        )
+    );
+    PopulateVoiceEffectsPresetCombo();
+    UpdateVoiceEffectsValueLabels();
+
+    SetControlText(
         controlHotkeysGroup_,
         Localization::Text(L"Kontrol hotkey'leri", L"Control hotkeys")
     );
     SetControlText(stopHotkeyCaption_, Localization::Text(L"Tümünü durdur", L"Stop all"));
     SetControlText(outputMuteHotkeyCaption_, Localization::Text(L"Ana mute", L"Main mute"));
     SetControlText(monitorMuteHotkeyCaption_, Localization::Text(L"Monitör mute", L"Monitor mute"));
+    SetControlText(
+        voiceEffectsPreviousPresetHotkeyCaption_,
+        Localization::Text(L"Önceki preset", L"Previous preset")
+    );
+    SetControlText(
+        voiceEffectsNextPresetHotkeyCaption_,
+        Localization::Text(L"Sonraki preset", L"Next preset")
+    );
+    SetControlText(
+        voiceEffectsBypassHotkeyCaption_,
+        Localization::Text(L"Effects bypass", L"Effects bypass")
+    );
     SetControlText(reloadHotkeyCaption_, Localization::Text(L"Reload", L"Reload"));
     SetControlText(exitHotkeyCaption_, Localization::Text(L"Çıkış", L"Exit"));
 
@@ -5702,6 +6031,20 @@ void ControlWindow::PopulateControlHotkeys()
     SetControlText(
         monitorMuteHotkeyEdit_,
         Utf8ToWide(currentConfig_.GetMonitorMuteKeyName())
+    );
+    SetControlText(
+        voiceEffectsPreviousPresetHotkeyEdit_,
+        Utf8ToWide(
+            currentConfig_.GetVoiceEffectsPreviousPresetKeyName()
+        )
+    );
+    SetControlText(
+        voiceEffectsNextPresetHotkeyEdit_,
+        Utf8ToWide(currentConfig_.GetVoiceEffectsNextPresetKeyName())
+    );
+    SetControlText(
+        voiceEffectsBypassHotkeyEdit_,
+        Utf8ToWide(currentConfig_.GetVoiceEffectsBypassKeyName())
     );
     SetControlText(
         reloadHotkeyEdit_,
@@ -6680,6 +7023,19 @@ void ControlWindow::UpdateLevelMeters()
         InvalidateRect(microphoneRawLevelMeter_, nullptr, FALSE);
         InvalidateRect(microphoneProcessedLevelMeter_, nullptr, FALSE);
     }
+
+    if (activePage_ == ControlPage::VoiceEffects)
+    {
+        const ULONGLONG now = GetTickCount64();
+        constexpr ULONGLONG DiagnosticsRefreshMilliseconds = 500;
+        if (lastVoiceEffectsDiagnosticsRefreshTick_ == 0 ||
+            now - lastVoiceEffectsDiagnosticsRefreshTick_ >=
+                DiagnosticsRefreshMilliseconds)
+        {
+            lastVoiceEffectsDiagnosticsRefreshTick_ = now;
+            UpdateVoiceEffectsRuntimeDiagnostics(snapshot);
+        }
+    }
 }
 
 void ControlWindow::ToggleMicrophoneTestMonitor()
@@ -6987,6 +7343,15 @@ bool ControlWindow::SavePendingSettings()
         return false;
     }
 
+    VoiceEffectSettings voiceEffectSettings;
+    if (!ReadVoiceEffectSettingsFromControls(
+            voiceEffectSettings,
+            true
+        ))
+    {
+        return false;
+    }
+
     if (pendingBindings_.empty())
     {
         MessageBoxW(
@@ -7006,11 +7371,20 @@ bool ControlWindow::SavePendingSettings()
         GetControlText(outputMuteHotkeyEdit_);
     const std::wstring monitorMuteHotkey =
         GetControlText(monitorMuteHotkeyEdit_);
+    const std::wstring voiceEffectsPreviousPresetHotkey =
+        GetControlText(voiceEffectsPreviousPresetHotkeyEdit_);
+    const std::wstring voiceEffectsNextPresetHotkey =
+        GetControlText(voiceEffectsNextPresetHotkeyEdit_);
+    const std::wstring voiceEffectsBypassHotkey =
+        GetControlText(voiceEffectsBypassHotkeyEdit_);
     const std::wstring reloadHotkey = GetControlText(reloadHotkeyEdit_);
     const std::wstring exitHotkey = GetControlText(exitHotkeyEdit_);
 
     if (stopHotkey.empty() || outputMuteHotkey.empty() ||
-        monitorMuteHotkey.empty() || reloadHotkey.empty() ||
+        monitorMuteHotkey.empty() ||
+        voiceEffectsPreviousPresetHotkey.empty() ||
+        voiceEffectsNextPresetHotkey.empty() ||
+        voiceEffectsBypassHotkey.empty() || reloadHotkey.empty() ||
         exitHotkey.empty())
     {
         MessageBoxW(
@@ -7128,6 +7502,20 @@ bool ControlWindow::SavePendingSettings()
         return false;
     }
 
+    if (!candidate.SetVoiceEffectSettings(voiceEffectSettings))
+    {
+        MessageBoxW(
+            window_,
+            Localization::Text(
+                L"Voice Effects ayarları kabul edilmedi.",
+                L"The Voice Effects settings were not accepted."
+            ),
+            L"SoundBoardFasaFiso",
+            MB_OK | MB_ICONWARNING
+        );
+        return false;
+    }
+
     candidate.SetStartWithWindows(startWithWindows);
     candidate.SetShowConsoleOnStart(false);
     candidate.SetCheckUpdatesOnStart(checkUpdatesOnStart);
@@ -7135,6 +7523,9 @@ bool ControlWindow::SavePendingSettings()
         WideToUtf8(stopHotkey),
         WideToUtf8(outputMuteHotkey),
         WideToUtf8(monitorMuteHotkey),
+        WideToUtf8(voiceEffectsPreviousPresetHotkey),
+        WideToUtf8(voiceEffectsNextPresetHotkey),
+        WideToUtf8(voiceEffectsBypassHotkey),
         WideToUtf8(reloadHotkey),
         WideToUtf8(exitHotkey)
     );
@@ -7379,8 +7770,14 @@ bool ControlWindow::AddOrUpdateBinding(const bool updateExisting)
         NormalizeHotkeyText(hotkeyText);
 
     const HWND controlHotkeyEdits[] = {
-        stopHotkeyEdit_, outputMuteHotkeyEdit_, monitorMuteHotkeyEdit_,
-        reloadHotkeyEdit_, exitHotkeyEdit_
+        stopHotkeyEdit_,
+        outputMuteHotkeyEdit_,
+        monitorMuteHotkeyEdit_,
+        voiceEffectsPreviousPresetHotkeyEdit_,
+        voiceEffectsNextPresetHotkeyEdit_,
+        voiceEffectsBypassHotkeyEdit_,
+        reloadHotkeyEdit_,
+        exitHotkeyEdit_
     };
 
     for (const HWND edit : controlHotkeyEdits)

@@ -44,6 +44,18 @@ microphone_compressor_makeup_db=0.0
 microphone_limiter_enabled=true
 microphone_limiter_ceiling_db=-1.0
 
+# SES EFEKTLERİ / VOICE EFFECTS
+# Varsayılan olarak kapalıdır; pitch ve formant birbirinden bağımsızdır.
+voice_effects_enabled=false
+voice_effects_bypassed=false
+voice_effects_preset=deep-heavy
+voice_effects_pitch_semitones=-4.0
+voice_effects_formant_semitones=-1.5
+voice_effects_character=0.55
+voice_effects_drive=0.20
+voice_effects_dry_wet=1.0
+voice_effects_output_gain_db=0.0
+
 # AUDIO GECİKME AYARLARI
 # 0 yazılırsa cihazın/Windows'un varsayılanı kullanılır.
 audio_sample_rate=48000
@@ -60,6 +72,9 @@ check_updates_on_start=true
 stop=F11
 output_mute=CTRL+SHIFT+F9
 monitor_mute=CTRL+SHIFT+F10
+voice_effects_previous_preset=CTRL+ALT+F21
+voice_effects_next_preset=CTRL+ALT+F22
+voice_effects_bypass=CTRL+ALT+F23
 reload=CTRL+SHIFT+F11
 exit=CTRL+SHIFT+F12
 

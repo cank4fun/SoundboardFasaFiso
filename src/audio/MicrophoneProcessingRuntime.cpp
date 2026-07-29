@@ -259,7 +259,8 @@ bool MicrophoneProcessingRuntime::Initialize(
     const ma_uint32 inputChannels,
     const MicrophoneProcessingSettings& settings,
     const OutputCallback outputCallback,
-    void* const outputContext
+    void* const outputContext,
+    const VoiceEffectSettings& voiceEffectSettings
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
     ,
     const RenderReferenceCallback renderReferenceCallback,
@@ -272,7 +273,8 @@ bool MicrophoneProcessingRuntime::Initialize(
         inputSampleRate != RequiredSampleRate ||
         inputChannels != RequiredInputChannels ||
         outputCallback == nullptr ||
-        !IsValidMicrophoneProcessingSettings(settings)
+        !IsValidMicrophoneProcessingSettings(settings) ||
+        !IsValidVoiceEffectSettings(voiceEffectSettings)
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
         || streamDelayMilliseconds < 0 ||
         streamDelayMilliseconds > 500
@@ -287,6 +289,18 @@ bool MicrophoneProcessingRuntime::Initialize(
         return false;
     }
 
+    if (!processor_.UpdateVoiceEffectSettings(voiceEffectSettings))
+    {
+        processor_.Reset();
+        return false;
+    }
+
+    if (!voiceEffectsRuntime_.Initialize())
+    {
+        processor_.Reset();
+        return false;
+    }
+
     const ma_result ringResult = ma_pcm_rb_init(
         ma_format_f32,
         RequiredInputChannels,
@@ -298,6 +312,7 @@ bool MicrophoneProcessingRuntime::Initialize(
 
     if (ringResult != MA_SUCCESS)
     {
+        voiceEffectsRuntime_.Shutdown();
         processor_.Reset();
         return false;
     }
@@ -330,6 +345,11 @@ bool MicrophoneProcessingRuntime::Initialize(
 #endif
     stopRequested_.store(false, std::memory_order_relaxed);
     droppedInputFrames_.store(0, std::memory_order_relaxed);
+    processedBlockCount_.store(0, std::memory_order_relaxed);
+    processingDeadlineMissCount_.store(0, std::memory_order_relaxed);
+    totalProcessingTimeNanoseconds_.store(0, std::memory_order_relaxed);
+    maximumProcessingTimeNanoseconds_.store(0, std::memory_order_relaxed);
+    peakQueuedInputFrames_.store(0, std::memory_order_relaxed);
     echoCancellationReferenceUnderruns_.store(
         0,
         std::memory_order_relaxed
@@ -348,6 +368,7 @@ bool MicrophoneProcessingRuntime::Initialize(
         acceptingInput_.store(false, std::memory_order_release);
         ma_pcm_rb_uninit(&inputRingBuffer_);
         inputRingBufferInitialized_ = false;
+        voiceEffectsRuntime_.Shutdown();
         processor_.Reset();
         outputCallback_ = nullptr;
         outputContext_ = nullptr;
@@ -367,6 +388,13 @@ bool MicrophoneProcessingRuntime::Initialize(
 
     initialized_ = true;
     return true;
+}
+
+bool MicrophoneProcessingRuntime::UpdateVoiceEffectSettings(
+    const VoiceEffectSettings& settings
+) noexcept
+{
+    return voiceEffectsRuntime_.SubmitSettings(settings);
 }
 
 ma_uint32 MicrophoneProcessingRuntime::PushInputFrames(
@@ -435,6 +463,11 @@ ma_uint32 MicrophoneProcessingRuntime::PushInputFrames(
         );
     }
 
+    if (writtenFrames != 0)
+    {
+        UpdatePeakQueuedInputFrames();
+    }
+
     activePushCount_.fetch_sub(1, std::memory_order_release);
     return writtenFrames;
 }
@@ -454,6 +487,29 @@ std::uint64_t
 MicrophoneProcessingRuntime::GetDroppedInputFrameCount() const noexcept
 {
     return droppedInputFrames_.load(std::memory_order_relaxed);
+}
+
+std::uint64_t
+MicrophoneProcessingRuntime::GetRejectedVoiceEffectUpdateCount() const noexcept
+{
+    return voiceEffectsRuntime_.RejectedUpdateCount();
+}
+
+MicrophoneProcessingRuntimeDiagnostics
+MicrophoneProcessingRuntime::GetDiagnostics() const noexcept
+{
+    MicrophoneProcessingRuntimeDiagnostics diagnostics;
+    diagnostics.processedBlockCount =
+        processedBlockCount_.load(std::memory_order_relaxed);
+    diagnostics.processingDeadlineMissCount =
+        processingDeadlineMissCount_.load(std::memory_order_relaxed);
+    diagnostics.totalProcessingTimeNanoseconds =
+        totalProcessingTimeNanoseconds_.load(std::memory_order_relaxed);
+    diagnostics.maximumProcessingTimeNanoseconds =
+        maximumProcessingTimeNanoseconds_.load(std::memory_order_relaxed);
+    diagnostics.peakQueuedInputFrames =
+        peakQueuedInputFrames_.load(std::memory_order_relaxed);
+    return diagnostics;
 }
 
 bool MicrophoneProcessingRuntime::IsInitialized() const noexcept
@@ -497,6 +553,7 @@ void MicrophoneProcessingRuntime::Shutdown()
     streamDelayMilliseconds_ = 20;
 #endif
     settings_ = {};
+    voiceEffectsRuntime_.Shutdown();
     echoCancellationReferenceUnderruns_.store(
         0,
         std::memory_order_relaxed
@@ -563,9 +620,72 @@ void MicrophoneProcessingRuntime::WorkerMain()
         if (accumulatedFrames ==
             MicrophoneProcessor::SamplesPerBlock)
         {
+            const auto startedAt = std::chrono::steady_clock::now();
             ProcessAndDispatchBlock(stereoInput);
+            const auto elapsed = std::chrono::duration_cast<
+                std::chrono::nanoseconds
+            >(std::chrono::steady_clock::now() - startedAt);
+            RecordProcessingDuration(
+                static_cast<std::uint64_t>(elapsed.count())
+            );
             accumulatedFrames = 0;
         }
+    }
+}
+
+void MicrophoneProcessingRuntime::RecordProcessingDuration(
+    const std::uint64_t elapsedNanoseconds
+) noexcept
+{
+    constexpr std::uint64_t ProcessingDeadlineNanoseconds = 10'000'000;
+
+    processedBlockCount_.fetch_add(1, std::memory_order_relaxed);
+    totalProcessingTimeNanoseconds_.fetch_add(
+        elapsedNanoseconds,
+        std::memory_order_relaxed
+    );
+
+    std::uint64_t previousMaximum =
+        maximumProcessingTimeNanoseconds_.load(std::memory_order_relaxed);
+    while (previousMaximum < elapsedNanoseconds &&
+        !maximumProcessingTimeNanoseconds_.compare_exchange_weak(
+            previousMaximum,
+            elapsedNanoseconds,
+            std::memory_order_relaxed,
+            std::memory_order_relaxed
+        ))
+    {
+    }
+
+    if (elapsedNanoseconds > ProcessingDeadlineNanoseconds)
+    {
+        processingDeadlineMissCount_.fetch_add(
+            1,
+            std::memory_order_relaxed
+        );
+    }
+}
+
+void MicrophoneProcessingRuntime::UpdatePeakQueuedInputFrames() noexcept
+{
+    if (!inputRingBufferInitialized_)
+    {
+        return;
+    }
+
+    const std::uint32_t queuedFrames = ma_pcm_rb_available_read(
+        &inputRingBuffer_
+    );
+    std::uint32_t previousPeak =
+        peakQueuedInputFrames_.load(std::memory_order_relaxed);
+    while (previousPeak < queuedFrames &&
+        !peakQueuedInputFrames_.compare_exchange_weak(
+            previousPeak,
+            queuedFrames,
+            std::memory_order_relaxed,
+            std::memory_order_relaxed
+        ))
+    {
     }
 }
 
@@ -576,6 +696,16 @@ void MicrophoneProcessingRuntime::ProcessAndDispatchBlock(
             RequiredInputChannels>& stereoInput
 )
 {
+    VoiceEffectSettings pendingVoiceEffectSettings;
+    if (voiceEffectsRuntime_.ConsumeLatestSettings(
+            pendingVoiceEffectSettings
+        ))
+    {
+        static_cast<void>(processor_.UpdateVoiceEffectSettings(
+            pendingVoiceEffectSettings
+        ));
+    }
+
     std::array<float, MicrophoneProcessor::SamplesPerBlock> monoInput{};
     std::array<float, MicrophoneProcessor::SamplesPerBlock> monoOutput{};
     std::array<

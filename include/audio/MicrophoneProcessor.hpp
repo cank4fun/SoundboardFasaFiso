@@ -2,6 +2,7 @@
 
 #include "audio/MicrophoneProcessingSettings.hpp"
 #include "audio/RnNoiseSuppressor.hpp"
+#include "audio/VoiceEffectsProcessor.hpp"
 
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
 #include "audio/WebRtcAec3Processor.hpp"
@@ -31,6 +32,9 @@ struct MicrophoneProcessingSnapshot
     bool echoCancellationActive = false;
     bool echoCancellationFailed = false;
     bool agcActive = false;
+    bool voiceEffectsEnabled = false;
+    bool voiceEffectsBypassed = false;
+    VoiceEffectPreset voiceEffectPreset = VoiceEffectPreset::DeepHeavy;
     bool bypassed = true;
     bool configurationValid = true;
 
@@ -62,6 +66,9 @@ public:
         const MicrophoneProcessingSettings& settings
     );
     bool UpdateSettings(const MicrophoneProcessingSettings& settings);
+    bool UpdateVoiceEffectSettings(
+        const VoiceEffectSettings& settings
+    ) noexcept;
 
     bool ProcessBlock(
         std::span<const float> input,
@@ -114,6 +121,8 @@ private:
     float compressorEnvelope_ = 0.0f;
 
     float limiterCeilingLinear_ = 1.0f;
+    float voiceEffectOutputGainCoefficient_ = 0.0f;
+    float voiceEffectOutputGainDb_ = 0.0f;
 
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
     WebRtcAec3Processor echoCanceller_;
@@ -131,6 +140,9 @@ private:
     std::array<float, SamplesPerBlock> noiseSuppressedBuffer_{};
     bool noiseSuppressionAvailable_ = false;
     bool noiseSuppressionFailed_ = false;
+
+    VoiceEffectsProcessor voiceEffectsProcessor_;
+    std::array<float, SamplesPerBlock> voiceEffectsBuffer_{};
 
     std::atomic<std::uint64_t> snapshotSequence_{0};
     std::atomic<float> rawPeak_{0.0f};
@@ -150,6 +162,11 @@ private:
     std::atomic<int> echoCancellationErrorSnapshot_{0};
     std::atomic<std::uint64_t> echoCancellationFailureCountSnapshot_{0};
     std::atomic_bool agcActive_{false};
+    std::atomic_bool voiceEffectsEnabled_{false};
+    std::atomic_bool voiceEffectsBypassed_{false};
+    std::atomic<std::uint32_t> voiceEffectPreset_{
+        static_cast<std::uint32_t>(VoiceEffectPreset::DeepHeavy)
+    };
     std::atomic_bool bypassed_{true};
     std::atomic_bool snapshotConfigurationValid_{true};
     std::atomic<float> voiceActivityProbability_{0.0f};

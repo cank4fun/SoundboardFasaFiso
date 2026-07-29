@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.0 - 2026-07-29
+
+- Added a compact Voice Effects / Voice Changer tab inside the existing control panel without introducing popup windows.
+- Added independent real-time pitch (`-12` to `+12` semitones) and formant (`-6` to `+6` semitones) controls while preserving speech duration.
+- Added a fixed-latency hybrid speech pitch engine with phase locking, pitch-synchronous voiced processing, voiced/unvoiced protection and transient handling.
+- Added Deep / Heavy, High / Nasal Rap, Dark Vocal, Radio, Robot and Tiny / High Voice presets plus Custom mode.
+- Added character EQ, drive saturation, aligned dry/wet mixing, final output gain, radio band-pass, robot ring modulation and a restrained Tiny doubler.
+- Added lock-free block-boundary settings delivery on the existing microphone worker with no callback allocation, file access, device query or mutex wait.
+- Added up to 32 validated user presets with atomic config persistence, safe fallback for malformed data and inline save/update/delete controls.
+- Added configurable previous-preset, next-preset and Voice Effects bypass global hotkeys.
+- Added runtime telemetry for average/maximum processing time, deadline misses, queue peak, dropped input frames and rejected settings updates.
+- Added dedicated settings, preset-cycle, processor, runtime, robustness, NaN/Inf, clipping, reset, transition and 10 ms deadline tests.
+- Preserved the existing stereo crosstalk cancellation, WebRTC AEC3, RNNoise, dynamics and output-routing behavior around the new processing stage.
+- Kept the portable release standalone with no new runtime service, installer, dynamic DSP dependency or user-installed framework.
+- Removed a captured AEC diagnostic ZIP from version control and ignored future diagnostic capture archives.
+
 ## 2.1.2 - 2026-07-28
 
 - Preserved the selected monitor output as an immediately active two-channel WebRTC AEC3 render reference so channel-specific USB-headset crosstalk is not lost during mono downmix or delayed stereo detection.

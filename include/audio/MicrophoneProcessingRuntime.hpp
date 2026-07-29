@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audio/MicrophoneProcessor.hpp"
+#include "audio/VoiceEffectsRuntime.hpp"
 #include "miniaudio/miniaudio.h"
 
 #include <array>
@@ -9,6 +10,16 @@
 #include <cstdint>
 #include <memory>
 #include <thread>
+
+
+struct MicrophoneProcessingRuntimeDiagnostics
+{
+    std::uint64_t processedBlockCount = 0;
+    std::uint64_t processingDeadlineMissCount = 0;
+    std::uint64_t totalProcessingTimeNanoseconds = 0;
+    std::uint64_t maximumProcessingTimeNanoseconds = 0;
+    std::uint32_t peakQueuedInputFrames = 0;
+};
 
 class MicrophoneProcessingRuntime
 {
@@ -54,7 +65,8 @@ public:
         ma_uint32 inputChannels,
         const MicrophoneProcessingSettings& settings,
         OutputCallback outputCallback,
-        void* outputContext
+        void* outputContext,
+        const VoiceEffectSettings& voiceEffectSettings = {}
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
         ,
         RenderReferenceCallback renderReferenceCallback = nullptr,
@@ -63,6 +75,10 @@ public:
 #endif
     );
 
+    bool UpdateVoiceEffectSettings(
+        const VoiceEffectSettings& settings
+    ) noexcept;
+
     ma_uint32 PushInputFrames(
         const float* interleavedStereoFrames,
         ma_uint32 frameCount
@@ -70,6 +86,10 @@ public:
 
     [[nodiscard]] MicrophoneProcessingSnapshot GetSnapshot() const;
     [[nodiscard]] std::uint64_t GetDroppedInputFrameCount() const noexcept;
+    [[nodiscard]] std::uint64_t
+        GetRejectedVoiceEffectUpdateCount() const noexcept;
+    [[nodiscard]] MicrophoneProcessingRuntimeDiagnostics
+        GetDiagnostics() const noexcept;
     [[nodiscard]] bool IsInitialized() const noexcept;
 
     void Shutdown();
@@ -78,6 +98,10 @@ private:
     struct AecDiagnosticRecorder;
 
     void WorkerMain();
+    void RecordProcessingDuration(
+        std::uint64_t elapsedNanoseconds
+    ) noexcept;
+    void UpdatePeakQueuedInputFrames() noexcept;
     void ProcessAndDispatchBlock(
         const std::array<float,
             MicrophoneProcessor::SamplesPerBlock *
@@ -85,6 +109,7 @@ private:
     );
 
     MicrophoneProcessor processor_;
+    VoiceEffectsRuntime voiceEffectsRuntime_;
     MicrophoneProcessingSettings settings_{};
 
     ma_pcm_rb inputRingBuffer_{};
@@ -106,5 +131,10 @@ private:
     std::atomic_uint32_t activePushCount_{0};
     std::atomic<std::uint64_t> droppedInputFrames_{0};
     std::atomic<std::uint64_t> echoCancellationReferenceUnderruns_{0};
+    std::atomic<std::uint64_t> processedBlockCount_{0};
+    std::atomic<std::uint64_t> processingDeadlineMissCount_{0};
+    std::atomic<std::uint64_t> totalProcessingTimeNanoseconds_{0};
+    std::atomic<std::uint64_t> maximumProcessingTimeNanoseconds_{0};
+    std::atomic<std::uint32_t> peakQueuedInputFrames_{0};
     bool initialized_ = false;
 };
