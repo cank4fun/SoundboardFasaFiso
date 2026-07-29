@@ -8,6 +8,7 @@
 
 #include "app/Version.hpp"
 #include "audio/Audio.hpp"
+#include "audio/VoiceEffectPresetCycle.hpp"
 #include "config/Config.hpp"
 #include "diagnostics/Logger.hpp"
 #include "gui/ControlWindow.hpp"
@@ -29,6 +30,7 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -36,6 +38,9 @@
 namespace
 {
     constexpr int FirstSoundHotkeyId = 100;
+    constexpr int VoiceEffectsPreviousPresetHotkeyId = 989;
+    constexpr int VoiceEffectsNextPresetHotkeyId = 990;
+    constexpr int VoiceEffectsBypassHotkeyId = 991;
     constexpr int ApplySettingsCommandId = 992;
     constexpr int OpenControlPanelCommandId = 993;
     constexpr int ToggleConsoleCommandId = 994;
@@ -288,6 +293,70 @@ namespace
             << '\n';
     }
 
+    bool ApplyVoiceEffectSettingsFromHotkey(
+        Config& config,
+        const std::filesystem::path& configPath,
+        Audio& audio,
+        ControlWindow& controlWindow,
+        const VoiceEffectSettings& settings,
+        const wchar_t* const successStatus
+    )
+    {
+        Config candidate = config;
+
+        if (!candidate.SetVoiceEffectSettings(settings))
+        {
+            controlWindow.SetStatus(Localization::Text(
+                L"Voice Effects hotkey ayarı geçersiz.",
+                L"The Voice Effects hotkey setting is invalid."
+            ));
+            return false;
+        }
+
+        const VoiceEffectSettings previousSettings =
+            config.GetVoiceEffectSettings();
+
+        const VoiceEffectSettingsUpdateResult updateResult =
+            audio.UpdateVoiceEffectSettings(settings);
+
+        if (updateResult == VoiceEffectSettingsUpdateResult::QueueBusy ||
+            updateResult == VoiceEffectSettingsUpdateResult::Invalid)
+        {
+            controlWindow.SetStatus(
+                updateResult == VoiceEffectSettingsUpdateResult::QueueBusy
+                    ? Localization::Text(
+                        L"Voice Effects meşgul; hotkey değişikliği uygulanmadı.",
+                        L"Voice Effects is busy; the hotkey change was not applied."
+                    )
+                    : Localization::Text(
+                        L"Voice Effects hotkey ayarı geçersiz.",
+                        L"The Voice Effects hotkey setting is invalid."
+                    )
+            );
+            return false;
+        }
+
+        if (!candidate.Save(configPath))
+        {
+            if (updateResult == VoiceEffectSettingsUpdateResult::Applied)
+            {
+                static_cast<void>(
+                    audio.UpdateVoiceEffectSettings(previousSettings)
+                );
+            }
+            controlWindow.SetStatus(Localization::Text(
+                L"Voice Effects hotkey değişikliği config'e kaydedilemedi.",
+                L"The Voice Effects hotkey change could not be saved to config."
+            ));
+            return false;
+        }
+
+        config = std::move(candidate);
+        controlWindow.UpdateConfig(config);
+        controlWindow.SetStatus(successStatus);
+        return true;
+    }
+
     bool BuildRuntime(
         const Config& config,
         const std::filesystem::path& soundsFolder,
@@ -315,6 +384,7 @@ namespace
             config.GetMicrophoneToOutput(),
             config.GetMicrophoneToMonitor(),
             config.GetMicrophoneProcessingSettings(),
+            config.GetVoiceEffectSettings(),
             config.GetAudioSampleRate(),
             config.GetAudioBufferMilliseconds()
         ))
@@ -481,6 +551,51 @@ namespace
         }
 
         if (!hotkeys.Register(
+            VoiceEffectsPreviousPresetHotkeyId,
+            config.GetVoiceEffectsPreviousPresetModifiers(),
+            config.GetVoiceEffectsPreviousPresetVirtualKey()
+        ))
+        {
+            std::cerr
+                << config.GetVoiceEffectsPreviousPresetKeyName()
+                << Localization::Text(
+                    " önceki Voice Effects preset hotkey'i kaydedilemedi.\n",
+                    " could not be registered as the previous Voice Effects preset hotkey.\n"
+                );
+            return false;
+        }
+
+        if (!hotkeys.Register(
+            VoiceEffectsNextPresetHotkeyId,
+            config.GetVoiceEffectsNextPresetModifiers(),
+            config.GetVoiceEffectsNextPresetVirtualKey()
+        ))
+        {
+            std::cerr
+                << config.GetVoiceEffectsNextPresetKeyName()
+                << Localization::Text(
+                    " sonraki Voice Effects preset hotkey'i kaydedilemedi.\n",
+                    " could not be registered as the next Voice Effects preset hotkey.\n"
+                );
+            return false;
+        }
+
+        if (!hotkeys.Register(
+            VoiceEffectsBypassHotkeyId,
+            config.GetVoiceEffectsBypassModifiers(),
+            config.GetVoiceEffectsBypassVirtualKey()
+        ))
+        {
+            std::cerr
+                << config.GetVoiceEffectsBypassKeyName()
+                << Localization::Text(
+                    " Voice Effects bypass hotkey'i kaydedilemedi.\n",
+                    " could not be registered as the Voice Effects bypass hotkey.\n"
+                );
+            return false;
+        }
+
+        if (!hotkeys.Register(
             ReloadHotkeyId,
             config.GetReloadModifiers(),
             config.GetReloadVirtualKey()
@@ -531,6 +646,27 @@ namespace
             << Localization::Text(
                 " -> Monitör çıkışını mute/unmute\n",
                 " -> Mute/unmute monitor output\n"
+            );
+
+        std::cout
+            << config.GetVoiceEffectsPreviousPresetKeyName()
+            << Localization::Text(
+                " -> Önceki Voice Effects preset\n",
+                " -> Previous Voice Effects preset\n"
+            );
+
+        std::cout
+            << config.GetVoiceEffectsNextPresetKeyName()
+            << Localization::Text(
+                " -> Sonraki Voice Effects preset\n",
+                " -> Next Voice Effects preset\n"
+            );
+
+        std::cout
+            << config.GetVoiceEffectsBypassKeyName()
+            << Localization::Text(
+                " -> Voice Effects bypass aç/kapat\n",
+                " -> Toggle Voice Effects bypass\n"
             );
 
         std::cout
@@ -1168,6 +1304,99 @@ int WINAPI wWinMain(
                         L"New settings failed; previous settings restored."
                     )
             );
+            continue;
+        }
+
+        if (hotkeyId == VoiceEffectsPreviousPresetHotkeyId ||
+            hotkeyId == VoiceEffectsNextPresetHotkeyId)
+        {
+            const auto selection = CycleVoiceEffectPreset(
+                config.GetVoiceEffectSettings(),
+                config.GetVoiceEffectUserPresets(),
+                hotkeyId == VoiceEffectsNextPresetHotkeyId
+                    ? VoiceEffectPresetCycleDirection::Next
+                    : VoiceEffectPresetCycleDirection::Previous
+            );
+
+            if (!selection.has_value())
+            {
+                controlWindow.SetStatus(Localization::Text(
+                    L"Voice Effects preset listesi kullanılamıyor.",
+                    L"The Voice Effects preset list is unavailable."
+                ));
+                continue;
+            }
+
+            if (ApplyVoiceEffectSettingsFromHotkey(
+                    config,
+                    configPath,
+                    audio,
+                    controlWindow,
+                    selection->settings,
+                    Localization::Text(
+                        L"Voice Effects preset hotkey ile değiştirildi.",
+                        L"Voice Effects preset changed by hotkey."
+                    )
+                ))
+            {
+                std::cout
+                    << Localization::Text(
+                        "Voice Effects preset: ",
+                        "Voice Effects preset: "
+                    )
+                    << selection->displayName
+                    << '\n';
+            }
+
+            continue;
+        }
+
+        if (hotkeyId == VoiceEffectsBypassHotkeyId)
+        {
+            VoiceEffectSettings settings =
+                config.GetVoiceEffectSettings();
+
+            if (!settings.enabled)
+            {
+                controlWindow.SetStatus(Localization::Text(
+                    L"Voice Effects kapalı; bypass hotkey'i uygulanmadı.",
+                    L"Voice Effects is disabled; the bypass hotkey was not applied."
+                ));
+                continue;
+            }
+
+            settings.bypassed = !settings.bypassed;
+
+            const bool bypassed = settings.bypassed;
+
+            if (ApplyVoiceEffectSettingsFromHotkey(
+                    config,
+                    configPath,
+                    audio,
+                    controlWindow,
+                    settings,
+                    bypassed
+                        ? Localization::Text(
+                            L"Voice Effects bypass açık.",
+                            L"Voice Effects bypass enabled."
+                        )
+                        : Localization::Text(
+                            L"Voice Effects bypass kapalı.",
+                            L"Voice Effects bypass disabled."
+                        )
+                ))
+            {
+                std::cout << (bypassed
+                    ? Localization::Text(
+                        "Voice Effects bypass açık.\n",
+                        "Voice Effects bypass enabled.\n"
+                    )
+                    : Localization::Text(
+                        "Voice Effects bypass kapalı.\n",
+                        "Voice Effects bypass disabled.\n"
+                    ));
+            }
+
             continue;
         }
 

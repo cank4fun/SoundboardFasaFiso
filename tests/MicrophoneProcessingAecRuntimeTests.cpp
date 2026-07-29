@@ -153,6 +153,7 @@ namespace
                 settings,
                 &CaptureOutput,
                 &sink,
+                VoiceEffectSettings{},
                 &SupplyRenderReference,
                 &source,
                 20
@@ -209,6 +210,7 @@ namespace
                 settings,
                 &CaptureOutput,
                 &sink,
+                VoiceEffectSettings{},
                 &SupplyRenderReference,
                 &source,
                 20
@@ -276,6 +278,7 @@ namespace
                 settings,
                 &CaptureOutput,
                 &sink,
+                VoiceEffectSettings{},
                 &SupplyRenderReference,
                 &source,
                 20

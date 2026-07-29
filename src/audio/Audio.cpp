@@ -1283,8 +1283,9 @@ bool Audio::InitializeMicrophone(
             microphoneProcessingSettings_.agcEnabled ||
             microphoneProcessingSettings_.compressorEnabled ||
             microphoneProcessingSettings_.limiterEnabled);
+    const bool voiceEffectsRequested = voiceEffectSettings_.enabled;
     const bool processingRequested = nativeProcessingRequested ||
-        echoCancellationRequested;
+        echoCancellationRequested || voiceEffectsRequested;
 
     if (processingRequested)
     {
@@ -1306,7 +1307,8 @@ bool Audio::InitializeMicrophone(
                     2,
                     microphoneProcessingSettings_,
                     &Audio::ProcessedMicrophoneOutputCallback,
-                    this
+                    this,
+                    voiceEffectSettings_
 #if defined(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
                     ,
                     echoCancellationRequested &&
@@ -1617,6 +1619,7 @@ bool Audio::Initialize(
     const bool microphoneToOutput,
     const bool microphoneToMonitor,
     const MicrophoneProcessingSettings& microphoneProcessingSettings,
+    const VoiceEffectSettings& voiceEffectSettings,
     const unsigned int sampleRate,
     const unsigned int bufferMilliseconds
 )
@@ -1660,7 +1663,8 @@ bool Audio::Initialize(
         !microphoneSettingsAreValid ||
         !IsValidMicrophoneProcessingSettings(
             microphoneProcessingSettings
-        ))
+        ) ||
+        !IsValidVoiceEffectSettings(voiceEffectSettings))
     {
         std::cerr
             << Localization::Text(
@@ -1689,6 +1693,7 @@ bool Audio::Initialize(
     microphoneToOutput_ = microphoneToOutput;
     microphoneToMonitor_ = microphoneToMonitor;
     microphoneProcessingSettings_ = microphoneProcessingSettings;
+    voiceEffectSettings_ = voiceEffectSettings;
     sampleRate_ = static_cast<ma_uint32>(sampleRate);
     bufferMilliseconds_ =
         static_cast<ma_uint32>(bufferMilliseconds);
@@ -3154,6 +3159,28 @@ bool Audio::IsMicrophoneTestMonitorEnabled() const noexcept
     );
 }
 
+VoiceEffectSettingsUpdateResult Audio::UpdateVoiceEffectSettings(
+    const VoiceEffectSettings& settings
+) noexcept
+{
+    if (!IsValidVoiceEffectSettings(settings))
+    {
+        return VoiceEffectSettingsUpdateResult::Invalid;
+    }
+
+    voiceEffectSettings_ = settings;
+
+    if (!microphoneProcessingActive_.load(std::memory_order_acquire) ||
+        !microphoneProcessingRuntime_.IsInitialized())
+    {
+        return VoiceEffectSettingsUpdateResult::RuntimeUnavailable;
+    }
+
+    return microphoneProcessingRuntime_.UpdateVoiceEffectSettings(settings)
+        ? VoiceEffectSettingsUpdateResult::Applied
+        : VoiceEffectSettingsUpdateResult::QueueBusy;
+}
+
 bool Audio::IsEngineRunning(EngineState& state) const
 {
     if (!state.initialized)
@@ -3404,6 +3431,23 @@ AudioLevelSnapshot Audio::GetLevelSnapshot() const
             processingSnapshot.invalidSampleDetected;
         snapshot.microphoneDroppedInputFrames =
             microphoneProcessingRuntime_.GetDroppedInputFrameCount();
+
+        const MicrophoneProcessingRuntimeDiagnostics diagnostics =
+            microphoneProcessingRuntime_.GetDiagnostics();
+        snapshot.microphoneProcessingDiagnosticsAvailable = true;
+        snapshot.microphoneProcessedBlockCount =
+            diagnostics.processedBlockCount;
+        snapshot.microphoneProcessingDeadlineMissCount =
+            diagnostics.processingDeadlineMissCount;
+        snapshot.microphoneTotalProcessingTimeNanoseconds =
+            diagnostics.totalProcessingTimeNanoseconds;
+        snapshot.microphoneMaximumProcessingTimeNanoseconds =
+            diagnostics.maximumProcessingTimeNanoseconds;
+        snapshot.microphonePeakQueuedInputFrames =
+            diagnostics.peakQueuedInputFrames;
+        snapshot.microphoneRejectedVoiceEffectUpdateCount =
+            microphoneProcessingRuntime_
+                .GetRejectedVoiceEffectUpdateCount();
     }
 
     snapshot.microphoneRaw = microphoneRawPeak;
@@ -3550,6 +3594,7 @@ void Audio::Shutdown()
     microphoneToOutput_ = true;
     microphoneToMonitor_ = false;
     microphoneProcessingSettings_ = {};
+    voiceEffectSettings_ = {};
 
     sampleRate_ = 48000;
     bufferMilliseconds_ = 5;

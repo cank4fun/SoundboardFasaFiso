@@ -11,6 +11,7 @@ namespace
     constexpr float AgcGainIncreaseMilliseconds = 500.0f;
     constexpr float AgcSilenceReturnMilliseconds = 200.0f;
     constexpr float AgcDeadbandDb = 0.5f;
+    constexpr float VoiceEffectOutputGainSmoothingMilliseconds = 15.0f;
     constexpr int EchoCancellationUnavailableError = -5;
 
     float DecibelsToLinear(const float decibels)
@@ -54,6 +55,16 @@ bool MicrophoneProcessor::Initialize(
 {
     Reset();
     initialized_ = true;
+
+    if (!voiceEffectsProcessor_.Initialize({}))
+    {
+        configurationValid_ = false;
+
+        MicrophoneProcessingSnapshot snapshot;
+        snapshot.configurationValid = false;
+        PublishSnapshot(snapshot);
+        return false;
+    }
 
     if (!IsValidMicrophoneProcessingSettings(settings))
     {
@@ -119,6 +130,13 @@ bool MicrophoneProcessor::UpdateSettings(
     configurationValid_ = true;
     ConfigureProcessingState();
     return true;
+}
+
+bool MicrophoneProcessor::UpdateVoiceEffectSettings(
+    const VoiceEffectSettings& settings
+) noexcept
+{
+    return voiceEffectsProcessor_.UpdateSettings(settings);
 }
 
 bool MicrophoneProcessor::ProcessBlock(
@@ -251,6 +269,22 @@ bool MicrophoneProcessor::ProcessBlock(
         }
     }
 
+    if (!voiceEffectsProcessor_.ProcessBlock(
+            preNoiseSuppressionBuffer_,
+            voiceEffectsBuffer_
+        ))
+    {
+        return false;
+    }
+
+    const VoiceEffectSettings& voiceEffectSettings =
+        voiceEffectsProcessor_.GetSettings();
+
+    const bool voiceEffectsActive = voiceEffectSettings.enabled &&
+        !voiceEffectSettings.bypassed;
+    const float targetVoiceEffectOutputGainDb = voiceEffectsActive
+        ? voiceEffectSettings.outputGainDb
+        : 0.0f;
     const bool agcActive = processingEnabled && settings_.agcEnabled;
     const float previousAgcGainDb = agcGainDb_;
 
@@ -258,7 +292,7 @@ bool MicrophoneProcessor::ProcessBlock(
     {
         double agcSquareSum = 0.0;
 
-        for (const float sample : preNoiseSuppressionBuffer_)
+        for (const float sample : voiceEffectsBuffer_)
         {
             agcSquareSum += static_cast<double>(sample) *
                 static_cast<double>(sample);
@@ -276,7 +310,7 @@ bool MicrophoneProcessor::ProcessBlock(
 
     for (std::size_t index = 0; index < SamplesPerBlock; ++index)
     {
-        float sample = preNoiseSuppressionBuffer_[index];
+        float sample = voiceEffectsBuffer_[index];
 
         if (agcActive)
         {
@@ -295,6 +329,12 @@ bool MicrophoneProcessor::ProcessBlock(
         {
             sample = ProcessCompressor(sample);
         }
+
+        voiceEffectOutputGainDb_ =
+            voiceEffectOutputGainCoefficient_ * voiceEffectOutputGainDb_ +
+            (1.0f - voiceEffectOutputGainCoefficient_) *
+                targetVoiceEffectOutputGainDb;
+        sample *= DecibelsToLinear(voiceEffectOutputGainDb_);
 
         if (processingEnabled && settings_.limiterEnabled)
         {
@@ -329,7 +369,8 @@ bool MicrophoneProcessor::ProcessBlock(
             settings_.compressorEnabled ||
             settings_.limiterEnabled);
     const bool processingStageApplied = echoCancellationActive ||
-        nativeProcessingStageApplied;
+        nativeProcessingStageApplied ||
+        voiceEffectsActive;
 
     MicrophoneProcessingSnapshot snapshot;
     snapshot.rawPeak = rawPeak;
@@ -351,6 +392,9 @@ bool MicrophoneProcessor::ProcessBlock(
     snapshot.echoCancellationFailureCount =
         echoCancellationFailureCount_;
     snapshot.agcActive = agcActive;
+    snapshot.voiceEffectsEnabled = voiceEffectSettings.enabled;
+    snapshot.voiceEffectsBypassed = voiceEffectSettings.bypassed;
+    snapshot.voiceEffectPreset = voiceEffectSettings.preset;
     snapshot.bypassed = !processingStageApplied;
     snapshot.configurationValid = configurationValid_;
     snapshot.voiceActivityProbability = noiseSuppressionActive
@@ -422,6 +466,13 @@ MicrophoneProcessingSnapshot MicrophoneProcessor::GetSnapshot() const
             );
         snapshot.agcActive =
             agcActive_.load(std::memory_order_relaxed);
+        snapshot.voiceEffectsEnabled =
+            voiceEffectsEnabled_.load(std::memory_order_relaxed);
+        snapshot.voiceEffectsBypassed =
+            voiceEffectsBypassed_.load(std::memory_order_relaxed);
+        snapshot.voiceEffectPreset = static_cast<VoiceEffectPreset>(
+            voiceEffectPreset_.load(std::memory_order_relaxed)
+        );
         snapshot.bypassed = bypassed_.load(std::memory_order_relaxed);
         snapshot.configurationValid =
             snapshotConfigurationValid_.load(std::memory_order_relaxed);
@@ -465,6 +516,8 @@ void MicrophoneProcessor::Reset()
     noiseSuppressionFailed_ = false;
     preNoiseSuppressionBuffer_.fill(0.0f);
     noiseSuppressedBuffer_.fill(0.0f);
+    voiceEffectsProcessor_.Reset();
+    voiceEffectsBuffer_.fill(0.0f);
     ResetProcessingState();
     PublishSnapshot({});
 }
@@ -501,6 +554,9 @@ void MicrophoneProcessor::ConfigureProcessingState()
         TimeCoefficient(settings_.compressorReleaseMs);
     limiterCeilingLinear_ =
         DecibelsToLinear(settings_.limiterCeilingDb);
+    voiceEffectOutputGainCoefficient_ = TimeCoefficient(
+        VoiceEffectOutputGainSmoothingMilliseconds
+    );
 
     noiseSuppressor_.Reset();
     noiseSuppressionAvailable_ = false;
@@ -523,6 +579,7 @@ void MicrophoneProcessor::ResetProcessingState()
     highPassState2_ = 0.0f;
     agcGainDb_ = 0.0f;
     compressorEnvelope_ = 0.0f;
+    voiceEffectOutputGainDb_ = 0.0f;
 }
 
 float MicrophoneProcessor::ProcessHighPass(const float sample)
@@ -684,6 +741,18 @@ void MicrophoneProcessor::PublishSnapshot(
         std::memory_order_relaxed
     );
     agcActive_.store(snapshot.agcActive, std::memory_order_relaxed);
+    voiceEffectsEnabled_.store(
+        snapshot.voiceEffectsEnabled,
+        std::memory_order_relaxed
+    );
+    voiceEffectsBypassed_.store(
+        snapshot.voiceEffectsBypassed,
+        std::memory_order_relaxed
+    );
+    voiceEffectPreset_.store(
+        static_cast<std::uint32_t>(snapshot.voiceEffectPreset),
+        std::memory_order_relaxed
+    );
     bypassed_.store(snapshot.bypassed, std::memory_order_relaxed);
     snapshotConfigurationValid_.store(
         snapshot.configurationValid,

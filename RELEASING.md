@@ -28,7 +28,7 @@ published assets must not be rewritten.
 
 ## Pre-release checks
 
-Official v2.1 builds include WebRTC AEC3 and use the pinned vcpkg manifest.
+Official v2.1 and later builds include WebRTC AEC3 and use the pinned vcpkg manifest.
 Prepare the standalone vcpkg checkout exactly as documented in
 `docs/BUILDING_WITH_WEBRTC_AEC3.md`, then run from **x64 Native Tools Command
 Prompt for VS 2022**:
@@ -65,6 +65,8 @@ Confirm that:
 - no developer config, logs, build files or personal paths are present;
 - audio playback, microphone routing, AEC, RNNoise, AGC, tray behavior,
   hotkeys, config rollback and device recovery work;
+- Voice Effects presets, independent pitch/formant controls, dry/wet, bypass,
+  user presets and preset hotkeys work without deadline misses or dropped frames;
 - AEC safely bypasses when the physical monitor reference is unavailable;
 - the update check opens only the official GitHub Release page;
 - the unsigned-build and Smart App Control limitation is present in both
