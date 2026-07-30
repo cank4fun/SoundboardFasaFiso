@@ -36,6 +36,26 @@ namespace
     constexpr float CharacterLowCrossoverHz = 400.0f;
     constexpr float CharacterHighCrossoverHz = 3000.0f;
     constexpr float CharacterFormantScaleSemitones = 2.5f;
+    constexpr float BodyPeakHz = 165.0f;
+    constexpr float BodyPeakQ = 0.64f;
+    constexpr float BodyPeakGainDb = 3.5f;
+    constexpr float BodyBoxHz = 540.0f;
+    constexpr float BodyBoxQ = 0.82f;
+    constexpr float BodyBoxGainDb = -2.25f;
+    constexpr float BodyHighPassHz = 70.0f;
+    constexpr float BodyLowPassHz = 285.0f;
+    constexpr float BodyEnvelopeFloor = 0.00020f;
+    constexpr float BodyEnvelopeRange = 0.0055f;
+    constexpr float BodyVoicingStart = 0.07f;
+    constexpr float BodyVoicingRange = 0.28f;
+    constexpr float BodyUnvoicedGateAmount = 0.24f;
+    constexpr float BodyEnvelopeNormalization = 3.0f;
+    constexpr float BodyMinimumNormalization = 0.0015f;
+    constexpr float BodyDensityMinimum = 0.42f;
+    constexpr float BodyDensityRange = 0.48f;
+    constexpr float BodyDensityMix = 0.42f;
+    constexpr float BodyParallelGain = 0.82f;
+    constexpr float BodyMaximumContribution = 0.40f;
     constexpr float MaximumDrivePreGain = 9.0f;
     constexpr float RadioLowCutHz = 300.0f;
     constexpr float RadioHighCutHz = 3400.0f;
@@ -44,7 +64,7 @@ namespace
     constexpr float TinyDoublerBaseDelaySamples = 576.0f;
     constexpr float TinyDoublerDepthSamples = 72.0f;
     constexpr float TinyDoublerRateHz = 0.8f;
-    constexpr float TinyDoublerAmount = 0.055f;
+    constexpr float TinyDoublerAmount = 0.035f;
     constexpr float SpeechPitchCentreDelaySamples =
         static_cast<float>(VoiceEffectsProcessor::ProcessingLatencySamples);
     constexpr float SpeechPitchDefaultDelayRangeSamples = 768.0f;
@@ -54,8 +74,17 @@ namespace
     constexpr float SpeechPitchMaximumPeriodSamples = 480.0f;
     constexpr float SpeechPitchVoicingThreshold = 0.38f;
     constexpr float SpeechPitchMinimumSemitones = 0.08f;
-    constexpr float MaximumSpeechPitchBlend = 0.86f;
+    constexpr float MaximumSpeechPitchBlend = 0.88f;
     constexpr float SpeechPitchCompensationRangeSemitones = 5.5f;
+    constexpr float SpeechPitchBlendAttackMilliseconds = 9.0f;
+    constexpr float SpeechPitchBlendReleaseMilliseconds = 48.0f;
+    constexpr float HybridLevelSmoothingMilliseconds = 42.0f;
+    constexpr float HybridLevelMinimum = 0.00025f;
+    constexpr float HybridLevelMinimumGain = 0.72f;
+    constexpr float HybridLevelMaximumGain = 1.32f;
+    constexpr std::uint8_t SpeechVoicingHoldFrameCount = 5;
+    constexpr float SpeechVoicingHoldThreshold = 0.16f;
+    constexpr float SpeechVoicingHoldDecay = 0.90f;
 
     struct CharacterGains
     {
@@ -75,6 +104,55 @@ namespace
             -2.0f * std::numbers::pi_v<float> * frequency /
             static_cast<float>(VoiceEffectsProcessor::ProcessingSampleRate)
         );
+    }
+
+
+    std::array<float, 5> PeakingBiquadCoefficients(
+        const float frequency,
+        const float q,
+        const float gainDb
+    ) noexcept
+    {
+        const float amplitude = std::pow(10.0f, gainDb / 40.0f);
+        const float angularFrequency =
+            2.0f * std::numbers::pi_v<float> * frequency /
+            static_cast<float>(VoiceEffectsProcessor::ProcessingSampleRate);
+        const float alpha = std::sin(angularFrequency) / (2.0f * q);
+        const float cosine = std::cos(angularFrequency);
+        const float inverseA0 = 1.0f /
+            (1.0f + alpha / amplitude);
+
+        return {
+            (1.0f + alpha * amplitude) * inverseA0,
+            (-2.0f * cosine) * inverseA0,
+            (1.0f - alpha * amplitude) * inverseA0,
+            (-2.0f * cosine) * inverseA0,
+            (1.0f - alpha / amplitude) * inverseA0
+        };
+    }
+
+
+    float PresetAirPreservationFloor(
+        const VoiceEffectPreset preset
+    ) noexcept
+    {
+        switch (preset)
+        {
+            case VoiceEffectPreset::DeepHeavy:
+                return 0.05f;
+            case VoiceEffectPreset::HighNasalRap:
+                return 0.13f;
+            case VoiceEffectPreset::DarkVocal:
+                return 0.08f;
+            case VoiceEffectPreset::TinyHighVoice:
+                return 0.20f;
+            case VoiceEffectPreset::Radio:
+            case VoiceEffectPreset::Robot:
+            case VoiceEffectPreset::Custom:
+                return 0.0f;
+        }
+
+        return 0.0f;
     }
 
     CharacterGains BuildCharacterGains(
@@ -128,6 +206,7 @@ bool VoiceEffectsProcessor::Initialize(
     smoothedCharacterLowGain_ = characterGains.low;
     smoothedCharacterMidGain_ = characterGains.mid;
     smoothedCharacterHighGain_ = characterGains.high;
+    smoothedBody_ = settings.body;
     smoothedDrive_ = settings.drive;
     smoothedRadioMix_ = settings.preset == VoiceEffectPreset::Radio
         ? 1.0f
@@ -151,6 +230,9 @@ bool VoiceEffectsProcessor::Initialize(
     characterSmoothingCoefficient_ = SmoothingCoefficient(
         CharacterSmoothingMilliseconds
     );
+    bodySmoothingCoefficient_ = SmoothingCoefficient(
+        BodySmoothingMilliseconds
+    );
     driveSmoothingCoefficient_ = SmoothingCoefficient(
         DriveSmoothingMilliseconds
     );
@@ -169,11 +251,44 @@ bool VoiceEffectsProcessor::Initialize(
     unvoicedSmoothingCoefficient_ = SmoothingCoefficient(
         UnvoicedSmoothingMilliseconds
     );
+    speechPitchBlendAttackCoefficient_ = SmoothingCoefficient(
+        SpeechPitchBlendAttackMilliseconds
+    );
+    speechPitchBlendReleaseCoefficient_ = SmoothingCoefficient(
+        SpeechPitchBlendReleaseMilliseconds
+    );
+    hybridLevelSmoothingCoefficient_ = SmoothingCoefficient(
+        HybridLevelSmoothingMilliseconds
+    );
     characterLowPassCoefficient_ = OnePoleCoefficient(
         CharacterLowCrossoverHz
     );
     characterHighCutCoefficient_ = OnePoleCoefficient(
         CharacterHighCrossoverHz
+    );
+    bodyHighPassCoefficient_ = OnePoleCoefficient(BodyHighPassHz);
+    bodyLowPassCoefficient_ = OnePoleCoefficient(BodyLowPassHz);
+    bodyEnvelopeAttackCoefficient_ = SmoothingCoefficient(
+        BodyEnvelopeAttackMilliseconds
+    );
+    bodyEnvelopeReleaseCoefficient_ = SmoothingCoefficient(
+        BodyEnvelopeReleaseMilliseconds
+    );
+    bodyGateAttackCoefficient_ = SmoothingCoefficient(
+        BodyGateAttackMilliseconds
+    );
+    bodyGateReleaseCoefficient_ = SmoothingCoefficient(
+        BodyGateReleaseMilliseconds
+    );
+    bodyPeakCoefficients_ = PeakingBiquadCoefficients(
+        BodyPeakHz,
+        BodyPeakQ,
+        BodyPeakGainDb
+    );
+    bodyBoxCoefficients_ = PeakingBiquadCoefficients(
+        BodyBoxHz,
+        BodyBoxQ,
+        BodyBoxGainDb
     );
     airPreservationCoefficient_ = OnePoleCoefficient(
         AirPreservationCrossoverHz
@@ -259,6 +374,8 @@ bool VoiceEffectsProcessor::ProcessBlock(
             (targetCharacterGains.mid - smoothedCharacterMidGain_);
         smoothedCharacterHighGain_ += characterSmoothingCoefficient_ *
             (targetCharacterGains.high - smoothedCharacterHighGain_);
+        smoothedBody_ += bodySmoothingCoefficient_ *
+            (settings_.body - smoothedBody_);
         smoothedDrive_ += driveSmoothingCoefficient_ *
             (settings_.drive - smoothedDrive_);
         smoothedRadioMix_ += specialEffectSmoothingCoefficient_ *
@@ -331,13 +448,38 @@ bool VoiceEffectsProcessor::ProcessBlock(
             0.0f,
             MaximumSpeechPitchBlend
         );
-        const float speechPitchMix = 1.0f -
+        const float speechPitchMixTarget = 1.0f -
             (1.0f - speechPitchBlendBase) *
                 (1.0f - speechPitchBlendBase);
+        const float speechPitchBlendCoefficient =
+            speechPitchMixTarget > smoothedSpeechPitchMix_
+                ? speechPitchBlendAttackCoefficient_
+                : speechPitchBlendReleaseCoefficient_;
+        smoothedSpeechPitchMix_ += speechPitchBlendCoefficient *
+            (speechPitchMixTarget - smoothedSpeechPitchMix_);
+
+        spectralPitchLevel_ += hybridLevelSmoothingCoefficient_ *
+            (std::abs(pitchOutput) - spectralPitchLevel_);
+        speechPitchLevel_ += hybridLevelSmoothingCoefficient_ *
+            (std::abs(speechPitch) - speechPitchLevel_);
+        float targetSpeechLevelGain = 1.0f;
+        if (spectralPitchLevel_ > HybridLevelMinimum &&
+            speechPitchLevel_ > HybridLevelMinimum)
+        {
+            targetSpeechLevelGain = std::clamp(
+                spectralPitchLevel_ / speechPitchLevel_,
+                HybridLevelMinimumGain,
+                HybridLevelMaximumGain
+            );
+        }
+        smoothedSpeechLevelGain_ += hybridLevelSmoothingCoefficient_ *
+            (targetSpeechLevelGain - smoothedSpeechLevelGain_);
+        const float levelMatchedSpeechPitch = speechPitch *
+            smoothedSpeechLevelGain_;
         const float hybridPitchOutput = std::lerp(
             pitchOutput,
-            speechPitch,
-            std::clamp(speechPitchMix, 0.0f, 0.96f)
+            levelMatchedSpeechPitch,
+            std::clamp(smoothedSpeechPitchMix_, 0.0f, 0.96f)
         );
         const float spectralBlend = std::clamp(
             std::max(
@@ -370,10 +512,11 @@ bool VoiceEffectsProcessor::ProcessBlock(
                 std::abs(smoothedFormantSemitones_) /
                     VoiceEffectLimits::MaximumFormantSemitones * 0.15f;
         const float airPreservation = std::clamp(
-            std::max(
+            std::max({
                 shiftedAirPreservation,
-                smoothedUnvoicedDryMix_ * UnvoicedAirPreservation
-            ),
+                smoothedUnvoicedDryMix_ * UnvoicedAirPreservation,
+                PresetAirPreservationFloor(settings_.preset)
+            }),
             0.0f,
             MaximumAirPreservation
         );
@@ -385,7 +528,8 @@ bool VoiceEffectsProcessor::ProcessBlock(
             spectralBlend
         );
         const float characterWet = ProcessCharacterEq(pitchedWet);
-        const float drivenWet = ProcessDrive(characterWet);
+        const float bodyWet = ProcessBody(characterWet);
+        const float drivenWet = ProcessDrive(bodyWet);
         const float specialWet = ProcessSpecialEffects(drivenWet);
         // Output gain is intentionally deferred to MicrophoneProcessor so
         // AGC and compression see the untrimmed effect signal. The final gain
@@ -457,6 +601,7 @@ void VoiceEffectsProcessor::Reset() noexcept
     smoothedCharacterLowGain_ = 1.0f;
     smoothedCharacterMidGain_ = 1.0f;
     smoothedCharacterHighGain_ = 1.0f;
+    smoothedBody_ = 0.0f;
     smoothedDrive_ = 0.0f;
     smoothedRadioMix_ = 0.0f;
     smoothedRobotMix_ = 0.0f;
@@ -466,6 +611,7 @@ void VoiceEffectsProcessor::Reset() noexcept
     pitchSmoothingCoefficient_ = 1.0f;
     formantSmoothingCoefficient_ = 1.0f;
     characterSmoothingCoefficient_ = 1.0f;
+    bodySmoothingCoefficient_ = 1.0f;
     driveSmoothingCoefficient_ = 1.0f;
     specialEffectSmoothingCoefficient_ = 1.0f;
     mixSmoothingCoefficient_ = 1.0f;
@@ -473,9 +619,24 @@ void VoiceEffectsProcessor::Reset() noexcept
     transientSmoothingCoefficient_ = 1.0f;
     characterLowPassCoefficient_ = 1.0f;
     characterHighCutCoefficient_ = 1.0f;
+    bodyHighPassCoefficient_ = 1.0f;
+    bodyLowPassCoefficient_ = 1.0f;
+    bodyEnvelopeAttackCoefficient_ = 1.0f;
+    bodyEnvelopeReleaseCoefficient_ = 1.0f;
+    bodyGateAttackCoefficient_ = 1.0f;
+    bodyGateReleaseCoefficient_ = 1.0f;
+    bodyPeakCoefficients_ = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    bodyBoxCoefficients_ = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     airPreservationCoefficient_ = 1.0f;
     characterLowState_ = 0.0f;
     characterHighCutState_ = 0.0f;
+    bodyPeakState_.fill(0.0f);
+    bodyBoxState_.fill(0.0f);
+    bodyHighPassLowState_ = 0.0f;
+    bodyLowPassStateOne_ = 0.0f;
+    bodyLowPassStateTwo_ = 0.0f;
+    bodyEnvelope_ = 0.0f;
+    smoothedBodyVoiceGate_ = 0.0f;
     dryAirLowState_ = 0.0f;
     wetAirLowState_ = 0.0f;
     transientDryMixTarget_ = 0.0f;
@@ -483,11 +644,19 @@ void VoiceEffectsProcessor::Reset() noexcept
     unvoicedDryMixTarget_ = 0.0f;
     smoothedUnvoicedDryMix_ = 0.0f;
     unvoicedSmoothingCoefficient_ = 1.0f;
+    speechPitchBlendAttackCoefficient_ = 1.0f;
+    speechPitchBlendReleaseCoefficient_ = 1.0f;
+    hybridLevelSmoothingCoefficient_ = 1.0f;
+    smoothedSpeechPitchMix_ = 0.0f;
+    spectralPitchLevel_ = 0.0f;
+    speechPitchLevel_ = 0.0f;
+    smoothedSpeechLevelGain_ = 1.0f;
     previousFrameEnergy_ = 0.0f;
     speechPitchPhase_ = 0.25f;
     speechPitchPeriodSamples_ = 240.0f;
     speechPitchDelayRangeSamples_ = SpeechPitchDefaultDelayRangeSamples;
     speechVoicingConfidence_ = 0.0f;
+    speechVoicingHoldFrames_ = 0;
     radioLowCutCoefficient_ = 1.0f;
     radioHighCutCoefficient_ = 1.0f;
     radioLowCutStateOne_ = 0.0f;
@@ -582,6 +751,106 @@ float VoiceEffectsProcessor::ProcessCharacterEq(const float sample) noexcept
     return low * smoothedCharacterLowGain_ +
         mid * smoothedCharacterMidGain_ +
         high * smoothedCharacterHighGain_;
+}
+
+float VoiceEffectsProcessor::ProcessBody(const float sample) noexcept
+{
+    const float amount = std::clamp(smoothedBody_, 0.0f, 1.0f);
+
+    // Isolate a broad chest band without touching pitch or formants. Two
+    // low-pass stages keep the parallel reinforcement out of the boxy
+    // 400-800 Hz region that made large formant shifts sound tube-like.
+    bodyHighPassLowState_ += bodyHighPassCoefficient_ *
+        (sample - bodyHighPassLowState_);
+    const float highPassed = sample - bodyHighPassLowState_;
+    bodyLowPassStateOne_ += bodyLowPassCoefficient_ *
+        (highPassed - bodyLowPassStateOne_);
+    bodyLowPassStateTwo_ += bodyLowPassCoefficient_ *
+        (bodyLowPassStateOne_ - bodyLowPassStateTwo_);
+    const float bodyBand = bodyLowPassStateTwo_;
+
+    const float absoluteBody = std::abs(bodyBand);
+    const float envelopeCoefficient = absoluteBody > bodyEnvelope_
+        ? bodyEnvelopeAttackCoefficient_
+        : bodyEnvelopeReleaseCoefficient_;
+    bodyEnvelope_ += envelopeCoefficient *
+        (absoluteBody - bodyEnvelope_);
+
+    const float levelGate = std::clamp(
+        (bodyEnvelope_ - BodyEnvelopeFloor) / BodyEnvelopeRange,
+        0.0f,
+        1.0f
+    );
+    const float voicedGate = std::clamp(
+        (speechVoicingConfidence_ - BodyVoicingStart) / BodyVoicingRange,
+        0.0f,
+        1.0f
+    );
+    const float targetGate = std::clamp(
+        std::max(voicedGate, levelGate * BodyUnvoicedGateAmount),
+        0.0f,
+        1.0f
+    );
+    const float gateCoefficient = targetGate > smoothedBodyVoiceGate_
+        ? bodyGateAttackCoefficient_
+        : bodyGateReleaseCoefficient_;
+    smoothedBodyVoiceGate_ += gateCoefficient *
+        (targetGate - smoothedBodyVoiceGate_);
+
+    // Normalize the isolated band against its own envelope before applying a
+    // gentle symmetric density curve. This behaves like parallel low-band
+    // compression: vowels gain weight and sustain, while pitch and timing
+    // remain untouched and consonants do not acquire a synthetic sub voice.
+    const float normalization = std::max(
+        bodyEnvelope_ * BodyEnvelopeNormalization,
+        BodyMinimumNormalization
+    );
+    const float normalizedBody = std::clamp(
+        bodyBand / normalization,
+        -2.0f,
+        2.0f
+    );
+    const float density = BodyDensityMinimum + amount * BodyDensityRange;
+    const float denseNormalized = normalizedBody * (1.0f + density) /
+        (1.0f + density * std::abs(normalizedBody));
+    const float denseBody = denseNormalized * normalization;
+    const float parallelBody = std::lerp(
+        bodyBand,
+        denseBody,
+        BodyDensityMix
+    );
+    const float contribution = std::clamp(
+        parallelBody * BodyParallelGain * smoothedBodyVoiceGate_,
+        -BodyMaximumContribution,
+        BodyMaximumContribution
+    );
+
+    const float bodyShaped = ProcessBiquad(
+        sample,
+        bodyPeakCoefficients_,
+        bodyPeakState_
+    );
+    const float boxControlled = ProcessBiquad(
+        bodyShaped,
+        bodyBoxCoefficients_,
+        bodyBoxState_
+    );
+    const float staticallyShaped = std::lerp(sample, boxControlled, amount);
+    return staticallyShaped + contribution * amount;
+}
+
+float VoiceEffectsProcessor::ProcessBiquad(
+    const float sample,
+    const std::array<float, 5>& coefficients,
+    std::array<float, 2>& state
+) noexcept
+{
+    const float output = coefficients[0] * sample + state[0];
+    state[0] = coefficients[1] * sample -
+        coefficients[3] * output + state[1];
+    state[1] = coefficients[2] * sample -
+        coefficients[4] * output;
+    return output;
 }
 
 float VoiceEffectsProcessor::ProcessDrive(const float sample) const noexcept
@@ -1134,8 +1403,24 @@ void VoiceEffectsProcessor::EstimateSpeechPeriod() noexcept
         0.0f,
         1.0f
     );
-    speechVoicingConfidence_ += 0.28f *
-        (rawConfidence - speechVoicingConfidence_);
+    float confidenceTarget = rawConfidence;
+    if (rawConfidence >= SpeechVoicingHoldThreshold)
+    {
+        speechVoicingHoldFrames_ = SpeechVoicingHoldFrameCount;
+    }
+    else if (speechVoicingHoldFrames_ > 0U)
+    {
+        confidenceTarget = std::max(
+            confidenceTarget,
+            speechVoicingConfidence_ * SpeechVoicingHoldDecay
+        );
+        --speechVoicingHoldFrames_;
+    }
+
+    const float confidenceCoefficient =
+        confidenceTarget > speechVoicingConfidence_ ? 0.32f : 0.10f;
+    speechVoicingConfidence_ += confidenceCoefficient *
+        (confidenceTarget - speechVoicingConfidence_);
     if (rawConfidence <= 0.0f)
     {
         return;

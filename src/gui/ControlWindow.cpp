@@ -740,6 +740,9 @@ void ControlWindow::Shutdown()
     voiceEffectsFormantCaption_ = nullptr;
     voiceEffectsFormantSlider_ = nullptr;
     voiceEffectsFormantValue_ = nullptr;
+    voiceEffectsBodyCaption_ = nullptr;
+    voiceEffectsBodySlider_ = nullptr;
+    voiceEffectsBodyValue_ = nullptr;
     voiceEffectsCharacterCaption_ = nullptr;
     voiceEffectsCharacterSlider_ = nullptr;
     voiceEffectsCharacterValue_ = nullptr;
@@ -3763,7 +3766,9 @@ void ControlWindow::UpdatePageVisibility()
         voiceEffectsPresetNameEdit_, voiceEffectsPitchCaption_,
         voiceEffectsPitchSlider_, voiceEffectsPitchValue_,
         voiceEffectsFormantCaption_, voiceEffectsFormantSlider_,
-        voiceEffectsFormantValue_, voiceEffectsCharacterCaption_,
+        voiceEffectsFormantValue_, voiceEffectsBodyCaption_,
+        voiceEffectsBodySlider_, voiceEffectsBodyValue_,
+        voiceEffectsCharacterCaption_,
         voiceEffectsCharacterSlider_, voiceEffectsCharacterValue_,
         voiceEffectsDriveCaption_, voiceEffectsDriveSlider_,
         voiceEffectsDriveValue_, voiceEffectsDryWetCaption_,
@@ -3919,12 +3924,13 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 12> sliders{
+    const std::array<HWND, 13> sliders{
         outputVolumeSlider_, monitorVolumeSlider_,
         microphoneVolumeSlider_, bindingVolumeSlider_,
         playbackSeekSlider_, playbackVolumeSlider_,
         voiceEffectsPitchSlider_, voiceEffectsFormantSlider_,
-        voiceEffectsCharacterSlider_, voiceEffectsDriveSlider_,
+        voiceEffectsBodySlider_, voiceEffectsCharacterSlider_,
+        voiceEffectsDriveSlider_,
         voiceEffectsDryWetSlider_, voiceEffectsOutputGainSlider_
     };
 
@@ -4055,7 +4061,9 @@ void ControlWindow::ApplyFonts()
         voiceEffectsPitchCaption_, voiceEffectsPitchSlider_,
         voiceEffectsPitchValue_, voiceEffectsFormantCaption_,
         voiceEffectsFormantSlider_, voiceEffectsFormantValue_,
-        voiceEffectsCharacterCaption_, voiceEffectsCharacterSlider_,
+        voiceEffectsBodyCaption_, voiceEffectsBodySlider_,
+        voiceEffectsBodyValue_, voiceEffectsCharacterCaption_,
+        voiceEffectsCharacterSlider_,
         voiceEffectsCharacterValue_, voiceEffectsDriveCaption_,
         voiceEffectsDriveSlider_, voiceEffectsDriveValue_,
         voiceEffectsDryWetCaption_, voiceEffectsDryWetSlider_,
@@ -5298,6 +5306,10 @@ void ControlWindow::RefreshLocalizedText()
         Localization::Text(L"Formant", L"Formant")
     );
     SetControlText(
+        voiceEffectsBodyCaption_,
+        Localization::Text(L"Ses gövdesi", L"Vocal weight")
+    );
+    SetControlText(
         voiceEffectsCharacterCaption_,
         Localization::Text(L"Karakter", L"Character")
     );
@@ -5321,10 +5333,10 @@ void ControlWindow::RefreshLocalizedText()
     SetControlText(
         voiceEffectsInfoCaption_,
         Localization::Text(
-            L"Pitch, formant, karakter, drive, Radio, Robot, Dry/Wet ve çıkış "
+            L"Pitch, formant, gövde, karakter, drive, Radio, Robot, Dry/Wet ve çıkış "
             L"gain canlıdır. Kullanıcı presetleri ad alanından kaydedilir; "
             L"silme işlemi ikinci tıklamayla inline onaylanır.",
-            L"Pitch, formant, character, drive, Dry/Wet and output gain are "
+            L"Pitch, formant, body, character, drive, Dry/Wet and output gain are "
             L"live alongside Radio and Robot. User presets are saved from the "
             L"name field; deletion is confirmed inline with a second click."
         )

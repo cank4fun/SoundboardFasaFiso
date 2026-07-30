@@ -30,6 +30,7 @@ namespace
         settings.pitchSemitones = 1.0f;
         settings.formantSemitones = -0.5f;
         settings.character = character;
+        settings.body = character * 0.5f;
         settings.drive = 0.25f;
         settings.dryWet = 0.75f;
         settings.outputGainDb = -1.0f;
@@ -80,8 +81,11 @@ namespace
             "the newest pending update is consumed");
         Expect(consumed.preset == VoiceEffectPreset::Custom,
             "the consumed preset is preserved");
-        Expect(std::abs(consumed.character - third.character) < 0.000001f,
-            "intermediate slider updates are coalesced");
+        Expect(
+            std::abs(consumed.character - third.character) < 0.000001f &&
+                std::abs(consumed.body - third.body) < 0.000001f,
+            "intermediate slider updates are coalesced"
+        );
         Expect(!runtime.ConsumeLatestSettings(consumed),
             "coalescing drains all older pending updates");
     }

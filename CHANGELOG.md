@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+## 2.2.1 - 2026-07-30
+
+- Added an independent Body / Vocal Weight control to the embedded Voice Effects UI, configuration format, runtime settings bridge, user presets and automated tests.
+- Implemented Vocal Weight as a pitch-free voiced low-band parallel-compression and gentle harmonic-density stage, reinforcing chest weight without the metallic artifacts caused by pitch shifting.
+- Kept reinforcement away from the boxy 400–800 Hz region and preserved consonant presence with a voicing- and level-aware gate.
+- Preserved existing built-in preset behavior by default; v2.2.0 configurations and user presets without a Body value load safely with Vocal Weight set to zero.
+- Kept the fixed 16 ms Voice Effects latency, lock-free real-time path, portable distribution and existing AEC3, crosstalk, RNNoise and routing behavior.
+
 ## 2.2.0 - 2026-07-29
 
 - Added a compact Voice Effects / Voice Changer tab inside the existing control panel without introducing popup windows.

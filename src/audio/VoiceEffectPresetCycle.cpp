@@ -23,6 +23,7 @@ namespace
             left.pitchSemitones == right.pitchSemitones &&
             left.formantSemitones == right.formantSemitones &&
             left.character == right.character &&
+            left.body == right.body &&
             left.drive == right.drive &&
             left.dryWet == right.dryWet &&
             left.outputGainDb == right.outputGainDb;

@@ -309,6 +309,7 @@ namespace
         settings.formantSemitones =
             VoiceEffectLimits::MaximumFormantSemitones;
         settings.character = VoiceEffectLimits::MaximumCharacter;
+        settings.body = VoiceEffectLimits::MaximumBody;
         settings.drive = VoiceEffectLimits::MaximumDrive;
         Expect(processor.Initialize(settings),
             "worst-case timing settings initialize");

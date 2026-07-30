@@ -49,12 +49,13 @@ microphone_limiter_ceiling_db=-1.0
 voice_effects_enabled=false
 voice_effects_bypassed=false
 voice_effects_preset=deep-heavy
-voice_effects_pitch_semitones=-4.0
-voice_effects_formant_semitones=-1.5
-voice_effects_character=0.55
-voice_effects_drive=0.20
-voice_effects_dry_wet=1.0
-voice_effects_output_gain_db=0.0
+voice_effects_pitch_semitones=-2.5
+voice_effects_formant_semitones=-0.95
+voice_effects_character=0.34
+voice_effects_body=0.0
+voice_effects_drive=0.03
+voice_effects_dry_wet=0.90
+voice_effects_output_gain_db=3.7
 
 # AUDIO GECİKME AYARLARI
 # 0 yazılırsa cihazın/Windows'un varsayılanı kullanılır.

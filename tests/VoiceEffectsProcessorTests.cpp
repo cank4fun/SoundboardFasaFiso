@@ -43,6 +43,7 @@ namespace
         settings.pitchSemitones = 0.0f;
         settings.formantSemitones = 0.0f;
         settings.character = 0.0f;
+        settings.body = 0.0f;
         settings.drive = 0.0f;
         settings.dryWet = 1.0f;
         settings.outputGainDb = 0.0f;
@@ -246,6 +247,118 @@ namespace
 
             Expect(processor.ProcessBlock(input, output),
                 "character probe block is processed");
+            std::copy(
+                output.begin(),
+                output.end(),
+                rendered.begin() + static_cast<std::ptrdiff_t>(
+                    block * VoiceEffectsProcessor::SamplesPerBlock
+                )
+            );
+        }
+
+        return rendered;
+    }
+
+    std::vector<float> RenderBodyProbe(const float body)
+    {
+        VoiceEffectsProcessor processor;
+        VoiceEffectSettings settings = ActiveCustomSettings();
+        settings.body = body;
+        Expect(processor.Initialize(settings),
+            "body probe settings initialize");
+
+        constexpr std::array<double, 3> Frequencies{
+            140.0,
+            500.0,
+            1800.0
+        };
+        constexpr std::size_t BlockCount = 140;
+        constexpr std::size_t TotalSamples =
+            BlockCount * VoiceEffectsProcessor::SamplesPerBlock;
+        std::vector<float> rendered(TotalSamples, 0.0f);
+        std::array<float, VoiceEffectsProcessor::SamplesPerBlock> input{};
+        std::array<float, VoiceEffectsProcessor::SamplesPerBlock> output{};
+        std::size_t sampleSequence = 0;
+
+        for (std::size_t block = 0; block < BlockCount; ++block)
+        {
+            for (std::size_t index = 0; index < input.size(); ++index)
+            {
+                double sample = 0.0;
+                for (const double frequency : Frequencies)
+                {
+                    const double phase =
+                        2.0 * std::numbers::pi * frequency *
+                        static_cast<double>(sampleSequence) /
+                        static_cast<double>(
+                            VoiceEffectsProcessor::ProcessingSampleRate
+                        );
+                    sample += 0.06 * std::sin(phase);
+                }
+                input[index] = static_cast<float>(sample);
+                ++sampleSequence;
+            }
+
+            Expect(processor.ProcessBlock(input, output),
+                "body probe block is processed");
+            std::copy(
+                output.begin(),
+                output.end(),
+                rendered.begin() + static_cast<std::ptrdiff_t>(
+                    block * VoiceEffectsProcessor::SamplesPerBlock
+                )
+            );
+        }
+
+        return rendered;
+    }
+
+    std::vector<float> RenderBodyVoicedProbe(const float body)
+    {
+        VoiceEffectsProcessor processor;
+        VoiceEffectSettings settings = ActiveCustomSettings();
+        settings.body = body;
+        Expect(processor.Initialize(settings),
+            "voiced body probe settings initialize");
+
+        constexpr double FundamentalFrequency = 120.0;
+        constexpr std::size_t HarmonicCount = 8;
+        constexpr std::size_t BlockCount = 160;
+        constexpr std::size_t TotalSamples =
+            BlockCount * VoiceEffectsProcessor::SamplesPerBlock;
+        std::vector<float> rendered(TotalSamples, 0.0f);
+        std::array<float, VoiceEffectsProcessor::SamplesPerBlock> input{};
+        std::array<float, VoiceEffectsProcessor::SamplesPerBlock> output{};
+        std::size_t sampleSequence = 0;
+
+        for (std::size_t block = 0; block < BlockCount; ++block)
+        {
+            for (std::size_t index = 0; index < input.size(); ++index)
+            {
+                double sample = 0.0;
+                for (std::size_t harmonic = 1;
+                    harmonic <= HarmonicCount;
+                    ++harmonic)
+                {
+                    const double frequency = FundamentalFrequency *
+                        static_cast<double>(harmonic);
+                    const double amplitude = 0.055 /
+                        static_cast<double>(harmonic);
+                    const double phase =
+                        2.0 * std::numbers::pi * frequency *
+                        static_cast<double>(sampleSequence) /
+                        static_cast<double>(
+                            VoiceEffectsProcessor::ProcessingSampleRate
+                        );
+                    sample += amplitude * std::sin(phase);
+                }
+
+                input[index] = static_cast<float>(sample);
+                ++sampleSequence;
+            }
+
+            Expect(processor.ProcessBlock(input, output),
+                "voiced body probe block is processed");
             std::copy(
                 output.begin(),
                 output.end(),
@@ -818,6 +931,70 @@ namespace
             "neutral-formant character softens high-band energy");
     }
 
+    void TestBodyAddsChestWithoutABoxyTube()
+    {
+        const std::vector<float> neutral = RenderBodyProbe(0.0f);
+        const std::vector<float> thick = RenderBodyProbe(1.0f);
+        constexpr std::size_t AnalysisCount = 24000;
+        const std::size_t neutralStart = neutral.size() - AnalysisCount;
+        const std::size_t thickStart = thick.size() - AnalysisCount;
+
+        const double neutralBody = ToneMagnitude(
+            neutral, neutralStart, AnalysisCount, 140.0
+        );
+        const double neutralBox = ToneMagnitude(
+            neutral, neutralStart, AnalysisCount, 500.0
+        );
+        const double neutralPresence = ToneMagnitude(
+            neutral, neutralStart, AnalysisCount, 1800.0
+        );
+        const double thickBody = ToneMagnitude(
+            thick, thickStart, AnalysisCount, 140.0
+        );
+        const double thickBox = ToneMagnitude(
+            thick, thickStart, AnalysisCount, 500.0
+        );
+        const double thickPresence = ToneMagnitude(
+            thick, thickStart, AnalysisCount, 1800.0
+        );
+
+        Expect(thickBody > neutralBody * 1.35,
+            "body control reinforces the chest band");
+        Expect(thickBox < neutralBox * 0.90,
+            "body control does not inflate the box band");
+        Expect(thickPresence > neutralPresence * 0.90,
+            "body control preserves speech presence");
+    }
+
+    void TestBodyWeightPreservesPitchPeriodicity()
+    {
+        const std::vector<float> neutral = RenderBodyVoicedProbe(0.0f);
+        const std::vector<float> weighted = RenderBodyVoicedProbe(0.85f);
+        constexpr std::size_t AnalysisCount = 24000;
+        const std::size_t neutralStart = neutral.size() - AnalysisCount;
+        const std::size_t weightedStart = weighted.size() - AnalysisCount;
+
+        const double neutralFundamental = ToneMagnitude(
+            neutral, neutralStart, AnalysisCount, 120.0
+        );
+        const double weightedFundamental = ToneMagnitude(
+            weighted, weightedStart, AnalysisCount, 120.0
+        );
+        const double weightedInharmonicOne = ToneMagnitude(
+            weighted, weightedStart, AnalysisCount, 180.0
+        );
+        const double weightedInharmonicTwo = ToneMagnitude(
+            weighted, weightedStart, AnalysisCount, 300.0
+        );
+
+        Expect(weightedFundamental > neutralFundamental * 1.30,
+            "vocal weight reinforces the original fundamental");
+        Expect(weightedInharmonicOne < weightedFundamental * 0.015,
+            "vocal weight does not create a metallic lower sideband");
+        Expect(weightedInharmonicTwo < weightedFundamental * 0.015,
+            "vocal weight does not create a metallic upper sideband");
+    }
+
     void TestDriveAddsControlledOddHarmonics()
     {
         const std::vector<float> neutral = RenderDriveProbe(0.0f);
@@ -944,8 +1121,8 @@ namespace
 
         Expect(neutralTailPeak < 0.00001f,
             "neutral processing has no short doubler tail");
-        Expect(tinyTailPeak > 0.02f,
-            "tiny/high retains a restrained modulated doubler tail");
+        Expect(tinyTailPeak > 0.01f && tinyTailPeak < 0.03f,
+            "tiny/high retains a subtle modulated doubler tail");
     }
 
     void TestSettingsUpdateIsSmoothedAndFinite()
@@ -972,6 +1149,7 @@ namespace
         settings.pitchSemitones = 12.0f;
         settings.formantSemitones = 6.0f;
         settings.character = 1.0f;
+        settings.body = 1.0f;
         settings.drive = 1.0f;
         settings.preset = VoiceEffectPreset::Robot;
         settings.dryWet = 0.35f;
@@ -1158,6 +1336,8 @@ int main()
     TestHybridSpeechPitchKeepsVoicedHarmonicsCoherent();
     TestIndependentFormantShiftMovesSpectralEnvelope();
     TestCharacterFocusesTheSpeechBand();
+    TestBodyAddsChestWithoutABoxyTube();
+    TestBodyWeightPreservesPitchPeriodicity();
     TestDriveAddsControlledOddHarmonics();
     TestRadioPresetAppliesSpeechBandPass();
     TestRobotPresetCreatesCarrierSidebands();

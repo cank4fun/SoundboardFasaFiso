@@ -154,6 +154,7 @@ namespace
         settings.pitchSemitones = 0.0f;
         settings.formantSemitones = 0.0f;
         settings.character = 0.0f;
+        settings.body = 0.0f;
         settings.drive = 0.0f;
         settings.dryWet = 0.0f;
         settings.outputGainDb = 0.0f;
