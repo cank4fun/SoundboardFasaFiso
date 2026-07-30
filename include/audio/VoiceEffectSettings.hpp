@@ -24,6 +24,8 @@ namespace VoiceEffectLimits
     inline constexpr float MaximumFormantSemitones = 6.0f;
     inline constexpr float MinimumCharacter = 0.0f;
     inline constexpr float MaximumCharacter = 1.0f;
+    inline constexpr float MinimumBody = 0.0f;
+    inline constexpr float MaximumBody = 1.0f;
     inline constexpr float MinimumDrive = 0.0f;
     inline constexpr float MaximumDrive = 1.0f;
     inline constexpr float MinimumDryWet = 0.0f;
@@ -41,11 +43,12 @@ struct VoiceEffectSettings
     VoiceEffectPreset preset = VoiceEffectPreset::DeepHeavy;
 
     float pitchSemitones = -2.5f;
-    float formantSemitones = -0.8f;
-    float character = 0.38f;
-    float drive = 0.04f;
-    float dryWet = 1.0f;
-    float outputGainDb = 0.0f;
+    float formantSemitones = -0.95f;
+    float character = 0.34f;
+    float body = 0.0f;
+    float drive = 0.03f;
+    float dryWet = 0.90f;
+    float outputGainDb = 3.7f;
 };
 
 struct VoiceEffectUserPreset

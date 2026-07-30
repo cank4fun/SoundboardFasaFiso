@@ -330,6 +330,15 @@ namespace
             "voice_effects_character=0.42"
         },
         VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_BODY",
+            &VoiceEffectSettings::body,
+            VoiceEffectLimits::MinimumBody,
+            VoiceEffectLimits::MaximumBody,
+            "0 ile 1",
+            "between 0 and 1",
+            "voice_effects_body=0.0"
+        },
+        VoiceEffectFloatSetting{
             "VOICE_EFFECTS_DRIVE",
             &VoiceEffectSettings::drive,
             VoiceEffectLimits::MinimumDrive,
@@ -556,7 +565,7 @@ namespace
 
         if (settingName == "VOICE_EFFECTS_USER_PRESET")
         {
-            return "voice_effects_user_preset=My Deep|preset=custom|pitch=-4.0|formant=-1.5|character=0.55|drive=0.20|dry_wet=1.0|output_gain_db=0.0";
+            return "voice_effects_user_preset=My Deep|preset=custom|pitch=-4.0|formant=-1.5|character=0.55|body=0.40|drive=0.20|dry_wet=1.0|output_gain_db=0.0";
         }
 
         if (settingName == "LANGUAGE")
@@ -714,7 +723,9 @@ namespace
             std::string& errorReason
         )
     {
-        std::array<std::string, 8> parts;
+        constexpr std::size_t LegacyPartCount = 8;
+        constexpr std::size_t CurrentPartCount = 9;
+        std::array<std::string, CurrentPartCount> parts;
         std::size_t partCount = 0;
         std::size_t start = 0;
         bool hasTrailingPart = false;
@@ -741,11 +752,13 @@ namespace
             }
         }
 
-        if (partCount != parts.size() || hasTrailingPart)
+        if ((partCount != LegacyPartCount &&
+                partCount != CurrentPartCount) ||
+            hasTrailingPart)
         {
             errorReason = Localization::Text(
-                "Kullanıcı preset'i ad ve yedi alan içermeli.",
-                "A user preset must contain a name and seven fields."
+                "Kullanıcı preset'i ad ve yedi veya sekiz alan içermeli.",
+                "A user preset must contain a name and seven or eight fields."
             );
             return std::nullopt;
         }
@@ -768,11 +781,12 @@ namespace
         bool hasPitch = false;
         bool hasFormant = false;
         bool hasCharacter = false;
+        bool hasBody = false;
         bool hasDrive = false;
         bool hasDryWet = false;
         bool hasOutputGain = false;
 
-        for (std::size_t index = 1; index < parts.size(); ++index)
+        for (std::size_t index = 1; index < partCount; ++index)
         {
             const std::size_t equalsPosition = parts[index].find('=');
             if (equalsPosition == std::string::npos)
@@ -845,6 +859,11 @@ namespace
                 seen = &hasCharacter;
                 destination = &result.settings.character;
             }
+            else if (fieldName == "BODY")
+            {
+                seen = &hasBody;
+                destination = &result.settings.body;
+            }
             else if (fieldName == "DRIVE")
             {
                 seen = &hasDrive;
@@ -882,6 +901,8 @@ namespace
             *destination = *value;
         }
 
+        // BODY was introduced after v2.2.0. Missing BODY therefore keeps
+        // the struct default of zero so existing saved user presets load.
         if (!hasPreset || !hasPitch || !hasFormant ||
             !hasCharacter || !hasDrive || !hasDryWet ||
             !hasOutputGain)
@@ -2974,6 +2995,8 @@ bool Config::Save(const std::filesystem::path& filePath) const
         << voiceEffectSettings_.formantSemitones << '\n'
         << "voice_effects_character="
         << voiceEffectSettings_.character << '\n'
+        << "voice_effects_body="
+        << voiceEffectSettings_.body << '\n'
         << "voice_effects_drive="
         << voiceEffectSettings_.drive << '\n'
         << "voice_effects_dry_wet="
@@ -2989,6 +3012,7 @@ bool Config::Save(const std::filesystem::path& filePath) const
             << "|pitch=" << preset.settings.pitchSemitones
             << "|formant=" << preset.settings.formantSemitones
             << "|character=" << preset.settings.character
+            << "|body=" << preset.settings.body
             << "|drive=" << preset.settings.drive
             << "|dry_wet=" << preset.settings.dryWet
             << "|output_gain_db=" << preset.settings.outputGainDb

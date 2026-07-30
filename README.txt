@@ -6,7 +6,7 @@ medya aktarıcısı ve WAV editörü.
 
 SÜRÜM / VERSION
 ---------------
-2.2.0
+2.2.1
 
 GENEL BAKIŞ
 -----------
@@ -150,6 +150,7 @@ sonra; AGC, compressor ve limiter'dan önce çalışır. Output gain limiter'dan
 - Pitch: -12 ile +12 semitone
 - Formant: -6 ile +6 semitone; pitch'ten bağımsızdır
 - Deep / Heavy, High / Nasal Rap, Dark Vocal, Radio, Robot ve Tiny / High Voice
+- Vocal weight: pitch/formant değiştirmeden sesli harflerde göğüs gövdesi ve yoğunluk
 - Character EQ, drive, dry/wet ve output gain
 - Kullanıcı preset'i kaydetme, güncelleme ve silme
 - Önceki/sonraki preset ve bypass hotkey'leri
@@ -290,7 +291,7 @@ Control yeni ve imzasız EXE'yi engelleyebilir.
 ZIP'i yalnızca resmi GitHub Release sayfasından indir ve yanında yayınlanan
 .sha256 dosyasıyla karşılaştır:
 
-Get-FileHash .\SoundBoardFasaFiso-v2.2.0-windows-x64-portable.zip -Algorithm SHA256
+Get-FileHash .\SoundBoardFasaFiso-v2.2.1-windows-x64-portable.zip -Algorithm SHA256
 
 Eşleşen SHA-256, arşivin yayınlanan Release dosyasıyla aynı olduğunu
 doğrular; kod imzasının yerini tutmaz. Programı çalıştırmak için Windows

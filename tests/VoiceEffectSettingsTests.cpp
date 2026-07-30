@@ -33,6 +33,8 @@ namespace
 
         Expect(!settings.enabled, "voice effects default to disabled");
         Expect(!settings.bypassed, "the local bypass defaults to off");
+        Expect(NearlyEqual(settings.body, 0.0f),
+            "the Body control defaults to neutral");
         Expect(
             settings.preset == VoiceEffectPreset::DeepHeavy,
             "the default preset is deep-heavy"
@@ -92,6 +94,7 @@ namespace
             float pitchSemitones;
             float formantSemitones;
             float character;
+            float body;
             float drive;
             float dryWet;
             float outputGainDb;
@@ -99,17 +102,17 @@ namespace
 
         constexpr std::array cases{
             PresetCase{VoiceEffectPreset::DeepHeavy,
-                -2.5f, -0.8f, 0.38f, 0.04f, 1.0f, 0.0f},
+                -2.5f, -0.95f, 0.34f, 0.0f, 0.03f, 0.90f, 3.7f},
             PresetCase{VoiceEffectPreset::HighNasalRap,
-                1.0f, 0.8f, 0.48f, 0.03f, 1.0f, 0.0f},
+                1.0f, 0.70f, 0.42f, 0.0f, 0.015f, 0.88f, 3.4f},
             PresetCase{VoiceEffectPreset::DarkVocal,
-                -0.25f, -1.4f, 0.46f, 0.06f, 1.0f, 0.0f},
+                -0.25f, -1.35f, 0.43f, 0.0f, 0.045f, 0.93f, 1.8f},
             PresetCase{VoiceEffectPreset::Radio,
-                0.0f, 0.0f, 0.85f, 0.30f, 1.0f, -1.0f},
+                0.0f, 0.0f, 0.85f, 0.0f, 0.30f, 1.0f, 3.8f},
             PresetCase{VoiceEffectPreset::Robot,
-                0.0f, 0.0f, 0.75f, 0.15f, 1.0f, -1.0f},
+                0.0f, 0.0f, 0.75f, 0.0f, 0.15f, 1.0f, 5.5f},
             PresetCase{VoiceEffectPreset::TinyHighVoice,
-                4.0f, 2.0f, 0.46f, 0.0f, 1.0f, 0.0f}
+                4.0f, 1.65f, 0.39f, 0.0f, 0.0f, 0.84f, 4.0f}
         };
 
         for (const PresetCase& testCase : cases)
@@ -135,6 +138,8 @@ namespace
                 "preset formant is stable");
             Expect(settings->character == testCase.character,
                 "preset character is stable");
+            Expect(settings->body == testCase.body,
+                "preset body is stable");
             Expect(settings->drive == testCase.drive,
                 "preset drive is stable");
             Expect(settings->dryWet == testCase.dryWet,
@@ -190,7 +195,7 @@ namespace
             VoiceEffectPresetHasDedicatedStage(
                 VoiceEffectPreset::TinyHighVoice
             ),
-            "tiny/high keeps its doubler and bit-reduction stage"
+            "tiny/high keeps its compact doubler stage"
         );
         Expect(
             !VoiceEffectPresetHasDedicatedStage(
@@ -215,6 +220,7 @@ namespace
         preset.settings.pitchSemitones = -5.0f;
         preset.settings.formantSemitones = -2.0f;
         preset.settings.character = 0.60f;
+        preset.settings.body = 0.70f;
         preset.settings.drive = 0.25f;
         preset.settings.dryWet = 0.80f;
         preset.settings.outputGainDb = -1.0f;
@@ -244,7 +250,8 @@ namespace
         Expect(applied.enabled, "applying a user preset preserves enable");
         Expect(applied.bypassed, "applying a user preset preserves bypass");
         Expect(
-            applied.pitchSemitones == preset.settings.pitchSemitones,
+            applied.pitchSemitones == preset.settings.pitchSemitones &&
+                applied.body == preset.settings.body,
             "applying a user preset copies its DSP settings"
         );
 
@@ -293,6 +300,8 @@ namespace
                 MinimumFormantSemitones, MaximumFormantSemitones, "formant"},
             FloatCase{&VoiceEffectSettings::character,
                 MinimumCharacter, MaximumCharacter, "character"},
+            FloatCase{&VoiceEffectSettings::body,
+                MinimumBody, MaximumBody, "body"},
             FloatCase{&VoiceEffectSettings::drive,
                 MinimumDrive, MaximumDrive, "drive"},
             FloatCase{&VoiceEffectSettings::dryWet,
@@ -406,6 +415,109 @@ namespace
                 "4A migration applies the natural high pitch"
             );
         }
+
+        VoiceEffectSettings qualityPass4B;
+        qualityPass4B.enabled = true;
+        qualityPass4B.bypassed = true;
+        qualityPass4B.preset = VoiceEffectPreset::Radio;
+        qualityPass4B.pitchSemitones = 0.0f;
+        qualityPass4B.formantSemitones = 0.0f;
+        qualityPass4B.character = 0.85f;
+        qualityPass4B.drive = 0.30f;
+        qualityPass4B.dryWet = 1.0f;
+        qualityPass4B.outputGainDb = -1.0f;
+        Expect(
+            MigrateLegacyBuiltInVoiceEffectSettings(qualityPass4B),
+            "untouched 4B preset migrates"
+        );
+        const auto currentRadio = BuildVoiceEffectPreset(
+            VoiceEffectPreset::Radio,
+            true
+        );
+        Expect(currentRadio.has_value(), "current radio preset exists");
+        if (currentRadio.has_value())
+        {
+            Expect(
+                NearlyEqual(
+                    qualityPass4B.outputGainDb,
+                    currentRadio->outputGainDb
+                ),
+                "4B migration applies the final radio level"
+            );
+        }
+        Expect(qualityPass4B.bypassed,
+            "4B migration preserves bypass state");
+
+        VoiceEffectSettings qualityPass4D;
+        qualityPass4D.enabled = true;
+        qualityPass4D.bypassed = true;
+        qualityPass4D.preset = VoiceEffectPreset::TinyHighVoice;
+        qualityPass4D.pitchSemitones = 4.0f;
+        qualityPass4D.formantSemitones = 1.8f;
+        qualityPass4D.character = 0.42f;
+        qualityPass4D.drive = 0.0f;
+        qualityPass4D.dryWet = 0.88f;
+        qualityPass4D.outputGainDb = 0.7f;
+        Expect(
+            MigrateLegacyBuiltInVoiceEffectSettings(qualityPass4D),
+            "untouched 4D preset migrates"
+        );
+        const auto currentTiny = BuildVoiceEffectPreset(
+            VoiceEffectPreset::TinyHighVoice,
+            true
+        );
+        Expect(currentTiny.has_value(), "current tiny preset exists");
+        if (currentTiny.has_value())
+        {
+            Expect(
+                NearlyEqual(
+                    qualityPass4D.outputGainDb,
+                    currentTiny->outputGainDb
+                ),
+                "4D migration applies the final tiny level"
+            );
+            Expect(
+                NearlyEqual(
+                    qualityPass4D.formantSemitones,
+                    currentTiny->formantSemitones
+                ),
+                "4D migration applies the final tiny tone"
+            );
+        }
+        Expect(qualityPass4D.bypassed,
+            "4D migration preserves bypass state");
+
+        VoiceEffectSettings qualityPass4E;
+        qualityPass4E.enabled = true;
+        qualityPass4E.bypassed = true;
+        qualityPass4E.preset = VoiceEffectPreset::Robot;
+        qualityPass4E.pitchSemitones = 0.0f;
+        qualityPass4E.formantSemitones = 0.0f;
+        qualityPass4E.character = 0.75f;
+        qualityPass4E.drive = 0.15f;
+        qualityPass4E.dryWet = 1.0f;
+        qualityPass4E.outputGainDb = 2.0f;
+        Expect(
+            MigrateLegacyBuiltInVoiceEffectSettings(qualityPass4E),
+            "untouched 4E preset migrates"
+        );
+        const auto currentRobot = BuildVoiceEffectPreset(
+            VoiceEffectPreset::Robot,
+            true
+        );
+        Expect(currentRobot.has_value(), "current robot preset exists");
+        if (currentRobot.has_value())
+        {
+            Expect(
+                NearlyEqual(
+                    qualityPass4E.outputGainDb,
+                    currentRobot->outputGainDb
+                ),
+                "4E migration applies the loudness-matched robot level"
+            );
+        }
+        Expect(qualityPass4E.bypassed,
+            "4E migration preserves bypass state");
 
         VoiceEffectSettings customized = legacy;
         customized.pitchSemitones = -2.25f;

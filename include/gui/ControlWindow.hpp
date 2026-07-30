@@ -149,6 +149,7 @@ private:
     static constexpr int IdVoiceEffectsSavePreset = 1051;
     static constexpr int IdVoiceEffectsDeletePreset = 1052;
     static constexpr int IdVoiceEffectsPresetName = 1053;
+    static constexpr int IdVoiceEffectsBodySlider = 1054;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -435,6 +436,9 @@ private:
     HWND voiceEffectsCharacterCaption_ = nullptr;
     HWND voiceEffectsCharacterSlider_ = nullptr;
     HWND voiceEffectsCharacterValue_ = nullptr;
+    HWND voiceEffectsBodyCaption_ = nullptr;
+    HWND voiceEffectsBodySlider_ = nullptr;
+    HWND voiceEffectsBodyValue_ = nullptr;
     HWND voiceEffectsDriveCaption_ = nullptr;
     HWND voiceEffectsDriveSlider_ = nullptr;
     HWND voiceEffectsDriveValue_ = nullptr;

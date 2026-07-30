@@ -28,14 +28,14 @@ A common setup sends the main mix to **VB-CABLE** for voice chat or streaming wh
 
 There is no installer, database, background service, .NET runtime or Qt dependency. The official build is distributed as a portable ZIP and keeps its configuration, sounds, logs, and imported media beside the executable.
 
-**Current stable release:** `v2.2.0`
+**Current stable release:** `v2.2.1`
 
-## Voice Effects in v2.2.0
+## Voice Effects in v2.2.1
 
 - Added a compact Voice Effects / Voice Changer tab inside the existing control panel; no separate popup or external runtime is required.
 - Added independent pitch (`-12` to `+12` semitones) and formant (`-6` to `+6` semitones) controls with fixed-latency dry/wet alignment.
 - Added Deep / Heavy, High / Nasal Rap, Dark Vocal, Radio, Robot and Tiny / High Voice presets plus Custom mode.
-- Added character EQ, drive saturation, radio band-pass, robot ring modulation and a restrained Tiny doubler.
+- Added character EQ, a pitch-free Vocal Weight control with voiced low-band density, drive saturation, radio band-pass, robot ring modulation and a restrained Tiny doubler.
 - Added a hybrid speech pitch engine with phase locking, voiced/unvoiced handling and transient protection to reduce metallic speech artifacts.
 - Added lock-free block-boundary parameter updates, user presets, preset/bypass hotkeys and inline runtime telemetry.
 - Preserved the existing crosstalk cancellation, WebRTC AEC3, RNNoise, dynamics and routing pipeline ahead of Voice Effects.
@@ -47,7 +47,7 @@ There is no installer, database, background service, .NET runtime or Qt dependen
 - An automatic stereo crosstalk layer measures each device path at runtime, validates its adaptive leakage model before mixing it in, and suppresses remaining far-end-only residue without a PC-specific fixed delay.
 - Missing loopback blocks do not masquerade as valid silent references, and endpoint delay tracking remains with AEC3's internal estimator.
 
-See [docs/releases/v2.2.0.md](docs/releases/v2.2.0.md) and [CHANGELOG.md](CHANGELOG.md) for the complete release notes.
+See [docs/releases/v2.2.1.md](docs/releases/v2.2.1.md) and [CHANGELOG.md](CHANGELOG.md) for the complete release notes.
 
 ## Features
 
@@ -350,7 +350,7 @@ Official GitHub release artifacts are currently unsigned. Microsoft Defender Sma
 Download the application only from this repository and compare the ZIP with its attached checksum:
 
 ```powershell
-Get-FileHash .\SoundBoardFasaFiso-v2.2.0-windows-x64-portable.zip -Algorithm SHA256
+Get-FileHash .\SoundBoardFasaFiso-v2.2.1-windows-x64-portable.zip -Algorithm SHA256
 ```
 
 A matching checksum confirms that the archive matches the published release asset. It does not replace code signing. Do not permanently weaken Windows security to run the application.
@@ -415,8 +415,8 @@ The verified files are created under:
 
 ```text
 out/build/x64-Release/
-├── SoundBoardFasaFiso-v2.2.0-windows-x64-portable.zip
-└── SoundBoardFasaFiso-v2.2.0-windows-x64-portable.zip.sha256
+├── SoundBoardFasaFiso-v2.2.1-windows-x64-portable.zip
+└── SoundBoardFasaFiso-v2.2.1-windows-x64-portable.zip.sha256
 ```
 
 ## Repository layout
@@ -448,7 +448,7 @@ VB-CABLE is optional and is not bundled.
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) and [docs/releases/v2.2.0.md](docs/releases/v2.2.0.md).
+See [CHANGELOG.md](CHANGELOG.md) and [docs/releases/v2.2.1.md](docs/releases/v2.2.1.md).
 
 ## License
 

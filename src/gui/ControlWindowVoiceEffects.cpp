@@ -220,6 +220,15 @@ bool ControlWindow::CreateVoiceEffectsControls()
         5
     );
     createSliderRow(
+        voiceEffectsBodyCaption_,
+        voiceEffectsBodySlider_,
+        voiceEffectsBodyValue_,
+        IdVoiceEffectsBodySlider,
+        0,
+        100,
+        5
+    );
+    createSliderRow(
         voiceEffectsCharacterCaption_,
         voiceEffectsCharacterSlider_,
         voiceEffectsCharacterValue_,
@@ -283,8 +292,10 @@ bool ControlWindow::CreateVoiceEffectsControls()
         voiceEffectsPresetNameEdit_, voiceEffectsPitchCaption_,
         voiceEffectsPitchSlider_, voiceEffectsPitchValue_,
         voiceEffectsFormantCaption_, voiceEffectsFormantSlider_,
-        voiceEffectsFormantValue_, voiceEffectsCharacterCaption_,
-        voiceEffectsCharacterSlider_, voiceEffectsCharacterValue_,
+        voiceEffectsFormantValue_, voiceEffectsBodyCaption_,
+        voiceEffectsBodySlider_, voiceEffectsBodyValue_,
+        voiceEffectsCharacterCaption_, voiceEffectsCharacterSlider_,
+        voiceEffectsCharacterValue_,
         voiceEffectsDriveCaption_, voiceEffectsDriveSlider_,
         voiceEffectsDriveValue_, voiceEffectsDryWetCaption_,
         voiceEffectsDryWetSlider_, voiceEffectsDryWetValue_,
@@ -401,28 +412,34 @@ void ControlWindow::LayoutVoiceEffectsControls(
         voiceEffectsPitchValue_, innerX, rowY
     );
     layoutSlider(
-        voiceEffectsDriveCaption_, voiceEffectsDriveSlider_,
-        voiceEffectsDriveValue_, rightX, rowY
+        voiceEffectsFormantCaption_, voiceEffectsFormantSlider_,
+        voiceEffectsFormantValue_, rightX, rowY
     );
-    rowY += 56;
+    rowY += 48;
 
     layoutSlider(
-        voiceEffectsFormantCaption_, voiceEffectsFormantSlider_,
-        voiceEffectsFormantValue_, innerX, rowY
+        voiceEffectsBodyCaption_, voiceEffectsBodySlider_,
+        voiceEffectsBodyValue_, innerX, rowY
+    );
+    layoutSlider(
+        voiceEffectsCharacterCaption_, voiceEffectsCharacterSlider_,
+        voiceEffectsCharacterValue_, rightX, rowY
+    );
+    rowY += 48;
+
+    layoutSlider(
+        voiceEffectsDriveCaption_, voiceEffectsDriveSlider_,
+        voiceEffectsDriveValue_, innerX, rowY
     );
     layoutSlider(
         voiceEffectsDryWetCaption_, voiceEffectsDryWetSlider_,
         voiceEffectsDryWetValue_, rightX, rowY
     );
-    rowY += 56;
+    rowY += 48;
 
     layoutSlider(
-        voiceEffectsCharacterCaption_, voiceEffectsCharacterSlider_,
-        voiceEffectsCharacterValue_, innerX, rowY
-    );
-    layoutSlider(
         voiceEffectsOutputGainCaption_, voiceEffectsOutputGainSlider_,
-        voiceEffectsOutputGainValue_, rightX, rowY
+        voiceEffectsOutputGainValue_, innerX, rowY
     );
 
     const int buttonY = pageY + pageHeight - 48;
@@ -589,6 +606,10 @@ void ControlWindow::PopulateVoiceEffectsControls()
         ToTenths(settings.formantSemitones)
     );
     SendMessageW(
+        voiceEffectsBodySlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings.body)
+    );
+    SendMessageW(
         voiceEffectsCharacterSlider_, TBM_SETPOS, TRUE,
         ToPercent(settings.character)
     );
@@ -681,6 +702,10 @@ void ControlWindow::ApplySelectedVoiceEffectsPreset()
     SendMessageW(
         voiceEffectsFormantSlider_, TBM_SETPOS, TRUE,
         ToTenths(settings->formantSemitones)
+    );
+    SendMessageW(
+        voiceEffectsBodySlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings->body)
     );
     SendMessageW(
         voiceEffectsCharacterSlider_, TBM_SETPOS, TRUE,
@@ -861,6 +886,9 @@ void ControlWindow::UpdateVoiceEffectsValueLabels()
     const float formant = static_cast<float>(SendMessageW(
         voiceEffectsFormantSlider_, TBM_GETPOS, 0, 0
     )) / 10.0f;
+    const int body = static_cast<int>(SendMessageW(
+        voiceEffectsBodySlider_, TBM_GETPOS, 0, 0
+    ));
     const int character = static_cast<int>(SendMessageW(
         voiceEffectsCharacterSlider_, TBM_GETPOS, 0, 0
     ));
@@ -879,6 +907,9 @@ void ControlWindow::UpdateVoiceEffectsValueLabels()
     );
     SetControlText(
         voiceEffectsFormantValue_, FormatSignedTenths(formant, L" st")
+    );
+    SetControlText(
+        voiceEffectsBodyValue_, std::to_wstring(body) + L"%"
     );
     SetControlText(
         voiceEffectsCharacterValue_, std::to_wstring(character) + L"%"
@@ -939,6 +970,9 @@ bool ControlWindow::ReadVoiceEffectSettingsFromControls(
     settings.formantSemitones = static_cast<float>(SendMessageW(
         voiceEffectsFormantSlider_, TBM_GETPOS, 0, 0
     )) / 10.0f;
+    settings.body = static_cast<float>(SendMessageW(
+        voiceEffectsBodySlider_, TBM_GETPOS, 0, 0
+    )) / 100.0f;
     settings.character = static_cast<float>(SendMessageW(
         voiceEffectsCharacterSlider_, TBM_GETPOS, 0, 0
     )) / 100.0f;
@@ -1137,6 +1171,7 @@ void ControlWindow::ResetVoiceEffectsControls()
         settings.preset = VoiceEffectPreset::Custom;
         settings.pitchSemitones = 0.0f;
         settings.formantSemitones = 0.0f;
+        settings.body = 0.0f;
         settings.character = 0.0f;
         settings.drive = 0.0f;
         settings.dryWet = 1.0f;
@@ -1157,6 +1192,10 @@ void ControlWindow::ResetVoiceEffectsControls()
     SendMessageW(
         voiceEffectsFormantSlider_, TBM_SETPOS, TRUE,
         ToTenths(settings.formantSemitones)
+    );
+    SendMessageW(
+        voiceEffectsBodySlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings.body)
     );
     SendMessageW(
         voiceEffectsCharacterSlider_, TBM_SETPOS, TRUE,
@@ -1496,6 +1535,7 @@ bool ControlWindow::IsVoiceEffectsSlider(const HWND control) const noexcept
 {
     return control == voiceEffectsPitchSlider_ ||
         control == voiceEffectsFormantSlider_ ||
+        control == voiceEffectsBodySlider_ ||
         control == voiceEffectsCharacterSlider_ ||
         control == voiceEffectsDriveSlider_ ||
         control == voiceEffectsDryWetSlider_ ||

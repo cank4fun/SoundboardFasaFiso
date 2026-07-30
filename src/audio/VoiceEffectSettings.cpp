@@ -174,6 +174,224 @@ namespace
         return settings;
     }
 
+    std::optional<VoiceEffectSettings> BuildQualityPass4BSnapshot(
+        const VoiceEffectPreset preset,
+        const bool enabled
+    )
+    {
+        VoiceEffectSettings settings;
+        settings.enabled = enabled;
+        settings.bypassed = false;
+        settings.preset = preset;
+        settings.outputGainDb = 0.0f;
+
+        switch (preset)
+        {
+            case VoiceEffectPreset::DeepHeavy:
+                settings.pitchSemitones = -2.5f;
+                settings.formantSemitones = -0.8f;
+                settings.character = 0.38f;
+                settings.drive = 0.04f;
+                settings.dryWet = 1.0f;
+                break;
+
+            case VoiceEffectPreset::HighNasalRap:
+                settings.pitchSemitones = 1.0f;
+                settings.formantSemitones = 0.8f;
+                settings.character = 0.48f;
+                settings.drive = 0.03f;
+                settings.dryWet = 1.0f;
+                break;
+
+            case VoiceEffectPreset::DarkVocal:
+                settings.pitchSemitones = -0.25f;
+                settings.formantSemitones = -1.4f;
+                settings.character = 0.46f;
+                settings.drive = 0.06f;
+                settings.dryWet = 1.0f;
+                break;
+
+            case VoiceEffectPreset::Radio:
+                settings.pitchSemitones = 0.0f;
+                settings.formantSemitones = 0.0f;
+                settings.character = 0.85f;
+                settings.drive = 0.30f;
+                settings.dryWet = 1.0f;
+                settings.outputGainDb = -1.0f;
+                break;
+
+            case VoiceEffectPreset::Robot:
+                settings.pitchSemitones = 0.0f;
+                settings.formantSemitones = 0.0f;
+                settings.character = 0.75f;
+                settings.drive = 0.15f;
+                settings.dryWet = 1.0f;
+                settings.outputGainDb = -1.0f;
+                break;
+
+            case VoiceEffectPreset::TinyHighVoice:
+                settings.pitchSemitones = 4.0f;
+                settings.formantSemitones = 2.0f;
+                settings.character = 0.46f;
+                settings.drive = 0.0f;
+                settings.dryWet = 1.0f;
+                break;
+
+            case VoiceEffectPreset::Custom:
+                return std::nullopt;
+        }
+
+        return settings;
+    }
+
+
+    std::optional<VoiceEffectSettings> BuildQualityPass4DSnapshot(
+        const VoiceEffectPreset preset,
+        const bool enabled
+    )
+    {
+        VoiceEffectSettings settings;
+        settings.enabled = enabled;
+        settings.bypassed = false;
+        settings.preset = preset;
+        settings.outputGainDb = 0.0f;
+
+        switch (preset)
+        {
+            case VoiceEffectPreset::DeepHeavy:
+                settings.pitchSemitones = -2.5f;
+                settings.formantSemitones = -0.9f;
+                settings.character = 0.36f;
+                settings.drive = 0.035f;
+                settings.dryWet = 0.92f;
+                settings.outputGainDb = 0.4f;
+                break;
+
+            case VoiceEffectPreset::HighNasalRap:
+                settings.pitchSemitones = 1.0f;
+                settings.formantSemitones = 0.75f;
+                settings.character = 0.44f;
+                settings.drive = 0.02f;
+                settings.dryWet = 0.90f;
+                settings.outputGainDb = 0.4f;
+                break;
+
+            case VoiceEffectPreset::DarkVocal:
+                settings.pitchSemitones = -0.25f;
+                settings.formantSemitones = -1.35f;
+                settings.character = 0.44f;
+                settings.drive = 0.05f;
+                settings.dryWet = 0.94f;
+                break;
+
+            case VoiceEffectPreset::Radio:
+                settings.pitchSemitones = 0.0f;
+                settings.formantSemitones = 0.0f;
+                settings.character = 0.85f;
+                settings.drive = 0.30f;
+                settings.dryWet = 1.0f;
+                settings.outputGainDb = -0.5f;
+                break;
+
+            case VoiceEffectPreset::Robot:
+                settings.pitchSemitones = 0.0f;
+                settings.formantSemitones = 0.0f;
+                settings.character = 0.75f;
+                settings.drive = 0.15f;
+                settings.dryWet = 1.0f;
+                settings.outputGainDb = 0.0f;
+                break;
+
+            case VoiceEffectPreset::TinyHighVoice:
+                settings.pitchSemitones = 4.0f;
+                settings.formantSemitones = 1.8f;
+                settings.character = 0.42f;
+                settings.drive = 0.0f;
+                settings.dryWet = 0.88f;
+                settings.outputGainDb = 0.7f;
+                break;
+
+            case VoiceEffectPreset::Custom:
+                return std::nullopt;
+        }
+
+        return settings;
+    }
+
+    std::optional<VoiceEffectSettings> BuildQualityPass4ESnapshot(
+        const VoiceEffectPreset preset,
+        const bool enabled
+    )
+    {
+        VoiceEffectSettings settings;
+        settings.enabled = enabled;
+        settings.bypassed = false;
+        settings.preset = preset;
+        settings.outputGainDb = 0.0f;
+
+        switch (preset)
+        {
+            case VoiceEffectPreset::DeepHeavy:
+                settings.pitchSemitones = -2.5f;
+                settings.formantSemitones = -0.95f;
+                settings.character = 0.34f;
+                settings.drive = 0.03f;
+                settings.dryWet = 0.90f;
+                settings.outputGainDb = 1.5f;
+                break;
+
+            case VoiceEffectPreset::HighNasalRap:
+                settings.pitchSemitones = 1.0f;
+                settings.formantSemitones = 0.70f;
+                settings.character = 0.42f;
+                settings.drive = 0.015f;
+                settings.dryWet = 0.88f;
+                settings.outputGainDb = 1.5f;
+                break;
+
+            case VoiceEffectPreset::DarkVocal:
+                settings.pitchSemitones = -0.25f;
+                settings.formantSemitones = -1.35f;
+                settings.character = 0.43f;
+                settings.drive = 0.045f;
+                settings.dryWet = 0.93f;
+                settings.outputGainDb = 0.4f;
+                break;
+
+            case VoiceEffectPreset::Radio:
+                settings.pitchSemitones = 0.0f;
+                settings.formantSemitones = 0.0f;
+                settings.character = 0.85f;
+                settings.drive = 0.30f;
+                settings.dryWet = 1.0f;
+                settings.outputGainDb = 0.9f;
+                break;
+
+            case VoiceEffectPreset::Robot:
+                settings.pitchSemitones = 0.0f;
+                settings.formantSemitones = 0.0f;
+                settings.character = 0.75f;
+                settings.drive = 0.15f;
+                settings.dryWet = 1.0f;
+                settings.outputGainDb = 2.0f;
+                break;
+
+            case VoiceEffectPreset::TinyHighVoice:
+                settings.pitchSemitones = 4.0f;
+                settings.formantSemitones = 1.65f;
+                settings.character = 0.39f;
+                settings.drive = 0.0f;
+                settings.dryWet = 0.84f;
+                settings.outputGainDb = 1.9f;
+                break;
+
+            case VoiceEffectPreset::Custom:
+                return std::nullopt;
+        }
+
+        return settings;
+    }
+
     bool SettingsMatchSnapshot(
         const VoiceEffectSettings& settings,
         const VoiceEffectSettings& snapshot
@@ -189,6 +407,7 @@ namespace
                 snapshot.formantSemitones
             ) &&
             NearlyEqual(settings.character, snapshot.character) &&
+            NearlyEqual(settings.body, snapshot.body) &&
             NearlyEqual(settings.drive, snapshot.drive) &&
             NearlyEqual(settings.dryWet, snapshot.dryWet) &&
             NearlyEqual(settings.outputGainDb, snapshot.outputGainDb);
@@ -271,33 +490,36 @@ std::optional<VoiceEffectSettings> BuildVoiceEffectPreset(
     settings.preset = preset;
     settings.outputGainDb = 0.0f;
 
-    // Conservative starting points. Radio, robot, and tiny/high keep their
+    // Final v2.2 built-in tuning. Radio, robot, and tiny/high keep their
     // dedicated character stages while the shared controls remain available
-    // for microphone A/B tuning before the v2.2 release.
+    // for user-specific microphone adjustment.
     switch (preset)
     {
         case VoiceEffectPreset::DeepHeavy:
             settings.pitchSemitones = -2.5f;
-            settings.formantSemitones = -0.8f;
-            settings.character = 0.38f;
-            settings.drive = 0.04f;
-            settings.dryWet = 1.0f;
+            settings.formantSemitones = -0.95f;
+            settings.character = 0.34f;
+            settings.drive = 0.03f;
+            settings.dryWet = 0.90f;
+            settings.outputGainDb = 3.7f;
             break;
 
         case VoiceEffectPreset::HighNasalRap:
             settings.pitchSemitones = 1.0f;
-            settings.formantSemitones = 0.8f;
-            settings.character = 0.48f;
-            settings.drive = 0.03f;
-            settings.dryWet = 1.0f;
+            settings.formantSemitones = 0.70f;
+            settings.character = 0.42f;
+            settings.drive = 0.015f;
+            settings.dryWet = 0.88f;
+            settings.outputGainDb = 3.4f;
             break;
 
         case VoiceEffectPreset::DarkVocal:
             settings.pitchSemitones = -0.25f;
-            settings.formantSemitones = -1.4f;
-            settings.character = 0.46f;
-            settings.drive = 0.06f;
-            settings.dryWet = 1.0f;
+            settings.formantSemitones = -1.35f;
+            settings.character = 0.43f;
+            settings.drive = 0.045f;
+            settings.dryWet = 0.93f;
+            settings.outputGainDb = 1.8f;
             break;
 
         case VoiceEffectPreset::Radio:
@@ -306,7 +528,7 @@ std::optional<VoiceEffectSettings> BuildVoiceEffectPreset(
             settings.character = 0.85f;
             settings.drive = 0.30f;
             settings.dryWet = 1.0f;
-            settings.outputGainDb = -1.0f;
+            settings.outputGainDb = 3.8f;
             break;
 
         case VoiceEffectPreset::Robot:
@@ -315,15 +537,16 @@ std::optional<VoiceEffectSettings> BuildVoiceEffectPreset(
             settings.character = 0.75f;
             settings.drive = 0.15f;
             settings.dryWet = 1.0f;
-            settings.outputGainDb = -1.0f;
+            settings.outputGainDb = 5.5f;
             break;
 
         case VoiceEffectPreset::TinyHighVoice:
             settings.pitchSemitones = 4.0f;
-            settings.formantSemitones = 2.0f;
-            settings.character = 0.46f;
+            settings.formantSemitones = 1.65f;
+            settings.character = 0.39f;
             settings.drive = 0.0f;
-            settings.dryWet = 1.0f;
+            settings.dryWet = 0.84f;
+            settings.outputGainDb = 4.0f;
             break;
 
         case VoiceEffectPreset::Custom:
@@ -351,6 +574,7 @@ bool VoiceEffectSettingsMatchPreset(
         settings.pitchSemitones == expected->pitchSemitones &&
         settings.formantSemitones == expected->formantSemitones &&
         settings.character == expected->character &&
+        settings.body == expected->body &&
         settings.drive == expected->drive &&
         settings.dryWet == expected->dryWet &&
         settings.outputGainDb == expected->outputGainDb;
@@ -375,11 +599,31 @@ bool MigrateLegacyBuiltInVoiceEffectSettings(
         settings.preset,
         settings.enabled
     );
+    const auto qualityPass4B = BuildQualityPass4BSnapshot(
+        settings.preset,
+        settings.enabled
+    );
+    const auto qualityPass4D = BuildQualityPass4DSnapshot(
+        settings.preset,
+        settings.enabled
+    );
+    const auto qualityPass4E = BuildQualityPass4ESnapshot(
+        settings.preset,
+        settings.enabled
+    );
     const bool matchesLegacy = legacy.has_value() &&
         SettingsMatchSnapshot(settings, *legacy);
     const bool matchesQualityPass4A = qualityPass4A.has_value() &&
         SettingsMatchSnapshot(settings, *qualityPass4A);
-    if (!matchesLegacy && !matchesQualityPass4A)
+    const bool matchesQualityPass4B = qualityPass4B.has_value() &&
+        SettingsMatchSnapshot(settings, *qualityPass4B);
+    const bool matchesQualityPass4D = qualityPass4D.has_value() &&
+        SettingsMatchSnapshot(settings, *qualityPass4D);
+    const bool matchesQualityPass4E = qualityPass4E.has_value() &&
+        SettingsMatchSnapshot(settings, *qualityPass4E);
+    if (!matchesLegacy && !matchesQualityPass4A &&
+        !matchesQualityPass4B && !matchesQualityPass4D &&
+        !matchesQualityPass4E)
     {
         return false;
     }
@@ -418,6 +662,11 @@ bool IsValidVoiceEffectSettings(const VoiceEffectSettings& settings)
             settings.character,
             MinimumCharacter,
             MaximumCharacter
+        ) &&
+        IsInRange(
+            settings.body,
+            MinimumBody,
+            MaximumBody
         ) &&
         IsInRange(
             settings.drive,

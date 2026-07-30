@@ -134,6 +134,7 @@ namespace
             NearlyEqual(left.pitchSemitones, right.pitchSemitones) &&
             NearlyEqual(left.formantSemitones, right.formantSemitones) &&
             NearlyEqual(left.character, right.character) &&
+            NearlyEqual(left.body, right.body) &&
             NearlyEqual(left.drive, right.drive) &&
             NearlyEqual(left.dryWet, right.dryWet) &&
             NearlyEqual(left.outputGainDb, right.outputGainDb);
@@ -281,6 +282,7 @@ namespace
             "voice_effects_pitch_semitones=-3,5\n"
             "voice_effects_formant_semitones=-2.25\n"
             "voice_effects_character=0.75\n"
+            "voice_effects_body=0.55\n"
             "voice_effects_drive=0.40\n"
             "voice_effects_dry_wet=0.65\n"
             "voice_effects_output_gain_db=-1.25\n";
@@ -313,6 +315,10 @@ namespace
             "Voice Effects character parses"
         );
         Expect(
+            NearlyEqual(settings.body, 0.55f),
+            "Voice Effects body parses"
+        );
+        Expect(
             NearlyEqual(settings.drive, 0.40f),
             "Voice Effects drive parses"
         );
@@ -328,6 +334,37 @@ namespace
             IsValidVoiceEffectSettings(settings),
             "parsed Voice Effects settings are valid"
         );
+    }
+
+    void TestLegacyUserPresetWithoutBodyLoads(
+        const TemporaryDirectory& directory
+    )
+    {
+        const auto path = directory.Path() / "legacy-user-preset.txt";
+        constexpr std::string_view content =
+            "voice_effects_user_preset=Legacy|preset=custom|pitch=0|"
+            "formant=0|character=0.25|drive=0|dry_wet=1|"
+            "output_gain_db=0\n";
+
+        Expect(
+            WriteText(path, content),
+            "legacy user-preset fixture is written"
+        );
+
+        Config config;
+        Expect(
+            config.Load(path),
+            "v2.2.0 user preset without Body still loads"
+        );
+        const auto& presets = config.GetVoiceEffectUserPresets();
+        Expect(presets.size() == 1, "legacy user preset is retained");
+        if (presets.size() == 1)
+        {
+            Expect(
+                NearlyEqual(presets[0].settings.body, 0.0f),
+                "missing legacy Body defaults to zero"
+            );
+        }
     }
 
     void TestLegacyVoiceEffectPreviewPresetMigrates(
@@ -382,6 +419,7 @@ namespace
         expected.pitchSemitones = -5.125f;
         expected.formantSemitones = 2.375f;
         expected.character = 0.625f;
+        expected.body = 0.575f;
         expected.drive = 0.375f;
         expected.dryWet = 0.725f;
         expected.outputGainDb = -2.875f;
@@ -413,6 +451,10 @@ namespace
                 std::string::npos,
             "Voice Effects pitch is serialized"
         );
+        Expect(
+            saved.find("voice_effects_body=0.575") != std::string::npos,
+            "Voice Effects body is serialized"
+        );
 
         Config loaded;
         Expect(loaded.Load(path), "saved Voice Effects config reloads");
@@ -434,6 +476,7 @@ namespace
         deep.settings.pitchSemitones = -5.0f;
         deep.settings.formantSemitones = -2.0f;
         deep.settings.character = 0.60f;
+        deep.settings.body = 0.70f;
         deep.settings.drive = 0.25f;
         deep.settings.dryWet = 0.80f;
         deep.settings.outputGainDb = -1.5f;
@@ -446,6 +489,7 @@ namespace
         radio.settings.pitchSemitones = 0.0f;
         radio.settings.formantSemitones = 0.0f;
         radio.settings.character = 0.90f;
+        radio.settings.body = 0.20f;
         radio.settings.drive = 0.35f;
         radio.settings.dryWet = 0.75f;
         radio.settings.outputGainDb = -2.0f;
@@ -500,7 +544,8 @@ namespace
                 "updated user-preset name round-trips"
             );
             Expect(
-                NearlyEqual(presets[0].settings.pitchSemitones, -6.0f),
+                NearlyEqual(presets[0].settings.pitchSemitones, -6.0f) &&
+                    NearlyEqual(presets[0].settings.body, 0.70f),
                 "updated user-preset settings round-trip"
             );
             Expect(
@@ -690,6 +735,10 @@ namespace
             {
                 "voice_effects_formant_semitones=nan\n",
                 "non-finite Voice Effects formant"
+            },
+            {
+                "voice_effects_body=1.01\n",
+                "out-of-range Voice Effects body"
             },
             {
                 "voice_effects_dry_wet=-0.01\n",
@@ -936,6 +985,7 @@ int main()
     TestOldConfigUsesSafeDefaults(directory);
     TestAllProcessingKeysParse(directory);
     TestAllVoiceEffectKeysParse(directory);
+    TestLegacyUserPresetWithoutBodyLoads(directory);
     TestLegacyVoiceEffectPreviewPresetMigrates(directory);
     TestVoiceEffectsSaveAndLoadRoundTrip(directory);
     TestVoiceEffectUserPresetPersistence(directory);
