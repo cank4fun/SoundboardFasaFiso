@@ -40,7 +40,7 @@ jobs:
           arch: x64
 
       - name: Restore vcpkg binary cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/AppData/Local/vcpkg/archives
           key: windows-vcpkg-aec3-${{ hashFiles('vcpkg.json') }}
