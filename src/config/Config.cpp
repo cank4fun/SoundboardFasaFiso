@@ -24,6 +24,23 @@
 
 namespace
 {
+    std::string FormatRoundTripFloat(const float value)
+    {
+        std::array<char, 32> buffer{};
+        const auto result = std::to_chars(
+            buffer.data(),
+            buffer.data() + buffer.size(),
+            value,
+            std::chars_format::general
+        );
+        if (result.ec != std::errc{})
+        {
+            return "0";
+        }
+
+        return std::string(buffer.data(), result.ptr);
+    }
+
     struct ParsedLine
     {
         std::string leftSide;
@@ -298,6 +315,26 @@ namespace
             "VOICE_EFFECTS_BYPASSED",
             &VoiceEffectSettings::bypassed,
             "voice_effects_bypassed=false"
+        },
+        VoiceEffectBooleanSetting{
+            "VOICE_EFFECTS_PARAMETRIC_EQ_ENABLED",
+            &VoiceEffectSettings::parametricEqEnabled,
+            "voice_effects_parametric_eq_enabled=false"
+        },
+        VoiceEffectBooleanSetting{
+            "VOICE_EFFECTS_DE_ESSER_ENABLED",
+            &VoiceEffectSettings::deEsserEnabled,
+            "voice_effects_de_esser_enabled=false"
+        },
+        VoiceEffectBooleanSetting{
+            "VOICE_EFFECTS_GATE_ENABLED",
+            &VoiceEffectSettings::gateEnabled,
+            "voice_effects_gate_enabled=false"
+        },
+        VoiceEffectBooleanSetting{
+            "VOICE_EFFECTS_COMPRESSOR_ENABLED",
+            &VoiceEffectSettings::compressorEnabled,
+            "voice_effects_compressor_enabled=false"
         }
     };
 
@@ -364,6 +401,96 @@ namespace
             "-24 ile 12",
             "between -24 and 12",
             "voice_effects_output_gain_db=0.0"
+        },
+        VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_EQ_LOW_GAIN_DB",
+            &VoiceEffectSettings::eqLowGainDb,
+            VoiceEffectLimits::MinimumEqGainDb,
+            VoiceEffectLimits::MaximumEqGainDb,
+            "-12 ile 12",
+            "between -12 and 12",
+            "voice_effects_eq_low_gain_db=0.0"
+        },
+        VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_EQ_LOW_FREQUENCY_HZ",
+            &VoiceEffectSettings::eqLowFrequencyHz,
+            VoiceEffectLimits::MinimumEqLowFrequencyHz,
+            VoiceEffectLimits::MaximumEqLowFrequencyHz,
+            "60 ile 400",
+            "between 60 and 400",
+            "voice_effects_eq_low_frequency_hz=135.0"
+        },
+        VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_EQ_MID_GAIN_DB",
+            &VoiceEffectSettings::eqMidGainDb,
+            VoiceEffectLimits::MinimumEqGainDb,
+            VoiceEffectLimits::MaximumEqGainDb,
+            "-12 ile 12",
+            "between -12 and 12",
+            "voice_effects_eq_mid_gain_db=0.0"
+        },
+        VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_EQ_MID_FREQUENCY_HZ",
+            &VoiceEffectSettings::eqMidFrequencyHz,
+            VoiceEffectLimits::MinimumEqMidFrequencyHz,
+            VoiceEffectLimits::MaximumEqMidFrequencyHz,
+            "250 ile 5000",
+            "between 250 and 5000",
+            "voice_effects_eq_mid_frequency_hz=1450.0"
+        },
+        VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_EQ_MID_Q",
+            &VoiceEffectSettings::eqMidQ,
+            VoiceEffectLimits::MinimumEqMidQ,
+            VoiceEffectLimits::MaximumEqMidQ,
+            "0.3 ile 4",
+            "between 0.3 and 4",
+            "voice_effects_eq_mid_q=0.82"
+        },
+        VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_EQ_HIGH_GAIN_DB",
+            &VoiceEffectSettings::eqHighGainDb,
+            VoiceEffectLimits::MinimumEqGainDb,
+            VoiceEffectLimits::MaximumEqGainDb,
+            "-12 ile 12",
+            "between -12 and 12",
+            "voice_effects_eq_high_gain_db=0.0"
+        },
+        VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_EQ_HIGH_FREQUENCY_HZ",
+            &VoiceEffectSettings::eqHighFrequencyHz,
+            VoiceEffectLimits::MinimumEqHighFrequencyHz,
+            VoiceEffectLimits::MaximumEqHighFrequencyHz,
+            "3000 ile 12000",
+            "between 3000 and 12000",
+            "voice_effects_eq_high_frequency_hz=6800.0"
+        },
+        VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_DE_ESSER_AMOUNT",
+            &VoiceEffectSettings::deEsserAmount,
+            VoiceEffectLimits::MinimumPolishAmount,
+            VoiceEffectLimits::MaximumPolishAmount,
+            "0 ile 1",
+            "between 0 and 1",
+            "voice_effects_de_esser_amount=0.0"
+        },
+        VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_GATE_AMOUNT",
+            &VoiceEffectSettings::gateAmount,
+            VoiceEffectLimits::MinimumPolishAmount,
+            VoiceEffectLimits::MaximumPolishAmount,
+            "0 ile 1",
+            "between 0 and 1",
+            "voice_effects_gate_amount=0.0"
+        },
+        VoiceEffectFloatSetting{
+            "VOICE_EFFECTS_COMPRESSOR_AMOUNT",
+            &VoiceEffectSettings::compressorAmount,
+            VoiceEffectLimits::MinimumPolishAmount,
+            VoiceEffectLimits::MaximumPolishAmount,
+            "0 ile 1",
+            "between 0 and 1",
+            "voice_effects_compressor_amount=0.0"
         }
     };
 
@@ -563,9 +690,14 @@ namespace
             return "voice_effects_preset=deep-heavy";
         }
 
+        if (settingName == "VOICE_EFFECTS_RACK_ORDER")
+        {
+            return "voice_effects_rack_order=parametric-eq,de-esser,gate,compressor";
+        }
+
         if (settingName == "VOICE_EFFECTS_USER_PRESET")
         {
-            return "voice_effects_user_preset=My Deep|preset=custom|pitch=-4.0|formant=-1.5|character=0.55|body=0.40|drive=0.20|dry_wet=1.0|output_gain_db=0.0";
+            return "voice_effects_user_preset=My Deep|preset=custom|pitch=-4.0|formant=-1.5|character=0.55|body=0.40|drive=0.20|dry_wet=1.0|output_gain_db=0.0|eq_enabled=0|eq_low=0|eq_low_hz=135|eq_mid=0|eq_mid_hz=1450|eq_mid_q=0.82|eq_high=0|eq_high_hz=6800|de_esser_enabled=0|de_esser_amount=0|gate_enabled=0|gate_amount=0|compressor_enabled=0|compressor_amount=0|rack_order=parametric-eq,de-esser,gate,compressor";
         }
 
         if (settingName == "LANGUAGE")
@@ -724,8 +856,10 @@ namespace
         )
     {
         constexpr std::size_t LegacyPartCount = 8;
-        constexpr std::size_t CurrentPartCount = 9;
-        std::array<std::string, CurrentPartCount> parts;
+        constexpr std::size_t BodyPartCount = 9;
+        constexpr std::size_t PolishPartCount = 23;
+        constexpr std::size_t RackPartCount = 24;
+        std::array<std::string, RackPartCount> parts;
         std::size_t partCount = 0;
         std::size_t start = 0;
         bool hasTrailingPart = false;
@@ -748,17 +882,19 @@ namespace
             start = separator + 1;
             if (partCount == parts.size())
             {
-                hasTrailingPart = true;
+                hasTrailingPart = start <= text.size();
             }
         }
 
         if ((partCount != LegacyPartCount &&
-                partCount != CurrentPartCount) ||
+                partCount != BodyPartCount &&
+                partCount != PolishPartCount &&
+                partCount != RackPartCount) ||
             hasTrailingPart)
         {
             errorReason = Localization::Text(
-                "Kullanıcı preset'i ad ve yedi veya sekiz alan içermeli.",
-                "A user preset must contain a name and seven or eight fields."
+                "Kullanıcı preset'i desteklenen alan düzenlerinden birini kullanmalı.",
+                "A user preset must use one of the supported field layouts."
             );
             return std::nullopt;
         }
@@ -785,6 +921,21 @@ namespace
         bool hasDrive = false;
         bool hasDryWet = false;
         bool hasOutputGain = false;
+        bool hasEqEnabled = false;
+        bool hasEqLow = false;
+        bool hasEqLowFrequency = false;
+        bool hasEqMid = false;
+        bool hasEqMidFrequency = false;
+        bool hasEqMidQ = false;
+        bool hasEqHigh = false;
+        bool hasEqHighFrequency = false;
+        bool hasDeEsserEnabled = false;
+        bool hasDeEsserAmount = false;
+        bool hasGateEnabled = false;
+        bool hasGateAmount = false;
+        bool hasCompressorEnabled = false;
+        bool hasCompressorAmount = false;
+        bool hasRackOrder = false;
 
         for (std::size_t index = 1; index < partCount; ++index)
         {
@@ -831,6 +982,32 @@ namespace
                 continue;
             }
 
+            if (fieldName == "RACK_ORDER")
+            {
+                if (hasRackOrder)
+                {
+                    errorReason = Localization::Text(
+                        "Kullanıcı preset'inde rack_order alanı tekrarlanmış.",
+                        "The rack_order field is duplicated in the user preset."
+                    );
+                    return std::nullopt;
+                }
+
+                const auto rackOrder = ParseVoiceEffectRackOrder(fieldValue);
+                if (!rackOrder.has_value())
+                {
+                    errorReason = Localization::Text(
+                        "Kullanıcı preset'indeki efekt rack sırası geçersiz.",
+                        "The effect-rack order in the user preset is invalid."
+                    );
+                    return std::nullopt;
+                }
+
+                result.settings.rackOrder = *rackOrder;
+                hasRackOrder = true;
+                continue;
+            }
+
             const auto value = ParseFiniteFloat(fieldValue);
             if (!value.has_value())
             {
@@ -843,6 +1020,7 @@ namespace
 
             bool* seen = nullptr;
             float* destination = nullptr;
+            bool* booleanDestination = nullptr;
 
             if (fieldName == "PITCH")
             {
@@ -879,6 +1057,76 @@ namespace
                 seen = &hasOutputGain;
                 destination = &result.settings.outputGainDb;
             }
+            else if (fieldName == "EQ_ENABLED")
+            {
+                seen = &hasEqEnabled;
+                booleanDestination = &result.settings.parametricEqEnabled;
+            }
+            else if (fieldName == "EQ_LOW")
+            {
+                seen = &hasEqLow;
+                destination = &result.settings.eqLowGainDb;
+            }
+            else if (fieldName == "EQ_LOW_HZ")
+            {
+                seen = &hasEqLowFrequency;
+                destination = &result.settings.eqLowFrequencyHz;
+            }
+            else if (fieldName == "EQ_MID")
+            {
+                seen = &hasEqMid;
+                destination = &result.settings.eqMidGainDb;
+            }
+            else if (fieldName == "EQ_MID_HZ")
+            {
+                seen = &hasEqMidFrequency;
+                destination = &result.settings.eqMidFrequencyHz;
+            }
+            else if (fieldName == "EQ_MID_Q")
+            {
+                seen = &hasEqMidQ;
+                destination = &result.settings.eqMidQ;
+            }
+            else if (fieldName == "EQ_HIGH")
+            {
+                seen = &hasEqHigh;
+                destination = &result.settings.eqHighGainDb;
+            }
+            else if (fieldName == "EQ_HIGH_HZ")
+            {
+                seen = &hasEqHighFrequency;
+                destination = &result.settings.eqHighFrequencyHz;
+            }
+            else if (fieldName == "DE_ESSER_ENABLED")
+            {
+                seen = &hasDeEsserEnabled;
+                booleanDestination = &result.settings.deEsserEnabled;
+            }
+            else if (fieldName == "DE_ESSER_AMOUNT")
+            {
+                seen = &hasDeEsserAmount;
+                destination = &result.settings.deEsserAmount;
+            }
+            else if (fieldName == "GATE_ENABLED")
+            {
+                seen = &hasGateEnabled;
+                booleanDestination = &result.settings.gateEnabled;
+            }
+            else if (fieldName == "GATE_AMOUNT")
+            {
+                seen = &hasGateAmount;
+                destination = &result.settings.gateAmount;
+            }
+            else if (fieldName == "COMPRESSOR_ENABLED")
+            {
+                seen = &hasCompressorEnabled;
+                booleanDestination = &result.settings.compressorEnabled;
+            }
+            else if (fieldName == "COMPRESSOR_AMOUNT")
+            {
+                seen = &hasCompressorAmount;
+                destination = &result.settings.compressorAmount;
+            }
             else
             {
                 errorReason = Localization::Text(
@@ -897,15 +1145,42 @@ namespace
                 return std::nullopt;
             }
 
+            if (booleanDestination != nullptr)
+            {
+                if (*value != 0.0f && *value != 1.0f)
+                {
+                    errorReason = Localization::Text(
+                        "Kullanıcı preset'indeki aç/kapat alanı 0 veya 1 olmalı.",
+                        "An enable field in the user preset must be 0 or 1."
+                    );
+                    return std::nullopt;
+                }
+                *booleanDestination = *value == 1.0f;
+            }
+            else
+            {
+                *destination = *value;
+            }
             *seen = true;
-            *destination = *value;
         }
 
-        // BODY was introduced after v2.2.0. Missing BODY therefore keeps
-        // the struct default of zero so existing saved user presets load.
-        if (!hasPreset || !hasPitch || !hasFormant ||
-            !hasCharacter || !hasDrive || !hasDryWet ||
-            !hasOutputGain)
+        // BODY, the 6E polish fields, and the 6F rack order were introduced
+        // after the original user-preset format. Missing fields retain their
+        // neutral/default values for backward compatibility.
+        const bool hasExpectedBody =
+            partCount == LegacyPartCount || hasBody;
+        const bool hasRequiredBaseFields = hasPreset && hasPitch &&
+            hasFormant && hasCharacter && hasExpectedBody && hasDrive &&
+            hasDryWet && hasOutputGain;
+        const bool hasCompletePolishFields = hasEqEnabled && hasEqLow &&
+            hasEqLowFrequency && hasEqMid && hasEqMidFrequency &&
+            hasEqMidQ && hasEqHigh && hasEqHighFrequency &&
+            hasDeEsserEnabled && hasDeEsserAmount && hasGateEnabled &&
+            hasGateAmount && hasCompressorEnabled && hasCompressorAmount;
+        if (!hasRequiredBaseFields ||
+            ((partCount == PolishPartCount || partCount == RackPartCount) &&
+                !hasCompletePolishFields) ||
+            (partCount == RackPartCount && !hasRackOrder))
         {
             errorReason = Localization::Text(
                 "Kullanıcı preset'inde gerekli alanlardan biri eksik.",
@@ -1621,6 +1896,7 @@ namespace
             settingName == "MICROPHONE_PROCESSING_PRESET" ||
             settingName == "MICROPHONE_NOISE_SUPPRESSION_LEVEL" ||
             settingName == "VOICE_EFFECTS_PRESET" ||
+            settingName == "VOICE_EFFECTS_RACK_ORDER" ||
             settingName == "VOICE_EFFECTS_USER_PRESET")
         {
             return true;
@@ -2322,6 +2598,29 @@ bool Config::Load(const std::filesystem::path& filePath)
             continue;
         }
 
+        if (settingName == "VOICE_EFFECTS_RACK_ORDER")
+        {
+            const auto rackOrder = ParseVoiceEffectRackOrder(
+                parsedLine.rightSide
+            );
+            if (!rackOrder.has_value())
+            {
+                reportError(
+                    parsedLine.lineNumber,
+                    parsedLine.originalLine,
+                    Localization::Text(
+                        "voice_effects_rack_order dört benzersiz modülü virgülle ayrılmış biçimde içermeli.",
+                        "voice_effects_rack_order must contain the four unique modules separated by commas."
+                    ),
+                    SettingExample(settingName)
+                );
+                continue;
+            }
+
+            voiceEffectSettings_.rackOrder = *rackOrder;
+            continue;
+        }
+
         if (settingName == "VOICE_EFFECTS_USER_PRESET")
         {
             std::string errorReason;
@@ -2990,32 +3289,85 @@ bool Config::Save(const std::filesystem::path& filePath) const
         << VoiceEffectPresetName(voiceEffectSettings_.preset) << '\n'
         << std::setprecision(3)
         << "voice_effects_pitch_semitones="
-        << voiceEffectSettings_.pitchSemitones << '\n'
+        << FormatRoundTripFloat(voiceEffectSettings_.pitchSemitones) << '\n'
         << "voice_effects_formant_semitones="
-        << voiceEffectSettings_.formantSemitones << '\n'
+        << FormatRoundTripFloat(voiceEffectSettings_.formantSemitones) << '\n'
         << "voice_effects_character="
-        << voiceEffectSettings_.character << '\n'
+        << FormatRoundTripFloat(voiceEffectSettings_.character) << '\n'
         << "voice_effects_body="
-        << voiceEffectSettings_.body << '\n'
+        << FormatRoundTripFloat(voiceEffectSettings_.body) << '\n'
         << "voice_effects_drive="
-        << voiceEffectSettings_.drive << '\n'
+        << FormatRoundTripFloat(voiceEffectSettings_.drive) << '\n'
         << "voice_effects_dry_wet="
-        << voiceEffectSettings_.dryWet << '\n'
+        << FormatRoundTripFloat(voiceEffectSettings_.dryWet) << '\n'
         << "voice_effects_output_gain_db="
-        << voiceEffectSettings_.outputGainDb << '\n';
+        << FormatRoundTripFloat(voiceEffectSettings_.outputGainDb) << '\n'
+        << "voice_effects_parametric_eq_enabled="
+        << (voiceEffectSettings_.parametricEqEnabled ? "true" : "false")
+        << '\n'
+        << "voice_effects_eq_low_gain_db="
+        << FormatRoundTripFloat(voiceEffectSettings_.eqLowGainDb) << '\n'
+        << "voice_effects_eq_low_frequency_hz="
+        << FormatRoundTripFloat(voiceEffectSettings_.eqLowFrequencyHz) << '\n'
+        << "voice_effects_eq_mid_gain_db="
+        << FormatRoundTripFloat(voiceEffectSettings_.eqMidGainDb) << '\n'
+        << "voice_effects_eq_mid_frequency_hz="
+        << FormatRoundTripFloat(voiceEffectSettings_.eqMidFrequencyHz) << '\n'
+        << "voice_effects_eq_mid_q="
+        << FormatRoundTripFloat(voiceEffectSettings_.eqMidQ) << '\n'
+        << "voice_effects_eq_high_gain_db="
+        << FormatRoundTripFloat(voiceEffectSettings_.eqHighGainDb) << '\n'
+        << "voice_effects_eq_high_frequency_hz="
+        << FormatRoundTripFloat(voiceEffectSettings_.eqHighFrequencyHz) << '\n'
+        << "voice_effects_de_esser_enabled="
+        << (voiceEffectSettings_.deEsserEnabled ? "true" : "false")
+        << '\n'
+        << "voice_effects_de_esser_amount="
+        << FormatRoundTripFloat(voiceEffectSettings_.deEsserAmount) << '\n'
+        << "voice_effects_gate_enabled="
+        << (voiceEffectSettings_.gateEnabled ? "true" : "false") << '\n'
+        << "voice_effects_gate_amount="
+        << FormatRoundTripFloat(voiceEffectSettings_.gateAmount) << '\n'
+        << "voice_effects_compressor_enabled="
+        << (voiceEffectSettings_.compressorEnabled ? "true" : "false")
+        << '\n'
+        << "voice_effects_compressor_amount="
+        << FormatRoundTripFloat(voiceEffectSettings_.compressorAmount) << '\n'
+        << "voice_effects_rack_order="
+        << SerializeVoiceEffectRackOrder(voiceEffectSettings_.rackOrder)
+        << '\n';
 
     for (const VoiceEffectUserPreset& preset : voiceEffectUserPresets_)
     {
         file
             << "voice_effects_user_preset=" << preset.name
             << "|preset=" << VoiceEffectPresetName(preset.settings.preset)
-            << "|pitch=" << preset.settings.pitchSemitones
-            << "|formant=" << preset.settings.formantSemitones
-            << "|character=" << preset.settings.character
-            << "|body=" << preset.settings.body
-            << "|drive=" << preset.settings.drive
-            << "|dry_wet=" << preset.settings.dryWet
-            << "|output_gain_db=" << preset.settings.outputGainDb
+            << "|pitch=" << FormatRoundTripFloat(preset.settings.pitchSemitones)
+            << "|formant=" << FormatRoundTripFloat(preset.settings.formantSemitones)
+            << "|character=" << FormatRoundTripFloat(preset.settings.character)
+            << "|body=" << FormatRoundTripFloat(preset.settings.body)
+            << "|drive=" << FormatRoundTripFloat(preset.settings.drive)
+            << "|dry_wet=" << FormatRoundTripFloat(preset.settings.dryWet)
+            << "|output_gain_db=" << FormatRoundTripFloat(preset.settings.outputGainDb)
+            << "|eq_enabled="
+            << (preset.settings.parametricEqEnabled ? 1 : 0)
+            << "|eq_low=" << FormatRoundTripFloat(preset.settings.eqLowGainDb)
+            << "|eq_low_hz=" << FormatRoundTripFloat(preset.settings.eqLowFrequencyHz)
+            << "|eq_mid=" << FormatRoundTripFloat(preset.settings.eqMidGainDb)
+            << "|eq_mid_hz=" << FormatRoundTripFloat(preset.settings.eqMidFrequencyHz)
+            << "|eq_mid_q=" << FormatRoundTripFloat(preset.settings.eqMidQ)
+            << "|eq_high=" << FormatRoundTripFloat(preset.settings.eqHighGainDb)
+            << "|eq_high_hz=" << FormatRoundTripFloat(preset.settings.eqHighFrequencyHz)
+            << "|de_esser_enabled="
+            << (preset.settings.deEsserEnabled ? 1 : 0)
+            << "|de_esser_amount=" << FormatRoundTripFloat(preset.settings.deEsserAmount)
+            << "|gate_enabled=" << (preset.settings.gateEnabled ? 1 : 0)
+            << "|gate_amount=" << FormatRoundTripFloat(preset.settings.gateAmount)
+            << "|compressor_enabled="
+            << (preset.settings.compressorEnabled ? 1 : 0)
+            << "|compressor_amount=" << FormatRoundTripFloat(preset.settings.compressorAmount)
+            << "|rack_order="
+            << SerializeVoiceEffectRackOrder(preset.settings.rackOrder)
             << '\n';
     }
 

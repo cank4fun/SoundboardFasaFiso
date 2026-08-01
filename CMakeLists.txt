@@ -1,8 +1,52 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(SOUNDBOARD_VERSION "2.2.1")
+set(SOUNDBOARD_VERSION "2.3.0")
 
-project(SoundBoardFasaFiso VERSION 2.2.1 LANGUAGES C CXX)
+if(NOT SOUNDBOARD_VERSION MATCHES
+    "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$"
+)
+    message(FATAL_ERROR
+        "SOUNDBOARD_VERSION must be a semantic version such as 2.3.0 or 2.3.0-rc.1."
+    )
+endif()
+
+string(
+    REGEX MATCH
+    "^[0-9]+\\.[0-9]+\\.[0-9]+"
+    SOUNDBOARD_PROJECT_VERSION
+    "${SOUNDBOARD_VERSION}"
+)
+
+set(SOUNDBOARD_VCPKG_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json")
+if(NOT EXISTS "${SOUNDBOARD_VCPKG_MANIFEST}")
+    message(FATAL_ERROR "The required vcpkg manifest is missing: ${SOUNDBOARD_VCPKG_MANIFEST}")
+endif()
+
+file(READ "${SOUNDBOARD_VCPKG_MANIFEST}" SOUNDBOARD_VCPKG_MANIFEST_JSON)
+string(
+    JSON SOUNDBOARD_VCPKG_MANIFEST_VERSION
+    ERROR_VARIABLE SOUNDBOARD_VCPKG_MANIFEST_ERROR
+    GET "${SOUNDBOARD_VCPKG_MANIFEST_JSON}"
+    version-string
+)
+if(NOT SOUNDBOARD_VCPKG_MANIFEST_ERROR STREQUAL "NOTFOUND")
+    message(FATAL_ERROR
+        "vcpkg.json does not contain a valid version-string: "
+        "${SOUNDBOARD_VCPKG_MANIFEST_ERROR}"
+    )
+endif()
+if(NOT SOUNDBOARD_VCPKG_MANIFEST_VERSION STREQUAL SOUNDBOARD_VERSION)
+    message(FATAL_ERROR
+        "Release metadata mismatch: SOUNDBOARD_VERSION is ${SOUNDBOARD_VERSION}, "
+        "but vcpkg.json version-string is ${SOUNDBOARD_VCPKG_MANIFEST_VERSION}."
+    )
+endif()
+
+project(
+    SoundBoardFasaFiso
+    VERSION ${SOUNDBOARD_PROJECT_VERSION}
+    LANGUAGES C CXX
+)
 
 if(SOUNDBOARD_VERSION MATCHES "-")
     set(SOUNDBOARD_VERSION_FILE_FLAGS "VS_FF_PRERELEASE")
@@ -39,12 +83,6 @@ option(
 )
 
 option(
-    SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE
-    "Deprecated compatibility alias for SOUNDBOARD_ENABLE_WEBRTC_AEC3"
-    OFF
-)
-
-option(
     SOUNDBOARD_BUNDLE_MEDIA_TOOLS
     "Download, verify and package private yt-dlp, Deno and FFmpeg tools"
     ON
@@ -63,15 +101,6 @@ set(
     CACHE PATH
     "Download cache for pinned standalone media tools"
 )
-if(SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE)
-    message(DEPRECATION
-        "SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE is deprecated. Use "
-        "SOUNDBOARD_ENABLE_WEBRTC_AEC3=ON instead."
-    )
-    set(SOUNDBOARD_ENABLE_WEBRTC_AEC3 ON CACHE BOOL "" FORCE)
-    set(SOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS ON CACHE BOOL "" FORCE)
-endif()
-
 set(
     SOUNDBOARD_WEBRTC_TARGET
     ""
@@ -172,7 +201,14 @@ add_executable(
     src/audio/MicrophoneProcessor.cpp
     src/audio/MicrophoneProcessingRuntime.cpp
     src/audio/VoiceEffectSettings.cpp
+    src/audio/VoiceEffectPresetFile.cpp
     src/audio/VoiceEffectPresetCycle.cpp
+    src/audio/VoiceEngineSelfTest.cpp
+    src/audio/SpeechAnalysisCore.cpp
+    src/audio/PitchEngine2.cpp
+    src/audio/FormantEngine2.cpp
+    src/audio/VocalWeightEngine2.cpp
+    src/audio/VoicePolishEngine2.cpp
     src/audio/VoiceEffectsProcessor.cpp
     src/audio/VoiceEffectsRuntime.cpp
     src/audio/RnNoiseSuppressor.cpp
@@ -644,6 +680,11 @@ if(SOUNDBOARD_ENABLE_WEBRTC_AEC3)
             src/audio/MicrophoneProcessingSettings.cpp
             src/audio/RnNoiseSuppressor.cpp
             src/audio/VoiceEffectSettings.cpp
+            src/audio/SpeechAnalysisCore.cpp
+            src/audio/PitchEngine2.cpp
+            src/audio/FormantEngine2.cpp
+            src/audio/VocalWeightEngine2.cpp
+            src/audio/VoicePolishEngine2.cpp
             src/audio/VoiceEffectsProcessor.cpp
             src/audio/VoiceEffectsRuntime.cpp
             src/audio/StereoCrosstalkCanceller.cpp
@@ -1784,6 +1825,50 @@ if(BUILD_TESTING)
     )
 
     add_executable(
+        SoundBoardFasaFisoVoiceEffectPresetFileTests
+        EXCLUDE_FROM_ALL
+        tests/VoiceEffectPresetFileTests.cpp
+        src/audio/VoiceEffectSettings.cpp
+        src/audio/VoiceEffectPresetFile.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoVoiceEffectPresetFileTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoVoiceEffectPresetFileTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoVoiceEffectPresetFileTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoVoiceEffectPresetFileTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME VoiceEffectPresetFile
+        COMMAND SoundBoardFasaFisoVoiceEffectPresetFileTests
+    )
+
+    add_executable(
         SoundBoardFasaFisoVoiceEffectPresetCycleTests
         EXCLUDE_FROM_ALL
         tests/VoiceEffectPresetCycleTests.cpp
@@ -1828,10 +1913,281 @@ if(BUILD_TESTING)
     )
 
     add_executable(
+        SoundBoardFasaFisoSpeechAnalysisCoreTests
+        EXCLUDE_FROM_ALL
+        tests/SpeechAnalysisCoreTests.cpp
+        src/audio/SpeechAnalysisCore.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoSpeechAnalysisCoreTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoSpeechAnalysisCoreTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoSpeechAnalysisCoreTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoSpeechAnalysisCoreTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME SpeechAnalysisCore
+        COMMAND SoundBoardFasaFisoSpeechAnalysisCoreTests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoPitchEngine2Tests
+        EXCLUDE_FROM_ALL
+        tests/PitchEngine2Tests.cpp
+        src/audio/PitchEngine2.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoPitchEngine2Tests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoPitchEngine2Tests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoPitchEngine2Tests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoPitchEngine2Tests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME PitchEngine2
+        COMMAND SoundBoardFasaFisoPitchEngine2Tests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoFormantEngine2Tests
+        EXCLUDE_FROM_ALL
+        tests/FormantEngine2Tests.cpp
+        src/audio/FormantEngine2.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoFormantEngine2Tests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoFormantEngine2Tests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoFormantEngine2Tests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoFormantEngine2Tests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME FormantEngine2
+        COMMAND SoundBoardFasaFisoFormantEngine2Tests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoVocalWeightEngine2Tests
+        EXCLUDE_FROM_ALL
+        tests/VocalWeightEngine2Tests.cpp
+        src/audio/VocalWeightEngine2.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoVocalWeightEngine2Tests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoVocalWeightEngine2Tests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoVocalWeightEngine2Tests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoVocalWeightEngine2Tests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME VocalWeightEngine2
+        COMMAND SoundBoardFasaFisoVocalWeightEngine2Tests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoVoicePolishEngine2Tests
+        EXCLUDE_FROM_ALL
+        tests/VoicePolishEngine2Tests.cpp
+        src/audio/VoiceEffectSettings.cpp
+        src/audio/VoicePolishEngine2.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoVoicePolishEngine2Tests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoVoicePolishEngine2Tests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoVoicePolishEngine2Tests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoVoicePolishEngine2Tests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME VoicePolishEngine2
+        COMMAND SoundBoardFasaFisoVoicePolishEngine2Tests
+    )
+
+    add_executable(
+        SoundBoardFasaFisoVoiceEngineSelfTestTests
+        EXCLUDE_FROM_ALL
+        tests/VoiceEngineSelfTestTests.cpp
+        src/audio/VoiceEngineSelfTest.cpp
+        src/audio/VoiceEffectSettings.cpp
+        src/audio/SpeechAnalysisCore.cpp
+        src/audio/PitchEngine2.cpp
+        src/audio/FormantEngine2.cpp
+        src/audio/VocalWeightEngine2.cpp
+        src/audio/VoicePolishEngine2.cpp
+        src/audio/VoiceEffectsProcessor.cpp
+    )
+
+    target_include_directories(
+        SoundBoardFasaFisoVoiceEngineSelfTestTests
+        PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    if(MSVC)
+        target_compile_options(
+            SoundBoardFasaFisoVoiceEngineSelfTestTests
+            PRIVATE
+                /W4
+                /permissive-
+                /utf-8
+                /sdl
+        )
+
+        if(SOUNDBOARD_WARNINGS_AS_ERRORS)
+            target_compile_options(
+                SoundBoardFasaFisoVoiceEngineSelfTestTests
+                PRIVATE
+                    /WX
+            )
+        endif()
+
+        set_property(
+            TARGET SoundBoardFasaFisoVoiceEngineSelfTestTests
+            PROPERTY MSVC_RUNTIME_LIBRARY
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+        )
+    endif()
+
+    add_test(
+        NAME VoiceEngineSelfTest
+        COMMAND SoundBoardFasaFisoVoiceEngineSelfTestTests
+    )
+
+    add_executable(
         SoundBoardFasaFisoVoiceEffectsProcessorTests
         EXCLUDE_FROM_ALL
         tests/VoiceEffectsProcessorTests.cpp
         src/audio/VoiceEffectSettings.cpp
+        src/audio/SpeechAnalysisCore.cpp
+        src/audio/PitchEngine2.cpp
+        src/audio/FormantEngine2.cpp
+        src/audio/VocalWeightEngine2.cpp
+        src/audio/VoicePolishEngine2.cpp
         src/audio/VoiceEffectsProcessor.cpp
     )
 
@@ -1879,6 +2235,11 @@ if(BUILD_TESTING)
         src/audio/MicrophoneProcessingSettings.cpp
         src/audio/RnNoiseSuppressor.cpp
         src/audio/VoiceEffectSettings.cpp
+        src/audio/SpeechAnalysisCore.cpp
+        src/audio/PitchEngine2.cpp
+        src/audio/FormantEngine2.cpp
+        src/audio/VocalWeightEngine2.cpp
+        src/audio/VoicePolishEngine2.cpp
         src/audio/VoiceEffectsProcessor.cpp
     )
 
@@ -1976,6 +2337,11 @@ if(BUILD_TESTING)
         src/audio/MicrophoneProcessingSettings.cpp
         src/audio/RnNoiseSuppressor.cpp
         src/audio/VoiceEffectSettings.cpp
+        src/audio/SpeechAnalysisCore.cpp
+        src/audio/PitchEngine2.cpp
+        src/audio/FormantEngine2.cpp
+        src/audio/VocalWeightEngine2.cpp
+        src/audio/VoicePolishEngine2.cpp
         src/audio/VoiceEffectsProcessor.cpp
     )
 
@@ -2030,6 +2396,11 @@ if(BUILD_TESTING)
         src/audio/MicrophoneProcessingSettings.cpp
         src/audio/RnNoiseSuppressor.cpp
         src/audio/VoiceEffectSettings.cpp
+        src/audio/SpeechAnalysisCore.cpp
+        src/audio/PitchEngine2.cpp
+        src/audio/FormantEngine2.cpp
+        src/audio/VocalWeightEngine2.cpp
+        src/audio/VoicePolishEngine2.cpp
         src/audio/VoiceEffectsProcessor.cpp
         src/audio/VoiceEffectsRuntime.cpp
         $<TARGET_OBJECTS:SoundBoardFasaFisoMiniaudio>
@@ -2155,7 +2526,14 @@ if(BUILD_TESTING)
         SoundBoardFasaFisoSoundImporterTests
         SoundBoardFasaFisoConfigMicrophoneProcessingTests
         SoundBoardFasaFisoVoiceEffectSettingsTests
+        SoundBoardFasaFisoVoiceEffectPresetFileTests
         SoundBoardFasaFisoVoiceEffectPresetCycleTests
+        SoundBoardFasaFisoSpeechAnalysisCoreTests
+        SoundBoardFasaFisoPitchEngine2Tests
+        SoundBoardFasaFisoFormantEngine2Tests
+        SoundBoardFasaFisoVocalWeightEngine2Tests
+        SoundBoardFasaFisoVoicePolishEngine2Tests
+        SoundBoardFasaFisoVoiceEngineSelfTestTests
         SoundBoardFasaFisoVoiceEffectsProcessorTests
         SoundBoardFasaFisoVoiceEffectsRobustnessTests
         SoundBoardFasaFisoVoiceEffectsRuntimeTests
@@ -2238,6 +2616,9 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
 
         COMMAND ${CMAKE_COMMAND} -E make_directory
             "${PORTABLE_RELEASE_DIR}/tools"
+
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${PORTABLE_RELEASE_DIR}/voice-presets"
 
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "$<TARGET_FILE:SoundBoardFasaFiso>"

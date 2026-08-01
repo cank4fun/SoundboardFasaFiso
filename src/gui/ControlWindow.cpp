@@ -755,10 +755,53 @@ void ControlWindow::Shutdown()
     voiceEffectsOutputGainCaption_ = nullptr;
     voiceEffectsOutputGainSlider_ = nullptr;
     voiceEffectsOutputGainValue_ = nullptr;
+    voiceEffectsRackCaption_ = nullptr;
+    voiceEffectsRackCombo_ = nullptr;
+    voiceEffectsRackUpButton_ = nullptr;
+    voiceEffectsRackDownButton_ = nullptr;
+    voiceEffectsEqEnabledCheck_ = nullptr;
+    voiceEffectsDeEsserEnabledCheck_ = nullptr;
+    voiceEffectsGateEnabledCheck_ = nullptr;
+    voiceEffectsCompressorEnabledCheck_ = nullptr;
+    voiceEffectsEqLowCaption_ = nullptr;
+    voiceEffectsEqLowSlider_ = nullptr;
+    voiceEffectsEqLowValue_ = nullptr;
+    voiceEffectsEqLowFrequencyCaption_ = nullptr;
+    voiceEffectsEqLowFrequencySlider_ = nullptr;
+    voiceEffectsEqLowFrequencyValue_ = nullptr;
+    voiceEffectsEqMidCaption_ = nullptr;
+    voiceEffectsEqMidSlider_ = nullptr;
+    voiceEffectsEqMidValue_ = nullptr;
+    voiceEffectsEqMidFrequencyCaption_ = nullptr;
+    voiceEffectsEqMidFrequencySlider_ = nullptr;
+    voiceEffectsEqMidFrequencyValue_ = nullptr;
+    voiceEffectsEqMidQCaption_ = nullptr;
+    voiceEffectsEqMidQSlider_ = nullptr;
+    voiceEffectsEqMidQValue_ = nullptr;
+    voiceEffectsEqHighCaption_ = nullptr;
+    voiceEffectsEqHighSlider_ = nullptr;
+    voiceEffectsEqHighValue_ = nullptr;
+    voiceEffectsEqHighFrequencyCaption_ = nullptr;
+    voiceEffectsEqHighFrequencySlider_ = nullptr;
+    voiceEffectsEqHighFrequencyValue_ = nullptr;
+    voiceEffectsDeEsserCaption_ = nullptr;
+    voiceEffectsDeEsserSlider_ = nullptr;
+    voiceEffectsDeEsserValue_ = nullptr;
+    voiceEffectsGateCaption_ = nullptr;
+    voiceEffectsGateSlider_ = nullptr;
+    voiceEffectsGateValue_ = nullptr;
+    voiceEffectsCompressorCaption_ = nullptr;
+    voiceEffectsCompressorSlider_ = nullptr;
+    voiceEffectsCompressorValue_ = nullptr;
     voiceEffectsResetButton_ = nullptr;
     voiceEffectsSavePresetButton_ = nullptr;
     voiceEffectsDeletePresetButton_ = nullptr;
+    voiceEffectsOpenPresetFolderButton_ = nullptr;
+    voiceEffectsImportPresetButton_ = nullptr;
+    voiceEffectsExportPresetButton_ = nullptr;
+    voiceEffectsSelfTestButton_ = nullptr;
     voiceEffectsInfoCaption_ = nullptr;
+    voiceEffectsSelfTestSummary_.clear();
     controlHotkeysGroup_ = nullptr;
     stopHotkeyCaption_ = nullptr;
     stopHotkeyEdit_ = nullptr;
@@ -1378,6 +1421,13 @@ LRESULT ControlWindow::HandleWindowMessage(
                 return 0;
             }
 
+            if (controlId == IdVoiceEffectsRack &&
+                notificationCode == CBN_SELCHANGE)
+            {
+                UpdateVoiceEffectsRackButtons();
+                return 0;
+            }
+
             if (controlId == IdVoiceEffectsPresetName &&
                 notificationCode == EN_CHANGE &&
                 !populatingVoiceEffectsControls_)
@@ -1417,11 +1467,21 @@ LRESULT ControlWindow::HandleWindowMessage(
                 notificationCode == BN_CLICKED &&
                 (commandControl == voiceEffectsEnabledCheck_ ||
                     commandControl == voiceEffectsBypassCheck_);
+            const bool voicePolishToggleChanged =
+                notificationCode == BN_CLICKED &&
+                (commandControl == voiceEffectsEqEnabledCheck_ ||
+                    commandControl == voiceEffectsDeEsserEnabledCheck_ ||
+                    commandControl == voiceEffectsGateEnabledCheck_ ||
+                    commandControl == voiceEffectsCompressorEnabledCheck_);
 
             if (!populatingVoiceEffectsControls_ &&
-                voiceEffectsToggleChanged)
+                (voiceEffectsToggleChanged || voicePolishToggleChanged))
             {
                 CancelPendingVoiceEffectPresetDelete();
+                if (voicePolishToggleChanged)
+                {
+                    MarkVoiceEffectsPresetCustom();
+                }
                 SubmitVoiceEffectsPreview();
                 return 0;
             }
@@ -1481,6 +1541,30 @@ LRESULT ControlWindow::HandleWindowMessage(
 
                 case IdVoiceEffectsDeletePreset:
                     DeleteVoiceEffectUserPreset();
+                    return 0;
+
+                case IdVoiceEffectsRackUp:
+                    MoveSelectedVoiceEffectsRackModule(-1);
+                    return 0;
+
+                case IdVoiceEffectsRackDown:
+                    MoveSelectedVoiceEffectsRackModule(1);
+                    return 0;
+
+                case IdVoiceEffectsOpenPresetFolder:
+                    OpenVoiceEffectPresetFolder();
+                    return 0;
+
+                case IdVoiceEffectsImportPresets:
+                    ImportVoiceEffectPresetFiles();
+                    return 0;
+
+                case IdVoiceEffectsExportPreset:
+                    ExportVoiceEffectPresetFile();
+                    return 0;
+
+                case IdVoiceEffectsSelfTest:
+                    RunVoiceEffectsSelfTest();
                     return 0;
 
                 case IdApplySettings:
@@ -3774,9 +3858,32 @@ void ControlWindow::UpdatePageVisibility()
         voiceEffectsDriveValue_, voiceEffectsDryWetCaption_,
         voiceEffectsDryWetSlider_, voiceEffectsDryWetValue_,
         voiceEffectsOutputGainCaption_, voiceEffectsOutputGainSlider_,
-        voiceEffectsOutputGainValue_, voiceEffectsResetButton_,
+        voiceEffectsOutputGainValue_, voiceEffectsRackCaption_,
+        voiceEffectsRackCombo_, voiceEffectsRackUpButton_,
+        voiceEffectsRackDownButton_, voiceEffectsEqEnabledCheck_,
+        voiceEffectsDeEsserEnabledCheck_, voiceEffectsGateEnabledCheck_,
+        voiceEffectsCompressorEnabledCheck_, voiceEffectsEqLowCaption_,
+        voiceEffectsEqLowSlider_, voiceEffectsEqLowValue_,
+        voiceEffectsEqLowFrequencyCaption_,
+        voiceEffectsEqLowFrequencySlider_,
+        voiceEffectsEqLowFrequencyValue_, voiceEffectsEqMidCaption_,
+        voiceEffectsEqMidSlider_, voiceEffectsEqMidValue_,
+        voiceEffectsEqMidFrequencyCaption_,
+        voiceEffectsEqMidFrequencySlider_,
+        voiceEffectsEqMidFrequencyValue_, voiceEffectsEqMidQCaption_,
+        voiceEffectsEqMidQSlider_, voiceEffectsEqMidQValue_,
+        voiceEffectsEqHighCaption_, voiceEffectsEqHighSlider_,
+        voiceEffectsEqHighValue_, voiceEffectsEqHighFrequencyCaption_,
+        voiceEffectsEqHighFrequencySlider_,
+        voiceEffectsEqHighFrequencyValue_, voiceEffectsDeEsserCaption_, voiceEffectsDeEsserSlider_,
+        voiceEffectsDeEsserValue_, voiceEffectsGateCaption_,
+        voiceEffectsGateSlider_, voiceEffectsGateValue_,
+        voiceEffectsCompressorCaption_, voiceEffectsCompressorSlider_,
+        voiceEffectsCompressorValue_, voiceEffectsResetButton_,
         voiceEffectsSavePresetButton_, voiceEffectsDeletePresetButton_,
-        voiceEffectsInfoCaption_
+        voiceEffectsOpenPresetFolderButton_,
+        voiceEffectsImportPresetButton_, voiceEffectsExportPresetButton_,
+        voiceEffectsSelfTestButton_, voiceEffectsInfoCaption_
     };
 
     const HWND hotkeyControls[]{
@@ -3924,14 +4031,19 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 13> sliders{
+    const std::array<HWND, 23> sliders{
         outputVolumeSlider_, monitorVolumeSlider_,
         microphoneVolumeSlider_, bindingVolumeSlider_,
         playbackSeekSlider_, playbackVolumeSlider_,
         voiceEffectsPitchSlider_, voiceEffectsFormantSlider_,
         voiceEffectsBodySlider_, voiceEffectsCharacterSlider_,
-        voiceEffectsDriveSlider_,
-        voiceEffectsDryWetSlider_, voiceEffectsOutputGainSlider_
+        voiceEffectsDriveSlider_, voiceEffectsDryWetSlider_,
+        voiceEffectsOutputGainSlider_, voiceEffectsEqLowSlider_,
+        voiceEffectsEqLowFrequencySlider_, voiceEffectsEqMidSlider_,
+        voiceEffectsEqMidFrequencySlider_, voiceEffectsEqMidQSlider_,
+        voiceEffectsEqHighSlider_, voiceEffectsEqHighFrequencySlider_,
+        voiceEffectsDeEsserSlider_, voiceEffectsGateSlider_,
+        voiceEffectsCompressorSlider_
     };
 
     for (const HWND control : sliders)
@@ -3943,7 +4055,7 @@ void ControlWindow::ApplyTheme()
         }
     }
 
-    const std::array<HWND, 14> checkBoxes{
+    const std::array<HWND, 18> checkBoxes{
         microphoneEnabledCheck_, microphoneToOutputCheck_,
         microphoneToMonitorCheck_, startWithWindowsCheck_,
         checkUpdatesOnStartCheck_, microphoneProcessingEnabledCheck_,
@@ -3951,7 +4063,9 @@ void ControlWindow::ApplyTheme()
         microphoneNoiseSuppressionEnabledCheck_,
         microphoneAgcEnabledCheck_, microphoneHighPassEnabledCheck_,
         microphoneCompressorEnabledCheck_, microphoneLimiterEnabledCheck_,
-        voiceEffectsEnabledCheck_, voiceEffectsBypassCheck_
+        voiceEffectsEnabledCheck_, voiceEffectsBypassCheck_,
+        voiceEffectsEqEnabledCheck_, voiceEffectsDeEsserEnabledCheck_,
+        voiceEffectsGateEnabledCheck_, voiceEffectsCompressorEnabledCheck_
     };
 
     for (const HWND control : checkBoxes)
@@ -4069,6 +4183,26 @@ void ControlWindow::ApplyFonts()
         voiceEffectsDryWetCaption_, voiceEffectsDryWetSlider_,
         voiceEffectsDryWetValue_, voiceEffectsOutputGainCaption_,
         voiceEffectsOutputGainSlider_, voiceEffectsOutputGainValue_,
+        voiceEffectsRackCaption_, voiceEffectsRackCombo_,
+        voiceEffectsEqEnabledCheck_, voiceEffectsDeEsserEnabledCheck_,
+        voiceEffectsGateEnabledCheck_, voiceEffectsCompressorEnabledCheck_,
+        voiceEffectsEqLowCaption_, voiceEffectsEqLowSlider_,
+        voiceEffectsEqLowValue_, voiceEffectsEqLowFrequencyCaption_,
+        voiceEffectsEqLowFrequencySlider_,
+        voiceEffectsEqLowFrequencyValue_, voiceEffectsEqMidCaption_,
+        voiceEffectsEqMidSlider_, voiceEffectsEqMidValue_,
+        voiceEffectsEqMidFrequencyCaption_,
+        voiceEffectsEqMidFrequencySlider_,
+        voiceEffectsEqMidFrequencyValue_, voiceEffectsEqMidQCaption_,
+        voiceEffectsEqMidQSlider_, voiceEffectsEqMidQValue_,
+        voiceEffectsEqHighCaption_, voiceEffectsEqHighSlider_,
+        voiceEffectsEqHighValue_, voiceEffectsEqHighFrequencyCaption_,
+        voiceEffectsEqHighFrequencySlider_,
+        voiceEffectsEqHighFrequencyValue_, voiceEffectsDeEsserCaption_,
+        voiceEffectsDeEsserSlider_, voiceEffectsDeEsserValue_,
+        voiceEffectsGateCaption_, voiceEffectsGateSlider_,
+        voiceEffectsGateValue_, voiceEffectsCompressorCaption_,
+        voiceEffectsCompressorSlider_, voiceEffectsCompressorValue_,
         voiceEffectsInfoCaption_,
         stopHotkeyCaption_, stopHotkeyEdit_, outputMuteHotkeyCaption_,
         outputMuteHotkeyEdit_, monitorMuteHotkeyCaption_,
@@ -4112,8 +4246,11 @@ void ControlWindow::ApplyFonts()
         hotkeysTabButton_, playbackTabButton_, refreshDevicesButton_,
         applySettingsButton_, microphoneTestMonitorButton_,
         voiceEffectsResetButton_, voiceEffectsSavePresetButton_,
-        voiceEffectsDeletePresetButton_,
-        captureHotkeyButton_, browseSoundButton_, importUrlButton_,
+        voiceEffectsDeletePresetButton_, voiceEffectsRackUpButton_,
+        voiceEffectsRackDownButton_, voiceEffectsOpenPresetFolderButton_,
+        voiceEffectsImportPresetButton_, voiceEffectsExportPresetButton_,
+        voiceEffectsSelfTestButton_, captureHotkeyButton_,
+        browseSoundButton_, importUrlButton_,
         addBindingButton_, updateBindingButton_, removeBindingButton_,
         clearBindingButton_,
         reloadButton_, audioEditorButton_, stopButton_, outputMuteButton_,
@@ -5326,22 +5463,98 @@ void ControlWindow::RefreshLocalizedText()
         Localization::Text(L"Çıkış gain", L"Output gain")
     );
     SetControlText(
+        voiceEffectsRackCaption_,
+        Localization::Text(L"Rack:", L"Rack:")
+    );
+    SetControlText(
+        voiceEffectsRackUpButton_, L"↑"
+    );
+    SetControlText(
+        voiceEffectsRackDownButton_, L"↓"
+    );
+    SetControlText(
+        voiceEffectsEqEnabledCheck_,
+        Localization::Text(L"Parametrik EQ", L"Parametric EQ")
+    );
+    SetControlText(
+        voiceEffectsDeEsserEnabledCheck_,
+        Localization::Text(L"De-esser", L"De-esser")
+    );
+    SetControlText(
+        voiceEffectsGateEnabledCheck_,
+        Localization::Text(L"Gate / Expander", L"Gate / Expander")
+    );
+    SetControlText(
+        voiceEffectsCompressorEnabledCheck_,
+        Localization::Text(L"Compressor", L"Compressor")
+    );
+    SetControlText(
+        voiceEffectsEqLowCaption_,
+        Localization::Text(L"EQ düşük", L"EQ low")
+    );
+    SetControlText(
+        voiceEffectsEqLowFrequencyCaption_,
+        Localization::Text(L"Düşük frekans", L"Low frequency")
+    );
+    SetControlText(
+        voiceEffectsEqMidCaption_,
+        Localization::Text(L"EQ orta", L"EQ mid")
+    );
+    SetControlText(
+        voiceEffectsEqMidFrequencyCaption_,
+        Localization::Text(L"Orta frekans", L"Mid frequency")
+    );
+    SetControlText(
+        voiceEffectsEqMidQCaption_,
+        Localization::Text(L"Orta Q", L"Mid Q")
+    );
+    SetControlText(
+        voiceEffectsEqHighCaption_,
+        Localization::Text(L"EQ yüksek", L"EQ high")
+    );
+    SetControlText(
+        voiceEffectsEqHighFrequencyCaption_,
+        Localization::Text(L"Yüksek frekans", L"High frequency")
+    );
+    SetControlText(
+        voiceEffectsDeEsserCaption_,
+        Localization::Text(L"De-esser miktarı", L"De-esser amount")
+    );
+    SetControlText(
+        voiceEffectsGateCaption_,
+        Localization::Text(L"Gate miktarı", L"Gate amount")
+    );
+    SetControlText(
+        voiceEffectsCompressorCaption_,
+        Localization::Text(L"Comp miktarı", L"Comp amount")
+    );
+    SetControlText(
         voiceEffectsResetButton_,
         Localization::Text(L"Sıfırla", L"Reset")
     );
-    UpdateVoiceEffectsPresetButtons();
     SetControlText(
-        voiceEffectsInfoCaption_,
-        Localization::Text(
-            L"Pitch, formant, gövde, karakter, drive, Radio, Robot, Dry/Wet ve çıkış "
-            L"gain canlıdır. Kullanıcı presetleri ad alanından kaydedilir; "
-            L"silme işlemi ikinci tıklamayla inline onaylanır.",
-            L"Pitch, formant, body, character, drive, Dry/Wet and output gain are "
-            L"live alongside Radio and Robot. User presets are saved from the "
-            L"name field; deletion is confirmed inline with a second click."
-        )
+        voiceEffectsOpenPresetFolderButton_,
+        Localization::Text(L"Preset klasörü", L"Preset folder")
     );
+    SetControlText(
+        voiceEffectsImportPresetButton_,
+        Localization::Text(L"İçe aktar", L"Import")
+    );
+    SetControlText(
+        voiceEffectsExportPresetButton_,
+        Localization::Text(L"Dışa aktar", L"Export")
+    );
+    SetControlText(
+        voiceEffectsSelfTestButton_,
+        Localization::Text(L"Self-test", L"Self-test")
+    );
+    UpdateVoiceEffectsPresetButtons();
     PopulateVoiceEffectsPresetCombo();
+    VoiceEffectRackOrder localizedRackOrder{};
+    if (ReadVoiceEffectsRackOrder(localizedRackOrder))
+    {
+        PopulateVoiceEffectsRackOrder(localizedRackOrder);
+    }
     UpdateVoiceEffectsValueLabels();
 
     SetControlText(

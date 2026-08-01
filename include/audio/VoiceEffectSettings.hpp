@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -14,6 +15,27 @@ enum class VoiceEffectPreset
     Robot,
     TinyHighVoice,
     Custom
+};
+
+enum class VoiceEffectRackModule
+{
+    ParametricEq,
+    DeEsser,
+    Gate,
+    Compressor
+};
+
+inline constexpr std::size_t VoiceEffectRackModuleCount = 4;
+using VoiceEffectRackOrder = std::array<
+    VoiceEffectRackModule,
+    VoiceEffectRackModuleCount
+>;
+
+inline constexpr VoiceEffectRackOrder DefaultVoiceEffectRackOrder{
+    VoiceEffectRackModule::ParametricEq,
+    VoiceEffectRackModule::DeEsser,
+    VoiceEffectRackModule::Gate,
+    VoiceEffectRackModule::Compressor
 };
 
 namespace VoiceEffectLimits
@@ -32,6 +54,18 @@ namespace VoiceEffectLimits
     inline constexpr float MaximumDryWet = 1.0f;
     inline constexpr float MinimumOutputGainDb = -24.0f;
     inline constexpr float MaximumOutputGainDb = 12.0f;
+    inline constexpr float MinimumEqGainDb = -12.0f;
+    inline constexpr float MaximumEqGainDb = 12.0f;
+    inline constexpr float MinimumEqLowFrequencyHz = 60.0f;
+    inline constexpr float MaximumEqLowFrequencyHz = 400.0f;
+    inline constexpr float MinimumEqMidFrequencyHz = 250.0f;
+    inline constexpr float MaximumEqMidFrequencyHz = 5000.0f;
+    inline constexpr float MinimumEqMidQ = 0.3f;
+    inline constexpr float MaximumEqMidQ = 4.0f;
+    inline constexpr float MinimumEqHighFrequencyHz = 3000.0f;
+    inline constexpr float MaximumEqHighFrequencyHz = 12000.0f;
+    inline constexpr float MinimumPolishAmount = 0.0f;
+    inline constexpr float MaximumPolishAmount = 1.0f;
     inline constexpr std::size_t MaximumUserPresetCount = 32;
     inline constexpr std::size_t MaximumUserPresetNameBytes = 48;
 }
@@ -49,6 +83,22 @@ struct VoiceEffectSettings
     float drive = 0.03f;
     float dryWet = 0.90f;
     float outputGainDb = 3.7f;
+
+    bool parametricEqEnabled = false;
+    bool deEsserEnabled = false;
+    bool gateEnabled = false;
+    bool compressorEnabled = false;
+    float eqLowGainDb = 0.0f;
+    float eqLowFrequencyHz = 135.0f;
+    float eqMidGainDb = 0.0f;
+    float eqMidFrequencyHz = 1450.0f;
+    float eqMidQ = 0.82f;
+    float eqHighGainDb = 0.0f;
+    float eqHighFrequencyHz = 6800.0f;
+    float deEsserAmount = 0.0f;
+    float gateAmount = 0.0f;
+    float compressorAmount = 0.0f;
+    VoiceEffectRackOrder rackOrder = DefaultVoiceEffectRackOrder;
 };
 
 struct VoiceEffectUserPreset
@@ -61,6 +111,28 @@ std::string_view VoiceEffectPresetName(VoiceEffectPreset preset);
 
 std::optional<VoiceEffectPreset> ParseVoiceEffectPreset(
     std::string_view value
+);
+
+std::string_view VoiceEffectRackModuleName(VoiceEffectRackModule module);
+
+std::optional<VoiceEffectRackModule> ParseVoiceEffectRackModule(
+    std::string_view value
+);
+
+std::string SerializeVoiceEffectRackOrder(
+    const VoiceEffectRackOrder& order
+);
+
+std::optional<VoiceEffectRackOrder> ParseVoiceEffectRackOrder(
+    std::string_view value
+);
+
+bool IsValidVoiceEffectRackOrder(const VoiceEffectRackOrder& order);
+
+bool MoveVoiceEffectRackModule(
+    VoiceEffectRackOrder& order,
+    std::size_t index,
+    int direction
 );
 
 std::optional<VoiceEffectSettings> BuildVoiceEffectPreset(

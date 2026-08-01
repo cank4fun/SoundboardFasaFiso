@@ -111,6 +111,44 @@ int main()
         "previous wraps from first built-in to last user preset"
     );
 
+    current = *BuildVoiceEffectPreset(
+        VoiceEffectPreset::DeepHeavy,
+        true
+    );
+    current.parametricEqEnabled = true;
+    current.eqLowGainDb = 2.0f;
+    const auto polishedNext = CycleVoiceEffectPreset(
+        current,
+        userPresets,
+        VoiceEffectPresetCycleDirection::Next
+    );
+    Expect(
+        polishedNext.has_value() &&
+            polishedNext->settings.preset == VoiceEffectPreset::DeepHeavy,
+        "6E customization is not mistaken for an untouched built-in"
+    );
+
+    current = *BuildVoiceEffectPreset(
+        VoiceEffectPreset::DeepHeavy,
+        true
+    );
+    current.rackOrder = {
+        VoiceEffectRackModule::Compressor,
+        VoiceEffectRackModule::ParametricEq,
+        VoiceEffectRackModule::DeEsser,
+        VoiceEffectRackModule::Gate
+    };
+    const auto reorderedNext = CycleVoiceEffectPreset(
+        current,
+        userPresets,
+        VoiceEffectPresetCycleDirection::Next
+    );
+    Expect(
+        reorderedNext.has_value() &&
+            reorderedNext->settings.preset == VoiceEffectPreset::DeepHeavy,
+        "6F rack customization starts cycling at the first built-in"
+    );
+
     current.preset = VoiceEffectPreset::Custom;
     current.pitchSemitones = 0.25f;
     const auto customNext = CycleVoiceEffectPreset(

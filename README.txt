@@ -6,7 +6,7 @@ medya aktarıcısı ve WAV editörü.
 
 SÜRÜM / VERSION
 ---------------
-2.2.1
+2.3.0
 
 GENEL BAKIŞ
 -----------
@@ -55,8 +55,9 @@ config.txt
 README.txt
 LICENSE
 THIRD_PARTY_NOTICES.txt
-media-tools\        Doğrulanmış yt-dlp, Deno, FFmpeg, ffprobe ve lisansları
+tools\              Doğrulanmış yt-dlp, Deno, FFmpeg, ffprobe ve lisansları
 sounds\             Ses arşivi ve örnek sesler
+voice-presets\      Portable preset import/export klasörü
 logs\               İlk çalıştırmada otomatik oluşturulur
 
 Program config, log, import ve düzenlenen ses dosyalarını portable klasör
@@ -147,18 +148,24 @@ sonra; AGC, compressor ve limiter'dan önce çalışır. Output gain limiter'dan
 
 Özellikler:
 
+- Classic Voice Engine 2: AI modeli, ağ erişimi veya harici servis kullanmayan yerel DSP
 - Pitch: -12 ile +12 semitone
 - Formant: -6 ile +6 semitone; pitch'ten bağımsızdır
 - Deep / Heavy, High / Nasal Rap, Dark Vocal, Radio, Robot ve Tiny / High Voice
-- Vocal weight: pitch/formant değiştirmeden sesli harflerde göğüs gövdesi ve yoğunluk
-- Character EQ, drive, dry/wet ve output gain
+- Vocal Weight: pitch/formant değiştirmeden analiz kontrollü göğüs gövdesi ve yoğunluk
+- Character, drive, dry/wet ve output gain
+- Ayarlanabilir 3 bant parametrik EQ, de-esser, gate/expander ve compressor
+- EQ, de-esser, gate ve compressor için canlı sıralanabilir modüler rack
 - Kullanıcı preset'i kaydetme, güncelleme ve silme
+- Portable `.sbffvoice` preset import/export ve güvenli dosya doğrulaması
 - Önceki/sonraki preset ve bypass hotkey'leri
+- Mikrofon veya cihaz açmadan çalışan inline 7/7 Voice Engine self-test
 - 48 kHz işlemde sabit 16 ms Voice Effects DSP gecikmesi
 - Deadline, kuyruk ve düşen frame için inline runtime telemetry
 
-Voice Effects yeni bir servis, DLL kurulumu veya harici runtime gerektirmez.
-Ayarlar config.txt içinde portable olarak saklanır.
+Voice Effects yeni bir servis, DLL kurulumu, model dosyası veya harici runtime
+gerektirmez. Ayarlar config.txt içinde, dışa aktarılan presetler portable
+voice-presets klasöründe saklanır.
 
 Mikrofon monitor çıkışına veriliyorsa geri beslemeyi önlemek için kulaklık
 kullanılması önerilir.
@@ -291,7 +298,7 @@ Control yeni ve imzasız EXE'yi engelleyebilir.
 ZIP'i yalnızca resmi GitHub Release sayfasından indir ve yanında yayınlanan
 .sha256 dosyasıyla karşılaştır:
 
-Get-FileHash .\SoundBoardFasaFiso-v2.2.1-windows-x64-portable.zip -Algorithm SHA256
+Get-FileHash .\SoundBoardFasaFiso-v2.3.0-windows-x64-portable.zip -Algorithm SHA256
 
 Eşleşen SHA-256, arşivin yayınlanan Release dosyasıyla aynı olduğunu
 doğrular; kod imzasının yerini tutmaz. Programı çalıştırmak için Windows

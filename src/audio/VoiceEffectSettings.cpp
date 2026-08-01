@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <utility>
 
 namespace
 {
@@ -410,7 +411,34 @@ namespace
             NearlyEqual(settings.body, snapshot.body) &&
             NearlyEqual(settings.drive, snapshot.drive) &&
             NearlyEqual(settings.dryWet, snapshot.dryWet) &&
-            NearlyEqual(settings.outputGainDb, snapshot.outputGainDb);
+            NearlyEqual(settings.outputGainDb, snapshot.outputGainDb) &&
+            settings.parametricEqEnabled == snapshot.parametricEqEnabled &&
+            settings.deEsserEnabled == snapshot.deEsserEnabled &&
+            settings.gateEnabled == snapshot.gateEnabled &&
+            settings.compressorEnabled == snapshot.compressorEnabled &&
+            NearlyEqual(settings.eqLowGainDb, snapshot.eqLowGainDb) &&
+            NearlyEqual(
+                settings.eqLowFrequencyHz,
+                snapshot.eqLowFrequencyHz
+            ) &&
+            NearlyEqual(settings.eqMidGainDb, snapshot.eqMidGainDb) &&
+            NearlyEqual(
+                settings.eqMidFrequencyHz,
+                snapshot.eqMidFrequencyHz
+            ) &&
+            NearlyEqual(settings.eqMidQ, snapshot.eqMidQ) &&
+            NearlyEqual(settings.eqHighGainDb, snapshot.eqHighGainDb) &&
+            NearlyEqual(
+                settings.eqHighFrequencyHz,
+                snapshot.eqHighFrequencyHz
+            ) &&
+            NearlyEqual(settings.deEsserAmount, snapshot.deEsserAmount) &&
+            NearlyEqual(settings.gateAmount, snapshot.gateAmount) &&
+            NearlyEqual(
+                settings.compressorAmount,
+                snapshot.compressorAmount
+            ) &&
+            settings.rackOrder == snapshot.rackOrder;
     }
 }
 
@@ -477,6 +505,150 @@ std::optional<VoiceEffectPreset> ParseVoiceEffectPreset(
     }
 
     return std::nullopt;
+}
+
+std::string_view VoiceEffectRackModuleName(
+    const VoiceEffectRackModule module
+)
+{
+    switch (module)
+    {
+        case VoiceEffectRackModule::ParametricEq:
+            return "parametric-eq";
+        case VoiceEffectRackModule::DeEsser:
+            return "de-esser";
+        case VoiceEffectRackModule::Gate:
+            return "gate";
+        case VoiceEffectRackModule::Compressor:
+            return "compressor";
+    }
+
+    return "unknown";
+}
+
+std::optional<VoiceEffectRackModule> ParseVoiceEffectRackModule(
+    const std::string_view value
+)
+{
+    if (EqualsAsciiIgnoreCase(value, "parametric-eq") ||
+        EqualsAsciiIgnoreCase(value, "eq"))
+    {
+        return VoiceEffectRackModule::ParametricEq;
+    }
+
+    if (EqualsAsciiIgnoreCase(value, "de-esser") ||
+        EqualsAsciiIgnoreCase(value, "de_esser"))
+    {
+        return VoiceEffectRackModule::DeEsser;
+    }
+
+    if (EqualsAsciiIgnoreCase(value, "gate"))
+    {
+        return VoiceEffectRackModule::Gate;
+    }
+
+    if (EqualsAsciiIgnoreCase(value, "compressor"))
+    {
+        return VoiceEffectRackModule::Compressor;
+    }
+
+    return std::nullopt;
+}
+
+std::string SerializeVoiceEffectRackOrder(
+    const VoiceEffectRackOrder& order
+)
+{
+    std::string result;
+    for (std::size_t index = 0; index < order.size(); ++index)
+    {
+        if (index != 0)
+        {
+            result.push_back(',');
+        }
+        result.append(VoiceEffectRackModuleName(order[index]));
+    }
+    return result;
+}
+
+std::optional<VoiceEffectRackOrder> ParseVoiceEffectRackOrder(
+    const std::string_view value
+)
+{
+    VoiceEffectRackOrder order{};
+    std::size_t start = 0;
+
+    for (std::size_t index = 0; index < order.size(); ++index)
+    {
+        const std::size_t separator = value.find(',', start);
+        const bool finalModule = index + 1U == order.size();
+        if ((!finalModule && separator == std::string_view::npos) ||
+            (finalModule && separator != std::string_view::npos))
+        {
+            return std::nullopt;
+        }
+
+        const std::size_t end = separator == std::string_view::npos
+            ? value.size()
+            : separator;
+        const std::string_view token = value.substr(start, end - start);
+        const auto module = ParseVoiceEffectRackModule(token);
+        if (!module.has_value())
+        {
+            return std::nullopt;
+        }
+
+        order[index] = *module;
+        start = end + (separator == std::string_view::npos ? 0U : 1U);
+    }
+
+    if (start < value.size() || !IsValidVoiceEffectRackOrder(order))
+    {
+        return std::nullopt;
+    }
+
+    return order;
+}
+
+bool IsValidVoiceEffectRackOrder(const VoiceEffectRackOrder& order)
+{
+    std::array<bool, VoiceEffectRackModuleCount> seen{};
+    for (const VoiceEffectRackModule module : order)
+    {
+        const std::size_t index = static_cast<std::size_t>(module);
+        if (index >= seen.size() || seen[index])
+        {
+            return false;
+        }
+        seen[index] = true;
+    }
+    return true;
+}
+
+bool MoveVoiceEffectRackModule(
+    VoiceEffectRackOrder& order,
+    const std::size_t index,
+    const int direction
+)
+{
+    if (!IsValidVoiceEffectRackOrder(order) ||
+        index >= order.size() ||
+        (direction != -1 && direction != 1))
+    {
+        return false;
+    }
+
+    if ((direction < 0 && index == 0) ||
+        (direction > 0 && index + 1U >= order.size()))
+    {
+        return false;
+    }
+
+    const std::size_t destination = direction < 0
+        ? index - 1U
+        : index + 1U;
+    std::swap(order[index], order[destination]);
+    return true;
 }
 
 std::optional<VoiceEffectSettings> BuildVoiceEffectPreset(
@@ -577,7 +749,22 @@ bool VoiceEffectSettingsMatchPreset(
         settings.body == expected->body &&
         settings.drive == expected->drive &&
         settings.dryWet == expected->dryWet &&
-        settings.outputGainDb == expected->outputGainDb;
+        settings.outputGainDb == expected->outputGainDb &&
+        settings.parametricEqEnabled == expected->parametricEqEnabled &&
+        settings.deEsserEnabled == expected->deEsserEnabled &&
+        settings.gateEnabled == expected->gateEnabled &&
+        settings.compressorEnabled == expected->compressorEnabled &&
+        settings.eqLowGainDb == expected->eqLowGainDb &&
+        settings.eqLowFrequencyHz == expected->eqLowFrequencyHz &&
+        settings.eqMidGainDb == expected->eqMidGainDb &&
+        settings.eqMidFrequencyHz == expected->eqMidFrequencyHz &&
+        settings.eqMidQ == expected->eqMidQ &&
+        settings.eqHighGainDb == expected->eqHighGainDb &&
+        settings.eqHighFrequencyHz == expected->eqHighFrequencyHz &&
+        settings.deEsserAmount == expected->deEsserAmount &&
+        settings.gateAmount == expected->gateAmount &&
+        settings.compressorAmount == expected->compressorAmount &&
+        settings.rackOrder == expected->rackOrder;
 }
 
 bool VoiceEffectPresetHasDedicatedStage(const VoiceEffectPreset preset)
@@ -682,7 +869,58 @@ bool IsValidVoiceEffectSettings(const VoiceEffectSettings& settings)
             settings.outputGainDb,
             MinimumOutputGainDb,
             MaximumOutputGainDb
-        );
+        ) &&
+        IsInRange(
+            settings.eqLowGainDb,
+            MinimumEqGainDb,
+            MaximumEqGainDb
+        ) &&
+        IsInRange(
+            settings.eqLowFrequencyHz,
+            MinimumEqLowFrequencyHz,
+            MaximumEqLowFrequencyHz
+        ) &&
+        IsInRange(
+            settings.eqMidGainDb,
+            MinimumEqGainDb,
+            MaximumEqGainDb
+        ) &&
+        IsInRange(
+            settings.eqMidFrequencyHz,
+            MinimumEqMidFrequencyHz,
+            MaximumEqMidFrequencyHz
+        ) &&
+        IsInRange(
+            settings.eqMidQ,
+            MinimumEqMidQ,
+            MaximumEqMidQ
+        ) &&
+        IsInRange(
+            settings.eqHighGainDb,
+            MinimumEqGainDb,
+            MaximumEqGainDb
+        ) &&
+        IsInRange(
+            settings.eqHighFrequencyHz,
+            MinimumEqHighFrequencyHz,
+            MaximumEqHighFrequencyHz
+        ) &&
+        IsInRange(
+            settings.deEsserAmount,
+            MinimumPolishAmount,
+            MaximumPolishAmount
+        ) &&
+        IsInRange(
+            settings.gateAmount,
+            MinimumPolishAmount,
+            MaximumPolishAmount
+        ) &&
+        IsInRange(
+            settings.compressorAmount,
+            MinimumPolishAmount,
+            MaximumPolishAmount
+        ) &&
+        IsValidVoiceEffectRackOrder(settings.rackOrder);
 }
 
 bool IsValidVoiceEffectUserPresetName(const std::string_view name)

@@ -57,6 +57,24 @@ voice_effects_drive=0.03
 voice_effects_dry_wet=0.90
 voice_effects_output_gain_db=3.7
 
+# VOICE POLISH / MODÜLER RACK
+# Yeni modüller varsayılan olarak nötr ve kapalıdır.
+voice_effects_parametric_eq_enabled=false
+voice_effects_eq_low_gain_db=0.0
+voice_effects_eq_low_frequency_hz=135.0
+voice_effects_eq_mid_gain_db=0.0
+voice_effects_eq_mid_frequency_hz=1450.0
+voice_effects_eq_mid_q=0.82
+voice_effects_eq_high_gain_db=0.0
+voice_effects_eq_high_frequency_hz=6800.0
+voice_effects_de_esser_enabled=false
+voice_effects_de_esser_amount=0.0
+voice_effects_gate_enabled=false
+voice_effects_gate_amount=0.0
+voice_effects_compressor_enabled=false
+voice_effects_compressor_amount=0.0
+voice_effects_rack_order=parametric-eq,de-esser,gate,compressor
+
 # AUDIO GECİKME AYARLARI
 # 0 yazılırsa cihazın/Windows'un varsayılanı kullanılır.
 audio_sample_rate=48000

@@ -22,6 +22,25 @@ get_filename_component(ARCHIVE_PATH "${ARCHIVE_PATH}" ABSOLUTE)
 get_filename_component(VERIFY_ROOT "${VERIFY_ROOT}" ABSOLUTE)
 get_filename_component(CHECKSUM_PATH "${CHECKSUM_PATH}" ABSOLUTE)
 
+get_filename_component(archive_name "${ARCHIVE_PATH}" NAME)
+set(
+    expected_archive_name
+    "SoundBoardFasaFiso-v${EXPECTED_VERSION}-windows-x64-portable.zip"
+)
+if(NOT archive_name STREQUAL expected_archive_name)
+    message(FATAL_ERROR
+        "Portable archive name must be ${expected_archive_name}, got ${archive_name}."
+    )
+endif()
+
+get_filename_component(checksum_name "${CHECKSUM_PATH}" NAME)
+set(expected_checksum_name "${expected_archive_name}.sha256")
+if(NOT checksum_name STREQUAL expected_checksum_name)
+    message(FATAL_ERROR
+        "Portable checksum name must be ${expected_checksum_name}, got ${checksum_name}."
+    )
+endif()
+
 function(require_directory relative_path)
     set(path "${package_root}/${relative_path}")
     if(NOT IS_DIRECTORY "${path}")
@@ -212,6 +231,7 @@ require_exact_children("${VERIFY_ROOT}" archive_root_children "Portable ZIP root
 set(package_root "${VERIFY_ROOT}/SoundBoardFasaFiso")
 require_directory("sounds")
 require_directory("tools")
+require_directory("voice-presets")
 
 set(package_children
     LICENSE
@@ -222,11 +242,19 @@ set(package_children
     portable.flag
     sounds
     tools
+    voice-presets
 )
 if(EXPECT_WEBRTC_NOTICES)
     list(APPEND package_children WEBRTC_THIRD_PARTY_NOTICES.txt)
 endif()
 require_exact_children("${package_root}" package_children "Portable package root")
+
+set(voice_preset_children)
+require_exact_children(
+    "${package_root}/voice-presets"
+    voice_preset_children
+    "Portable voice-presets directory"
+)
 
 require_file("SoundBoardFasaFiso.exe" 1024)
 verify_windows_x64_gui_executable("SoundBoardFasaFiso.exe")
@@ -247,6 +275,24 @@ require_config_line("output=default")
 require_config_line("monitor=none")
 require_config_line("microphone_processing_enabled=false")
 require_config_line("microphone_echo_cancellation_enabled=false")
+require_config_line("voice_effects_enabled=false")
+require_config_line("voice_effects_parametric_eq_enabled=false")
+require_config_line("voice_effects_eq_low_gain_db=0.0")
+require_config_line("voice_effects_eq_low_frequency_hz=135.0")
+require_config_line("voice_effects_eq_mid_gain_db=0.0")
+require_config_line("voice_effects_eq_mid_frequency_hz=1450.0")
+require_config_line("voice_effects_eq_mid_q=0.82")
+require_config_line("voice_effects_eq_high_gain_db=0.0")
+require_config_line("voice_effects_eq_high_frequency_hz=6800.0")
+require_config_line("voice_effects_de_esser_enabled=false")
+require_config_line("voice_effects_de_esser_amount=0.0")
+require_config_line("voice_effects_gate_enabled=false")
+require_config_line("voice_effects_gate_amount=0.0")
+require_config_line("voice_effects_compressor_enabled=false")
+require_config_line("voice_effects_compressor_amount=0.0")
+require_config_line(
+    "voice_effects_rack_order=parametric-eq,de-esser,gate,compressor"
+)
 require_config_line("show_console_on_start=false")
 
 file(READ "${package_root}/README.txt" portable_readme)
@@ -256,6 +302,14 @@ if(version_index EQUAL -1)
         "Portable README does not contain expected version ${EXPECTED_VERSION}."
     )
 endif()
+foreach(required_readme_text IN ITEMS "voice-presets" ".sbffvoice")
+    string(FIND "${portable_readme}" "${required_readme_text}" text_index)
+    if(text_index EQUAL -1)
+        message(FATAL_ERROR
+            "Portable README is missing v2.3 preset documentation: ${required_readme_text}."
+        )
+    endif()
+endforeach()
 
 file(GLOB_RECURSE sound_files
     LIST_DIRECTORIES false

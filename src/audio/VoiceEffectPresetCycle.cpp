@@ -26,7 +26,22 @@ namespace
             left.body == right.body &&
             left.drive == right.drive &&
             left.dryWet == right.dryWet &&
-            left.outputGainDb == right.outputGainDb;
+            left.outputGainDb == right.outputGainDb &&
+            left.parametricEqEnabled == right.parametricEqEnabled &&
+            left.deEsserEnabled == right.deEsserEnabled &&
+            left.gateEnabled == right.gateEnabled &&
+            left.compressorEnabled == right.compressorEnabled &&
+            left.eqLowGainDb == right.eqLowGainDb &&
+            left.eqLowFrequencyHz == right.eqLowFrequencyHz &&
+            left.eqMidGainDb == right.eqMidGainDb &&
+            left.eqMidFrequencyHz == right.eqMidFrequencyHz &&
+            left.eqMidQ == right.eqMidQ &&
+            left.eqHighGainDb == right.eqHighGainDb &&
+            left.eqHighFrequencyHz == right.eqHighFrequencyHz &&
+            left.deEsserAmount == right.deEsserAmount &&
+            left.gateAmount == right.gateAmount &&
+            left.compressorAmount == right.compressorAmount &&
+            left.rackOrder == right.rackOrder;
     }
 
     std::optional<std::size_t> CurrentSelectionIndex(

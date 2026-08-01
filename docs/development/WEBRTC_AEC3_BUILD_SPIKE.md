@@ -6,9 +6,9 @@ project's MSVC/CMake toolchain. The gate passed and AEC was later integrated
 into the live microphone pipeline.
 
 Production build instructions now live in
-[`docs/BUILDING_WITH_WEBRTC_AEC3.md`](../BUILDING_WITH_WEBRTC_AEC3.md).
-`SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE` remains only as a deprecated compatibility
-alias for old local build directories.
+[`docs/BUILDING_WITH_WEBRTC_AEC3.md`](../BUILDING_WITH_WEBRTC_AEC3.md). The
+historical compatibility switch was removed after the production AEC3 build
+path became stable; use the current options shown below.
 
 ## Dependency choice for the spike
 
@@ -48,13 +48,15 @@ cmake -S . -B out\build\x64-AEC3-Spike -G Ninja ^
   -DCMAKE_BUILD_TYPE=Release ^
   "-DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%\scripts\buildsystems\vcpkg.cmake" ^
   -DVCPKG_TARGET_TRIPLET=x64-windows-static ^
-  -DSOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE=ON
+  -DVCPKG_MANIFEST_FEATURES=webrtc-aec3 ^
+  -DSOUNDBOARD_ENABLE_WEBRTC_AEC3=ON ^
+  -DSOUNDBOARD_BUILD_WEBRTC_AEC3_TESTS=ON
 ```
 
 The configure output must contain a line similar to:
 
 ```text
--- WebRTC AEC3 spike target: unofficial::webrtc::webrtc
+-- WebRTC AEC3 target: unofficial::webrtc::webrtc
 ```
 
 The exact target name may differ. If automatic selection fails, inspect the
@@ -89,7 +91,7 @@ The spike passes only when all of the following are true:
 3. The smoke executable creates `AudioProcessing` with echo cancellation
    enabled.
 4. Two hundred 10 ms render/capture pairs return `kNoError` and finite samples.
-5. The ordinary `x64-RC2` build remains unaffected with the spike option off.
+5. The ordinary dependency-free build remains unaffected when AEC3 is disabled.
 
 After this gate passes, live integration should be a separate commit. The
 render reference must contain only soundboard audio actually sent to the

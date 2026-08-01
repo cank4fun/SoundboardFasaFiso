@@ -45,6 +45,12 @@ SBFF-AEC-Diagnostics-*.zip
 *.sha256
 portable/
 
+# Runtime-generated portable data
+logs/
+voice-presets/
+sounds/Imported/
+config.txt.bak
+
 # Temporary and OS files
 *.tmp
 *.log

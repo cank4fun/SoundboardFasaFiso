@@ -93,7 +93,7 @@ private:
     static constexpr int InitialClientWidth = 960;
     static constexpr int InitialClientHeight = 640;
     static constexpr int MinimumClientWidth = 920;
-    static constexpr int MinimumClientHeight = 540;
+    static constexpr int MinimumClientHeight = 620;
 
     static constexpr int IdApplySettings = 1000;
     static constexpr int IdReload = 1001;
@@ -150,6 +150,23 @@ private:
     static constexpr int IdVoiceEffectsDeletePreset = 1052;
     static constexpr int IdVoiceEffectsPresetName = 1053;
     static constexpr int IdVoiceEffectsBodySlider = 1054;
+    static constexpr int IdVoiceEffectsEqLowSlider = 1055;
+    static constexpr int IdVoiceEffectsEqMidSlider = 1056;
+    static constexpr int IdVoiceEffectsEqHighSlider = 1057;
+    static constexpr int IdVoiceEffectsDeEsserSlider = 1058;
+    static constexpr int IdVoiceEffectsGateSlider = 1059;
+    static constexpr int IdVoiceEffectsCompressorSlider = 1060;
+    static constexpr int IdVoiceEffectsEqLowFrequencySlider = 1061;
+    static constexpr int IdVoiceEffectsEqMidFrequencySlider = 1062;
+    static constexpr int IdVoiceEffectsEqMidQSlider = 1063;
+    static constexpr int IdVoiceEffectsEqHighFrequencySlider = 1064;
+    static constexpr int IdVoiceEffectsRack = 1065;
+    static constexpr int IdVoiceEffectsRackUp = 1066;
+    static constexpr int IdVoiceEffectsRackDown = 1067;
+    static constexpr int IdVoiceEffectsOpenPresetFolder = 1068;
+    static constexpr int IdVoiceEffectsImportPresets = 1069;
+    static constexpr int IdVoiceEffectsExportPreset = 1070;
+    static constexpr int IdVoiceEffectsSelfTest = 1071;
 
     static constexpr UINT_PTR LevelMeterTimerId = 1;
     static constexpr UINT UpdateCheckCompletedMessage = WM_APP + 64;
@@ -226,6 +243,20 @@ private:
     void SubmitVoiceEffectsPreview(bool showStatus = true);
     void RetryPendingVoiceEffectsPreview();
     void ResetVoiceEffectsControls();
+    void PopulateVoiceEffectsRackOrder(
+        const VoiceEffectRackOrder& order,
+        std::optional<VoiceEffectRackModule> selected = std::nullopt
+    );
+    bool ReadVoiceEffectsRackOrder(
+        VoiceEffectRackOrder& order
+    ) const noexcept;
+    void MoveSelectedVoiceEffectsRackModule(int direction);
+    void UpdateVoiceEffectsRackButtons();
+    [[nodiscard]] std::filesystem::path VoiceEffectPresetFolder() const;
+    void OpenVoiceEffectPresetFolder();
+    void ImportVoiceEffectPresetFiles();
+    void ExportVoiceEffectPresetFile();
+    void RunVoiceEffectsSelfTest();
     void UpdateVoiceEffectsPresetButtons();
     void SaveVoiceEffectUserPreset();
     void DeleteVoiceEffectUserPreset();
@@ -448,10 +479,53 @@ private:
     HWND voiceEffectsOutputGainCaption_ = nullptr;
     HWND voiceEffectsOutputGainSlider_ = nullptr;
     HWND voiceEffectsOutputGainValue_ = nullptr;
+    HWND voiceEffectsRackCaption_ = nullptr;
+    HWND voiceEffectsRackCombo_ = nullptr;
+    HWND voiceEffectsRackUpButton_ = nullptr;
+    HWND voiceEffectsRackDownButton_ = nullptr;
+    HWND voiceEffectsEqEnabledCheck_ = nullptr;
+    HWND voiceEffectsDeEsserEnabledCheck_ = nullptr;
+    HWND voiceEffectsGateEnabledCheck_ = nullptr;
+    HWND voiceEffectsCompressorEnabledCheck_ = nullptr;
+    HWND voiceEffectsEqLowCaption_ = nullptr;
+    HWND voiceEffectsEqLowSlider_ = nullptr;
+    HWND voiceEffectsEqLowValue_ = nullptr;
+    HWND voiceEffectsEqLowFrequencyCaption_ = nullptr;
+    HWND voiceEffectsEqLowFrequencySlider_ = nullptr;
+    HWND voiceEffectsEqLowFrequencyValue_ = nullptr;
+    HWND voiceEffectsEqMidCaption_ = nullptr;
+    HWND voiceEffectsEqMidSlider_ = nullptr;
+    HWND voiceEffectsEqMidValue_ = nullptr;
+    HWND voiceEffectsEqMidFrequencyCaption_ = nullptr;
+    HWND voiceEffectsEqMidFrequencySlider_ = nullptr;
+    HWND voiceEffectsEqMidFrequencyValue_ = nullptr;
+    HWND voiceEffectsEqMidQCaption_ = nullptr;
+    HWND voiceEffectsEqMidQSlider_ = nullptr;
+    HWND voiceEffectsEqMidQValue_ = nullptr;
+    HWND voiceEffectsEqHighCaption_ = nullptr;
+    HWND voiceEffectsEqHighSlider_ = nullptr;
+    HWND voiceEffectsEqHighValue_ = nullptr;
+    HWND voiceEffectsEqHighFrequencyCaption_ = nullptr;
+    HWND voiceEffectsEqHighFrequencySlider_ = nullptr;
+    HWND voiceEffectsEqHighFrequencyValue_ = nullptr;
+    HWND voiceEffectsDeEsserCaption_ = nullptr;
+    HWND voiceEffectsDeEsserSlider_ = nullptr;
+    HWND voiceEffectsDeEsserValue_ = nullptr;
+    HWND voiceEffectsGateCaption_ = nullptr;
+    HWND voiceEffectsGateSlider_ = nullptr;
+    HWND voiceEffectsGateValue_ = nullptr;
+    HWND voiceEffectsCompressorCaption_ = nullptr;
+    HWND voiceEffectsCompressorSlider_ = nullptr;
+    HWND voiceEffectsCompressorValue_ = nullptr;
     HWND voiceEffectsResetButton_ = nullptr;
     HWND voiceEffectsSavePresetButton_ = nullptr;
     HWND voiceEffectsDeletePresetButton_ = nullptr;
+    HWND voiceEffectsOpenPresetFolderButton_ = nullptr;
+    HWND voiceEffectsImportPresetButton_ = nullptr;
+    HWND voiceEffectsExportPresetButton_ = nullptr;
+    HWND voiceEffectsSelfTestButton_ = nullptr;
     HWND voiceEffectsInfoCaption_ = nullptr;
+    std::wstring voiceEffectsSelfTestSummary_;
 
     HWND controlHotkeysGroup_ = nullptr;
     HWND stopHotkeyCaption_ = nullptr;

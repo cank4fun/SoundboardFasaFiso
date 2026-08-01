@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 2.3.0 - 2026-08-01
+
+- Rebuilt the deterministic local Voice Effects path as Classic Voice Engine 2 without AI inference, model files, network access, a background service or a new runtime dependency.
+- Added an allocation-free Speech Analysis Core with 70–700 Hz pitch tracking, voiced/unvoiced confidence, speech activity, onset/transient detection, spectral descriptors and a reusable smoothed spectral envelope.
+- Added Pitch Engine 2, combining pitch-synchronous dual-grain processing with the phase-locked spectral path while protecting consonants, attacks and unvoiced speech.
+- Added Formant Engine 2 with independent log-domain spectral-envelope warping, temporal/spatial smoothing, energy normalization and bounded resonance correction.
+- Replaced the original body stage with Vocal Weight Engine 2, using analysis-guided chest reinforcement and boxiness control without moving pitch or formants.
+- Added an allocation-free voice-polish chain with adjustable three-band parametric EQ, split-band de-esser, speech-aware gate/expander and soft-knee compressor.
+- Added a modular EQ/de-esser/gate/compressor rack with safe live reordering, independent bypass controls and persistent rack order.
+- Added portable, versioned `.sbffvoice` preset import/export with UTF-8 validation, strict size and format checks, checksums and transactional overwrite recovery.
+- Added a deterministic inline Voice Engine self-test covering the 48 kHz block contract, fixed 16 ms latency, bypass transparency, finite/bounded output, rack behavior and reset/reinitialization.
+- Added compact embedded controls for every new module while preserving the single-window UI and existing user-preset workflow.
+- Extended configuration, preset, processor, runtime, robustness and microphone-pipeline tests for the new engines and backward compatibility.
+- Preserved the RNNoise-to-AGC Voice Effects position, existing AEC3 and stereo-crosstalk behavior, routing, lock-free settings delivery and portable standalone distribution.
+- Synchronized the vcpkg manifest with the public 2.3.0 version and made configuration fail early when release metadata drifts.
+- Removed the obsolete WebRTC AEC3 spike compatibility switch; supported builds now use the production AEC3 options exclusively.
+
 ## 2.2.1 - 2026-07-30
 
 - Added an independent Body / Vocal Weight control to the embedded Voice Effects UI, configuration format, runtime settings bridge, user presets and automated tests.

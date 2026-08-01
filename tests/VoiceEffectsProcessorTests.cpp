@@ -1310,6 +1310,73 @@ namespace
             "unvoiced consonant energy keeps natural dry timing");
     }
 
+    void TestPolishChainRunsInsideVoiceEffectsSlot()
+    {
+        VoiceEffectSettings neutral = ActiveCustomSettings();
+        VoiceEffectSettings polished = neutral;
+        polished.parametricEqEnabled = true;
+        polished.eqLowGainDb = 6.0f;
+        polished.compressorEnabled = true;
+        polished.compressorAmount = 0.35f;
+
+        VoiceEffectsProcessor neutralProcessor;
+        VoiceEffectsProcessor polishedProcessor;
+        Expect(neutralProcessor.Initialize(neutral),
+            "neutral polish integration settings initialize");
+        Expect(polishedProcessor.Initialize(polished),
+            "active polish integration settings initialize");
+
+        std::array<float, VoiceEffectsProcessor::SamplesPerBlock> input{};
+        std::array<float, VoiceEffectsProcessor::SamplesPerBlock> neutralOut{};
+        std::array<float, VoiceEffectsProcessor::SamplesPerBlock> polishedOut{};
+        double neutralEnergy = 0.0;
+        double polishedEnergy = 0.0;
+        std::size_t measuredSamples = 0;
+        std::size_t sequence = 0;
+
+        for (std::size_t block = 0; block < 140U; ++block)
+        {
+            for (std::size_t index = 0; index < input.size(); ++index)
+            {
+                input[index] = 0.06f * std::sin(
+                    2.0f * std::numbers::pi_v<float> * 110.0f *
+                    static_cast<float>(sequence++) /
+                    static_cast<float>(
+                        VoiceEffectsProcessor::ProcessingSampleRate
+                    )
+                );
+            }
+            Expect(neutralProcessor.ProcessBlock(input, neutralOut),
+                "neutral polish integration block processes");
+            Expect(polishedProcessor.ProcessBlock(input, polishedOut),
+                "active polish integration block processes");
+
+            if (block >= 60U)
+            {
+                for (std::size_t index = 0; index < input.size(); ++index)
+                {
+                    neutralEnergy += static_cast<double>(neutralOut[index]) *
+                        static_cast<double>(neutralOut[index]);
+                    polishedEnergy += static_cast<double>(polishedOut[index]) *
+                        static_cast<double>(polishedOut[index]);
+                    ++measuredSamples;
+                }
+            }
+        }
+
+        const double neutralRms = std::sqrt(
+            neutralEnergy / static_cast<double>(measuredSamples)
+        );
+        const double polishedRms = std::sqrt(
+            polishedEnergy / static_cast<double>(measuredSamples)
+        );
+        Expect(polishedRms > neutralRms * 1.18,
+            "6E polish chain processes the transformed voice before output");
+        Expect(polishedProcessor.LatencySamples() ==
+            VoiceEffectsProcessor::ProcessingLatencySamples,
+            "6E polish adds no latency to the fixed voice-effects slot");
+    }
+
     void TestResetClearsState()
     {
         VoiceEffectsProcessor processor;
@@ -1347,6 +1414,7 @@ int main()
     TestInvalidUpdatesAreTransactional();
     TestInvalidBuffersAreRejected();
     TestUnvoicedNoiseRetainsNaturalDryTiming();
+    TestPolishChainRunsInsideVoiceEffectsSlot();
     TestResetClearsState();
 
     if (failureCount != 0)

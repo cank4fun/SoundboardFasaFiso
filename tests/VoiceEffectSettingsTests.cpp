@@ -35,9 +35,24 @@ namespace
         Expect(!settings.bypassed, "the local bypass defaults to off");
         Expect(NearlyEqual(settings.body, 0.0f),
             "the Body control defaults to neutral");
+        Expect(!settings.parametricEqEnabled && !settings.deEsserEnabled &&
+            !settings.gateEnabled && !settings.compressorEnabled,
+            "6E polish modules default to bypassed");
+        Expect(NearlyEqual(settings.eqLowGainDb, 0.0f) &&
+            NearlyEqual(settings.eqLowFrequencyHz, 135.0f) &&
+            NearlyEqual(settings.eqMidGainDb, 0.0f) &&
+            NearlyEqual(settings.eqMidFrequencyHz, 1450.0f) &&
+            NearlyEqual(settings.eqMidQ, 0.82f) &&
+            NearlyEqual(settings.eqHighGainDb, 0.0f) &&
+            NearlyEqual(settings.eqHighFrequencyHz, 6800.0f),
+            "parametric EQ defaults to a flat speech-focused response");
         Expect(
             settings.preset == VoiceEffectPreset::DeepHeavy,
             "the default preset is deep-heavy"
+        );
+        Expect(
+            settings.rackOrder == DefaultVoiceEffectRackOrder,
+            "the 6F rack defaults to the stable polish order"
         );
         Expect(
             IsValidVoiceEffectSettings(settings),
@@ -83,6 +98,90 @@ namespace
                 static_cast<VoiceEffectPreset>(999)
             ) == "unknown",
             "unknown preset has an explicit name"
+        );
+    }
+
+    void TestRackOrderHelpers()
+    {
+        constexpr VoiceEffectRackOrder customOrder{
+            VoiceEffectRackModule::Gate,
+            VoiceEffectRackModule::ParametricEq,
+            VoiceEffectRackModule::Compressor,
+            VoiceEffectRackModule::DeEsser
+        };
+
+        Expect(
+            IsValidVoiceEffectRackOrder(customOrder),
+            "a complete unique rack order is valid"
+        );
+        Expect(
+            SerializeVoiceEffectRackOrder(customOrder) ==
+                "gate,parametric-eq,compressor,de-esser",
+            "rack order has a stable serialized form"
+        );
+        Expect(
+            ParseVoiceEffectRackOrder(
+                "GATE,PARAMETRIC-EQ,COMPRESSOR,DE-ESSER"
+            ) == customOrder,
+            "rack order parses case-insensitively"
+        );
+        Expect(
+            ParseVoiceEffectRackModule("de-esser") ==
+                VoiceEffectRackModule::DeEsser,
+            "individual rack module names parse"
+        );
+        Expect(
+            VoiceEffectRackModuleName(VoiceEffectRackModule::Compressor) ==
+                "compressor",
+            "individual rack module names are stable"
+        );
+
+        VoiceEffectRackOrder duplicate = customOrder;
+        duplicate[3] = VoiceEffectRackModule::Gate;
+        Expect(
+            !IsValidVoiceEffectRackOrder(duplicate),
+            "duplicate rack modules are rejected"
+        );
+        Expect(
+            !ParseVoiceEffectRackOrder(
+                "gate,parametric-eq,compressor,gate"
+            ).has_value(),
+            "serialized duplicate rack modules are rejected"
+        );
+        Expect(
+            !ParseVoiceEffectRackOrder(
+                "gate,parametric-eq,compressor"
+            ).has_value(),
+            "incomplete rack orders are rejected"
+        );
+        Expect(
+            !ParseVoiceEffectRackOrder(
+                "gate,parametric-eq,compressor,de-esser,"
+            ).has_value(),
+            "rack orders with a trailing delimiter are rejected"
+        );
+
+        VoiceEffectRackOrder moved = DefaultVoiceEffectRackOrder;
+        Expect(
+            MoveVoiceEffectRackModule(moved, 2U, -1),
+            "rack module moves upward"
+        );
+        Expect(
+            moved[1] == VoiceEffectRackModule::Gate &&
+                moved[2] == VoiceEffectRackModule::DeEsser,
+            "rack move swaps exactly one adjacent module"
+        );
+        Expect(
+            !MoveVoiceEffectRackModule(moved, 0U, -1) &&
+                !MoveVoiceEffectRackModule(moved, moved.size() - 1U, 1),
+            "rack move rejects out-of-range directions"
+        );
+
+        VoiceEffectSettings invalid;
+        invalid.rackOrder = duplicate;
+        Expect(
+            !IsValidVoiceEffectSettings(invalid),
+            "settings validation rejects an invalid rack order"
         );
     }
 
@@ -224,6 +323,20 @@ namespace
         preset.settings.drive = 0.25f;
         preset.settings.dryWet = 0.80f;
         preset.settings.outputGainDb = -1.0f;
+        preset.settings.parametricEqEnabled = true;
+        preset.settings.deEsserEnabled = true;
+        preset.settings.gateEnabled = true;
+        preset.settings.compressorEnabled = true;
+        preset.settings.eqLowGainDb = 2.0f;
+        preset.settings.eqLowFrequencyHz = 165.0f;
+        preset.settings.eqMidGainDb = -1.5f;
+        preset.settings.eqMidFrequencyHz = 1850.0f;
+        preset.settings.eqMidQ = 1.35f;
+        preset.settings.eqHighGainDb = 1.0f;
+        preset.settings.eqHighFrequencyHz = 7600.0f;
+        preset.settings.deEsserAmount = 0.45f;
+        preset.settings.gateAmount = 0.30f;
+        preset.settings.compressorAmount = 0.55f;
 
         Expect(
             IsValidVoiceEffectUserPresetName(preset.name),
@@ -251,8 +364,17 @@ namespace
         Expect(applied.bypassed, "applying a user preset preserves bypass");
         Expect(
             applied.pitchSemitones == preset.settings.pitchSemitones &&
-                applied.body == preset.settings.body,
-            "applying a user preset copies its DSP settings"
+                applied.body == preset.settings.body &&
+                applied.parametricEqEnabled && applied.compressorEnabled &&
+                applied.eqMidGainDb == preset.settings.eqMidGainDb &&
+                applied.eqLowFrequencyHz ==
+                    preset.settings.eqLowFrequencyHz &&
+                applied.eqMidFrequencyHz ==
+                    preset.settings.eqMidFrequencyHz &&
+                applied.eqMidQ == preset.settings.eqMidQ &&
+                applied.eqHighFrequencyHz ==
+                    preset.settings.eqHighFrequencyHz,
+            "applying a user preset copies all DSP settings"
         );
 
         VoiceEffectUserPreset invalid = preset;
@@ -307,7 +429,31 @@ namespace
             FloatCase{&VoiceEffectSettings::dryWet,
                 MinimumDryWet, MaximumDryWet, "dry/wet"},
             FloatCase{&VoiceEffectSettings::outputGainDb,
-                MinimumOutputGainDb, MaximumOutputGainDb, "output gain"}
+                MinimumOutputGainDb, MaximumOutputGainDb, "output gain"},
+            FloatCase{&VoiceEffectSettings::eqLowGainDb,
+                MinimumEqGainDb, MaximumEqGainDb, "EQ low gain"},
+            FloatCase{&VoiceEffectSettings::eqLowFrequencyHz,
+                MinimumEqLowFrequencyHz, MaximumEqLowFrequencyHz,
+                "EQ low frequency"},
+            FloatCase{&VoiceEffectSettings::eqMidGainDb,
+                MinimumEqGainDb, MaximumEqGainDb, "EQ mid gain"},
+            FloatCase{&VoiceEffectSettings::eqMidFrequencyHz,
+                MinimumEqMidFrequencyHz, MaximumEqMidFrequencyHz,
+                "EQ mid frequency"},
+            FloatCase{&VoiceEffectSettings::eqMidQ,
+                MinimumEqMidQ, MaximumEqMidQ, "EQ mid Q"},
+            FloatCase{&VoiceEffectSettings::eqHighGainDb,
+                MinimumEqGainDb, MaximumEqGainDb, "EQ high gain"},
+            FloatCase{&VoiceEffectSettings::eqHighFrequencyHz,
+                MinimumEqHighFrequencyHz, MaximumEqHighFrequencyHz,
+                "EQ high frequency"},
+            FloatCase{&VoiceEffectSettings::deEsserAmount,
+                MinimumPolishAmount, MaximumPolishAmount, "de-esser amount"},
+            FloatCase{&VoiceEffectSettings::gateAmount,
+                MinimumPolishAmount, MaximumPolishAmount, "gate amount"},
+            FloatCase{&VoiceEffectSettings::compressorAmount,
+                MinimumPolishAmount, MaximumPolishAmount,
+                "compressor amount"}
         };
 
         for (const FloatCase& testCase : cases)
@@ -529,6 +675,17 @@ namespace
             NearlyEqual(customized.pitchSemitones, -2.25f),
             "customized pitch remains untouched"
         );
+
+        VoiceEffectSettings eqCustomized = legacy;
+        eqCustomized.eqMidFrequencyHz = 2200.0f;
+        Expect(
+            !MigrateLegacyBuiltInVoiceEffectSettings(eqCustomized),
+            "custom parametric EQ values prevent legacy migration"
+        );
+        Expect(
+            NearlyEqual(eqCustomized.eqMidFrequencyHz, 2200.0f),
+            "custom EQ frequency remains untouched"
+        );
     }
 }
 
@@ -536,6 +693,7 @@ int main()
 {
     TestDefaults();
     TestStableNamesAndParsing();
+    TestRackOrderHelpers();
     TestPresetSnapshots();
     TestUserPresets();
     TestRangeValidation();

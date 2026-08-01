@@ -67,8 +67,6 @@ the vcpkg binary cache.
   render-reference and live microphone runtime tests when `BUILD_TESTING=ON`.
 - `SOUNDBOARD_WEBRTC_TARGET` can override imported-target detection if the
   package changes its exported CMake target name.
-- `SOUNDBOARD_BUILD_WEBRTC_AEC3_SPIKE` remains only as a deprecated temporary
-  alias for old local build directories.
 
 ## Packaging and licenses
 

@@ -137,7 +137,31 @@ namespace
             NearlyEqual(left.body, right.body) &&
             NearlyEqual(left.drive, right.drive) &&
             NearlyEqual(left.dryWet, right.dryWet) &&
-            NearlyEqual(left.outputGainDb, right.outputGainDb);
+            NearlyEqual(left.outputGainDb, right.outputGainDb) &&
+            left.parametricEqEnabled == right.parametricEqEnabled &&
+            left.deEsserEnabled == right.deEsserEnabled &&
+            left.gateEnabled == right.gateEnabled &&
+            left.compressorEnabled == right.compressorEnabled &&
+            NearlyEqual(left.eqLowGainDb, right.eqLowGainDb) &&
+            NearlyEqual(
+                left.eqLowFrequencyHz,
+                right.eqLowFrequencyHz
+            ) &&
+            NearlyEqual(left.eqMidGainDb, right.eqMidGainDb) &&
+            NearlyEqual(
+                left.eqMidFrequencyHz,
+                right.eqMidFrequencyHz
+            ) &&
+            NearlyEqual(left.eqMidQ, right.eqMidQ) &&
+            NearlyEqual(left.eqHighGainDb, right.eqHighGainDb) &&
+            NearlyEqual(
+                left.eqHighFrequencyHz,
+                right.eqHighFrequencyHz
+            ) &&
+            NearlyEqual(left.deEsserAmount, right.deEsserAmount) &&
+            NearlyEqual(left.gateAmount, right.gateAmount) &&
+            NearlyEqual(left.compressorAmount, right.compressorAmount) &&
+            left.rackOrder == right.rackOrder;
     }
 
     void TestOldConfigUsesSafeDefaults(const TemporaryDirectory& directory)
@@ -285,7 +309,22 @@ namespace
             "voice_effects_body=0.55\n"
             "voice_effects_drive=0.40\n"
             "voice_effects_dry_wet=0.65\n"
-            "voice_effects_output_gain_db=-1.25\n";
+            "voice_effects_output_gain_db=-1.25\n"
+            "voice_effects_parametric_eq_enabled=on\n"
+            "voice_effects_eq_low_gain_db=3.25\n"
+            "voice_effects_eq_low_frequency_hz=165\n"
+            "voice_effects_eq_mid_gain_db=-2.5\n"
+            "voice_effects_eq_mid_frequency_hz=1850\n"
+            "voice_effects_eq_mid_q=1.35\n"
+            "voice_effects_eq_high_gain_db=1.75\n"
+            "voice_effects_eq_high_frequency_hz=7600\n"
+            "voice_effects_de_esser_enabled=true\n"
+            "voice_effects_de_esser_amount=0.65\n"
+            "voice_effects_gate_enabled=yes\n"
+            "voice_effects_gate_amount=0.45\n"
+            "voice_effects_compressor_enabled=1\n"
+            "voice_effects_compressor_amount=0.70\n"
+            "voice_effects_rack_order=gate,parametric-eq,compressor,de-esser\n";
 
         Expect(
             WriteText(path, content),
@@ -331,6 +370,35 @@ namespace
             "Voice Effects output gain parses"
         );
         Expect(
+            settings.parametricEqEnabled &&
+                NearlyEqual(settings.eqLowGainDb, 3.25f) &&
+                NearlyEqual(settings.eqLowFrequencyHz, 165.0f) &&
+                NearlyEqual(settings.eqMidGainDb, -2.5f) &&
+                NearlyEqual(settings.eqMidFrequencyHz, 1850.0f) &&
+                NearlyEqual(settings.eqMidQ, 1.35f) &&
+                NearlyEqual(settings.eqHighGainDb, 1.75f) &&
+                NearlyEqual(settings.eqHighFrequencyHz, 7600.0f),
+            "Voice Effects parametric EQ parses"
+        );
+        Expect(
+            settings.deEsserEnabled &&
+                NearlyEqual(settings.deEsserAmount, 0.65f) &&
+                settings.gateEnabled &&
+                NearlyEqual(settings.gateAmount, 0.45f) &&
+                settings.compressorEnabled &&
+                NearlyEqual(settings.compressorAmount, 0.70f),
+            "Voice Effects polish dynamics parse"
+        );
+        Expect(
+            settings.rackOrder == VoiceEffectRackOrder{
+                VoiceEffectRackModule::Gate,
+                VoiceEffectRackModule::ParametricEq,
+                VoiceEffectRackModule::Compressor,
+                VoiceEffectRackModule::DeEsser
+            },
+            "Voice Effects rack order parses"
+        );
+        Expect(
             IsValidVoiceEffectSettings(settings),
             "parsed Voice Effects settings are valid"
         );
@@ -363,6 +431,36 @@ namespace
             Expect(
                 NearlyEqual(presets[0].settings.body, 0.0f),
                 "missing legacy Body defaults to zero"
+            );
+            Expect(
+                !presets[0].settings.parametricEqEnabled &&
+                    !presets[0].settings.deEsserEnabled &&
+                    !presets[0].settings.gateEnabled &&
+                    !presets[0].settings.compressorEnabled &&
+                    NearlyEqual(presets[0].settings.eqLowGainDb, 0.0f) &&
+                    NearlyEqual(
+                        presets[0].settings.eqLowFrequencyHz,
+                        135.0f
+                    ) &&
+                    NearlyEqual(presets[0].settings.eqMidGainDb, 0.0f) &&
+                    NearlyEqual(
+                        presets[0].settings.eqMidFrequencyHz,
+                        1450.0f
+                    ) &&
+                    NearlyEqual(presets[0].settings.eqMidQ, 0.82f) &&
+                    NearlyEqual(presets[0].settings.eqHighGainDb, 0.0f) &&
+                    NearlyEqual(
+                        presets[0].settings.eqHighFrequencyHz,
+                        6800.0f
+                    ) &&
+                    NearlyEqual(presets[0].settings.deEsserAmount, 0.0f) &&
+                    NearlyEqual(presets[0].settings.gateAmount, 0.0f) &&
+                    NearlyEqual(presets[0].settings.compressorAmount, 0.0f),
+                "legacy user preset receives neutral 6E defaults"
+            );
+            Expect(
+                presets[0].settings.rackOrder == DefaultVoiceEffectRackOrder,
+                "legacy user preset receives the default 6F rack order"
             );
         }
     }
@@ -418,11 +516,31 @@ namespace
         expected.preset = VoiceEffectPreset::Custom;
         expected.pitchSemitones = -5.125f;
         expected.formantSemitones = 2.375f;
-        expected.character = 0.625f;
+        expected.character = 0.6251234f;
         expected.body = 0.575f;
-        expected.drive = 0.375f;
+        expected.drive = 0.3754321f;
         expected.dryWet = 0.725f;
         expected.outputGainDb = -2.875f;
+        expected.parametricEqEnabled = true;
+        expected.deEsserEnabled = true;
+        expected.gateEnabled = true;
+        expected.compressorEnabled = true;
+        expected.eqLowGainDb = 3.25f;
+        expected.eqLowFrequencyHz = 165.0f;
+        expected.eqMidGainDb = -2.5f;
+        expected.eqMidFrequencyHz = 1850.0f;
+        expected.eqMidQ = 1.35791f;
+        expected.eqHighGainDb = 1.75f;
+        expected.eqHighFrequencyHz = 7600.0f;
+        expected.deEsserAmount = 0.654321f;
+        expected.gateAmount = 0.45f;
+        expected.compressorAmount = 0.70f;
+        expected.rackOrder = {
+            VoiceEffectRackModule::Gate,
+            VoiceEffectRackModule::ParametricEq,
+            VoiceEffectRackModule::Compressor,
+            VoiceEffectRackModule::DeEsser
+        };
 
         Config source;
         Expect(
@@ -455,12 +573,60 @@ namespace
             saved.find("voice_effects_body=0.575") != std::string::npos,
             "Voice Effects body is serialized"
         );
+        Expect(
+            saved.find("voice_effects_parametric_eq_enabled=true") !=
+                std::string::npos &&
+                saved.find("voice_effects_eq_low_gain_db=3.25") !=
+                    std::string::npos &&
+                saved.find("voice_effects_eq_low_frequency_hz=165") !=
+                    std::string::npos &&
+                saved.find("voice_effects_eq_mid_gain_db=-2.5") !=
+                    std::string::npos &&
+                saved.find("voice_effects_eq_mid_frequency_hz=1850") !=
+                    std::string::npos &&
+                saved.find("voice_effects_eq_mid_q=1.35") !=
+                    std::string::npos &&
+                saved.find("voice_effects_eq_high_gain_db=1.75") !=
+                    std::string::npos &&
+                saved.find("voice_effects_eq_high_frequency_hz=7600") !=
+                    std::string::npos,
+            "Voice Effects parametric EQ is serialized"
+        );
+        Expect(
+            saved.find("voice_effects_de_esser_enabled=true") !=
+                std::string::npos &&
+                saved.find("voice_effects_de_esser_amount=0.65") !=
+                    std::string::npos &&
+                saved.find("voice_effects_gate_enabled=true") !=
+                    std::string::npos &&
+                saved.find("voice_effects_gate_amount=0.45") !=
+                    std::string::npos &&
+                saved.find("voice_effects_compressor_enabled=true") !=
+                    std::string::npos &&
+                saved.find("voice_effects_compressor_amount=0.7") !=
+                    std::string::npos,
+            "Voice Effects dynamics chain is serialized"
+        );
+        Expect(
+            saved.find(
+                "voice_effects_rack_order=gate,parametric-eq,compressor,de-esser"
+            ) != std::string::npos,
+            "Voice Effects rack order is serialized"
+        );
 
         Config loaded;
         Expect(loaded.Load(path), "saved Voice Effects config reloads");
+        const auto& actual = loaded.GetVoiceEffectSettings();
         Expect(
-            VoiceSettingsEqual(expected, loaded.GetVoiceEffectSettings()),
+            VoiceSettingsEqual(expected, actual),
             "Voice Effects settings round-trip"
+        );
+        Expect(
+            actual.character == expected.character &&
+                actual.drive == expected.drive &&
+                actual.eqMidQ == expected.eqMidQ &&
+                actual.deEsserAmount == expected.deEsserAmount,
+            "Voice Effects floats round-trip without precision loss"
         );
     }
 
@@ -476,10 +642,30 @@ namespace
         deep.settings.pitchSemitones = -5.0f;
         deep.settings.formantSemitones = -2.0f;
         deep.settings.character = 0.60f;
-        deep.settings.body = 0.70f;
+        deep.settings.body = 0.701234f;
         deep.settings.drive = 0.25f;
         deep.settings.dryWet = 0.80f;
         deep.settings.outputGainDb = -1.5f;
+        deep.settings.parametricEqEnabled = true;
+        deep.settings.deEsserEnabled = true;
+        deep.settings.gateEnabled = true;
+        deep.settings.compressorEnabled = true;
+        deep.settings.eqLowGainDb = 2.5f;
+        deep.settings.eqLowFrequencyHz = 155.0f;
+        deep.settings.eqMidGainDb = -1.25f;
+        deep.settings.eqMidFrequencyHz = 1725.0f;
+        deep.settings.eqMidQ = 1.2f;
+        deep.settings.eqHighGainDb = 1.0f;
+        deep.settings.eqHighFrequencyHz = 7450.0f;
+        deep.settings.deEsserAmount = 0.55f;
+        deep.settings.gateAmount = 0.35f;
+        deep.settings.compressorAmount = 0.60f;
+        deep.settings.rackOrder = {
+            VoiceEffectRackModule::Compressor,
+            VoiceEffectRackModule::ParametricEq,
+            VoiceEffectRackModule::Gate,
+            VoiceEffectRackModule::DeEsser
+        };
 
         VoiceEffectUserPreset radio;
         radio.name = "Desk Radio";
@@ -528,6 +714,12 @@ namespace
         );
         Expect(
             saved.find(
+                "|rack_order=compressor,parametric-eq,gate,de-esser"
+            ) != std::string::npos,
+            "user-preset rack order is serialized"
+        );
+        Expect(
+            saved.find(
                 "voice_effects_user_preset=Desk Radio|preset=radio"
             ) != std::string::npos,
             "dedicated-stage user preset is serialized"
@@ -545,7 +737,36 @@ namespace
             );
             Expect(
                 NearlyEqual(presets[0].settings.pitchSemitones, -6.0f) &&
-                    NearlyEqual(presets[0].settings.body, 0.70f),
+                    presets[0].settings.body == deep.settings.body &&
+                    presets[0].settings.parametricEqEnabled &&
+                    presets[0].settings.deEsserEnabled &&
+                    presets[0].settings.gateEnabled &&
+                    presets[0].settings.compressorEnabled &&
+                    NearlyEqual(presets[0].settings.eqLowGainDb, 2.5f) &&
+                    NearlyEqual(
+                        presets[0].settings.eqLowFrequencyHz,
+                        155.0f
+                    ) &&
+                    NearlyEqual(presets[0].settings.eqMidGainDb, -1.25f) &&
+                    NearlyEqual(
+                        presets[0].settings.eqMidFrequencyHz,
+                        1725.0f
+                    ) &&
+                    NearlyEqual(presets[0].settings.eqMidQ, 1.2f) &&
+                    NearlyEqual(presets[0].settings.eqHighGainDb, 1.0f) &&
+                    NearlyEqual(
+                        presets[0].settings.eqHighFrequencyHz,
+                        7450.0f
+                    ) &&
+                    NearlyEqual(presets[0].settings.deEsserAmount, 0.55f) &&
+                    NearlyEqual(presets[0].settings.gateAmount, 0.35f) &&
+                    NearlyEqual(presets[0].settings.compressorAmount, 0.60f) &&
+                    presets[0].settings.rackOrder == VoiceEffectRackOrder{
+                        VoiceEffectRackModule::Compressor,
+                        VoiceEffectRackModule::ParametricEq,
+                        VoiceEffectRackModule::Gate,
+                        VoiceEffectRackModule::DeEsser
+                    },
                 "updated user-preset settings round-trip"
             );
             Expect(
@@ -745,6 +966,46 @@ namespace
                 "out-of-range Voice Effects dry/wet"
             },
             {
+                "voice_effects_parametric_eq_enabled=maybe\n",
+                "invalid Voice Effects EQ boolean"
+            },
+            {
+                "voice_effects_eq_mid_gain_db=12.01\n",
+                "out-of-range Voice Effects EQ gain"
+            },
+            {
+                "voice_effects_eq_low_frequency_hz=59.9\n",
+                "out-of-range Voice Effects low EQ frequency"
+            },
+            {
+                "voice_effects_eq_mid_frequency_hz=5000.1\n",
+                "out-of-range Voice Effects mid EQ frequency"
+            },
+            {
+                "voice_effects_eq_mid_q=0.29\n",
+                "out-of-range Voice Effects mid EQ Q"
+            },
+            {
+                "voice_effects_eq_high_frequency_hz=12000.1\n",
+                "out-of-range Voice Effects high EQ frequency"
+            },
+            {
+                "voice_effects_de_esser_amount=nan\n",
+                "non-finite Voice Effects de-esser amount"
+            },
+            {
+                "voice_effects_gate_amount=-0.01\n",
+                "out-of-range Voice Effects gate amount"
+            },
+            {
+                "voice_effects_compressor_amount=1.01\n",
+                "out-of-range Voice Effects compressor amount"
+            },
+            {
+                "voice_effects_rack_order=gate,parametric-eq,compressor,gate\n",
+                "duplicate Voice Effects rack module"
+            },
+            {
                 "voice_effects_user_preset=bad|preset=custom|pitch=99|formant=0|character=0|drive=0|dry_wet=1|output_gain_db=0\n",
                 "invalid Voice Effects user preset"
             },
@@ -811,6 +1072,13 @@ namespace
                 config.GetVoiceEffectSettings()
             ),
             "Voice Effects setter preserves the previous valid settings"
+        );
+
+        invalidVoice = originalVoice;
+        invalidVoice.rackOrder[3] = VoiceEffectRackModule::ParametricEq;
+        Expect(
+            !config.SetVoiceEffectSettings(invalidVoice),
+            "Voice Effects setter rejects duplicate rack modules"
         );
     }
 
@@ -922,6 +1190,12 @@ namespace
             saved.find("voice_effects_preset=deep-heavy") !=
                 std::string::npos,
             "saved default uses the stable Voice Effects preset name"
+        );
+        Expect(
+            saved.find(
+                "voice_effects_rack_order=parametric-eq,de-esser,gate,compressor"
+            ) != std::string::npos,
+            "saved default includes the stable rack order"
         );
         Expect(
             saved.find(

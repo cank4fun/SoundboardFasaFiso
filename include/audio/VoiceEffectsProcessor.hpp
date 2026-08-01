@@ -1,5 +1,10 @@
 #pragma once
 
+#include "audio/FormantEngine2.hpp"
+#include "audio/PitchEngine2.hpp"
+#include "audio/SpeechAnalysisCore.hpp"
+#include "audio/VocalWeightEngine2.hpp"
+#include "audio/VoicePolishEngine2.hpp"
 #include "audio/VoiceEffectSettings.hpp"
 
 #include <array>
@@ -41,51 +46,43 @@ public:
 
 private:
     static constexpr std::size_t BinCount = FftSize / 2 + 1;
-    static constexpr std::size_t DryDelayLineSize = 2048;
-    static constexpr std::size_t DryDelayLineMask = DryDelayLineSize - 1;
     static constexpr std::size_t TinyDelayLineSize = 2048;
     static constexpr std::size_t TinyDelayLineMask = TinyDelayLineSize - 1;
     static constexpr float PitchSmoothingMilliseconds = 45.0f;
     static constexpr float FormantSmoothingMilliseconds = 45.0f;
     static constexpr float CharacterSmoothingMilliseconds = 35.0f;
-    static constexpr float BodySmoothingMilliseconds = 35.0f;
-    static constexpr float BodyEnvelopeAttackMilliseconds = 7.0f;
-    static constexpr float BodyEnvelopeReleaseMilliseconds = 85.0f;
-    static constexpr float BodyGateAttackMilliseconds = 12.0f;
-    static constexpr float BodyGateReleaseMilliseconds = 110.0f;
     static constexpr float DriveSmoothingMilliseconds = 15.0f;
     static constexpr float SpecialEffectSmoothingMilliseconds = 30.0f;
     static constexpr float MixSmoothingMilliseconds = 25.0f;
     static constexpr float BypassSmoothingMilliseconds = 10.0f;
-    static constexpr float UnvoicedSmoothingMilliseconds = 4.0f;
 
     static_assert((FftSize & (FftSize - 1)) == 0);
     static_assert(FftSize % Oversampling == 0);
-    static_assert((DryDelayLineSize & (DryDelayLineSize - 1)) == 0);
-    static_assert(DryDelayLineSize > ProcessingLatencySamples);
     static_assert((TinyDelayLineSize & (TinyDelayLineSize - 1)) == 0);
+    static_assert(ProcessingSampleRate ==
+        SpeechAnalysisCore::ProcessingSampleRate);
+    static_assert(FftSize == SpeechAnalysisCore::FrameSize);
+    static_assert(HopSize == SpeechAnalysisCore::HopSize);
+    static_assert(BinCount == SpeechAnalysisCore::BinCount);
+    static_assert(ProcessingSampleRate == PitchEngine2::ProcessingSampleRate);
+    static_assert(ProcessingSampleRate == FormantEngine2::ProcessingSampleRate);
+    static_assert(ProcessingSampleRate ==
+        VocalWeightEngine2::ProcessingSampleRate);
+    static_assert(ProcessingSampleRate ==
+        VoicePolishEngine2::ProcessingSampleRate);
+    static_assert(FftSize == FormantEngine2::FrameSize);
+    static_assert(BinCount == FormantEngine2::BinCount);
+    static_assert(ProcessingLatencySamples ==
+        PitchEngine2::ProcessingLatencySamples);
 
     void ProcessPitchFrame(
         float pitchRatio,
         float formantRatio
     ) noexcept;
-    void EstimateSpectralEnvelope() noexcept;
-    void EstimateSpeechPeriod() noexcept;
     void AssignPhaseLockPeaks(float maximumMagnitude) noexcept;
     void TransformFft(bool inverse) noexcept;
 
-    [[nodiscard]] float ProcessSpeechPitch(
-        float pitchRatio,
-        float delayedDry
-    ) noexcept;
-    [[nodiscard]] float ReadDryDelayAt(float delaySamples) const noexcept;
     [[nodiscard]] float ProcessCharacterEq(float sample) noexcept;
-    [[nodiscard]] float ProcessBody(float sample) noexcept;
-    [[nodiscard]] static float ProcessBiquad(
-        float sample,
-        const std::array<float, 5>& coefficients,
-        std::array<float, 2>& state
-    ) noexcept;
     [[nodiscard]] float ProcessDrive(float sample) const noexcept;
     [[nodiscard]] float ProcessSpecialEffects(float sample) noexcept;
     [[nodiscard]] float ProcessRadio(float sample) noexcept;
@@ -93,13 +90,17 @@ private:
     [[nodiscard]] float ProcessTinyHigh(float sample) noexcept;
     [[nodiscard]] float ReadTinyDelay(float delaySamples) const noexcept;
 
-    [[nodiscard]] float SampleSpectralEnvelope(float bin) const noexcept;
-    [[nodiscard]] float ReadDryDelay() const noexcept;
     [[nodiscard]] static float SmoothingCoefficient(
         float milliseconds
     ) noexcept;
 
     VoiceEffectSettings settings_{};
+    SpeechAnalysisCore speechAnalysisCore_{};
+    SpeechAnalysisFrame speechAnalysisFrame_{};
+    PitchEngine2 pitchEngine2_{};
+    FormantEngine2 formantEngine2_{};
+    VocalWeightEngine2 vocalWeightEngine2_{};
+    VoicePolishEngine2 voicePolishEngine2_{};
 
     std::array<float, FftSize> inputFifo_{};
     std::array<float, FftSize> outputFifo_{};
@@ -110,21 +111,15 @@ private:
     std::array<float, BinCount> lastPhase_{};
     std::array<float, BinCount> sumPhase_{};
     std::array<float, BinCount> analysisMagnitude_{};
-    std::array<float, BinCount> previousAnalysisMagnitude_{};
     std::array<float, BinCount> analysisPhase_{};
     std::array<float, BinCount> analysisFrequency_{};
-    std::array<float, BinCount> logMagnitude_{};
-    std::array<float, BinCount> smoothedLogMagnitude_{};
-    std::array<float, BinCount> spectralEnvelope_{};
     std::array<float, BinCount> synthesisMagnitude_{};
     std::array<float, BinCount> synthesisReal_{};
     std::array<float, BinCount> synthesisImaginary_{};
     std::array<std::uint16_t, BinCount> nearestPeak_{};
     std::array<std::uint8_t, BinCount> spectralPeak_{};
 
-    std::array<float, DryDelayLineSize> dryDelayLine_{};
     std::array<float, TinyDelayLineSize> tinyDelayLine_{};
-    std::uint64_t dryWriteSequence_ = 0;
     std::uint64_t tinyWriteSequence_ = 0;
     std::size_t rover_ = ProcessingLatencySamples;
 
@@ -133,7 +128,6 @@ private:
     float smoothedCharacterLowGain_ = 1.0f;
     float smoothedCharacterMidGain_ = 1.0f;
     float smoothedCharacterHighGain_ = 1.0f;
-    float smoothedBody_ = 0.0f;
     float smoothedDrive_ = 0.0f;
     float smoothedRadioMix_ = 0.0f;
     float smoothedRobotMix_ = 0.0f;
@@ -143,52 +137,17 @@ private:
     float pitchSmoothingCoefficient_ = 1.0f;
     float formantSmoothingCoefficient_ = 1.0f;
     float characterSmoothingCoefficient_ = 1.0f;
-    float bodySmoothingCoefficient_ = 1.0f;
     float driveSmoothingCoefficient_ = 1.0f;
     float specialEffectSmoothingCoefficient_ = 1.0f;
     float mixSmoothingCoefficient_ = 1.0f;
     float bypassSmoothingCoefficient_ = 1.0f;
     float characterLowPassCoefficient_ = 1.0f;
     float characterHighCutCoefficient_ = 1.0f;
-    float bodyHighPassCoefficient_ = 1.0f;
-    float bodyLowPassCoefficient_ = 1.0f;
-    float bodyEnvelopeAttackCoefficient_ = 1.0f;
-    float bodyEnvelopeReleaseCoefficient_ = 1.0f;
-    float bodyGateAttackCoefficient_ = 1.0f;
-    float bodyGateReleaseCoefficient_ = 1.0f;
-    std::array<float, 5> bodyPeakCoefficients_{1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-    std::array<float, 5> bodyBoxCoefficients_{1.0f, 0.0f, 0.0f, 0.0f, 0.0f};
     float airPreservationCoefficient_ = 1.0f;
     float characterLowState_ = 0.0f;
     float characterHighCutState_ = 0.0f;
-    std::array<float, 2> bodyPeakState_{};
-    std::array<float, 2> bodyBoxState_{};
-    float bodyHighPassLowState_ = 0.0f;
-    float bodyLowPassStateOne_ = 0.0f;
-    float bodyLowPassStateTwo_ = 0.0f;
-    float bodyEnvelope_ = 0.0f;
-    float smoothedBodyVoiceGate_ = 0.0f;
     float dryAirLowState_ = 0.0f;
     float wetAirLowState_ = 0.0f;
-    float transientDryMixTarget_ = 0.0f;
-    float smoothedTransientDryMix_ = 0.0f;
-    float transientSmoothingCoefficient_ = 1.0f;
-    float unvoicedDryMixTarget_ = 0.0f;
-    float smoothedUnvoicedDryMix_ = 0.0f;
-    float unvoicedSmoothingCoefficient_ = 1.0f;
-    float speechPitchBlendAttackCoefficient_ = 1.0f;
-    float speechPitchBlendReleaseCoefficient_ = 1.0f;
-    float hybridLevelSmoothingCoefficient_ = 1.0f;
-    float smoothedSpeechPitchMix_ = 0.0f;
-    float spectralPitchLevel_ = 0.0f;
-    float speechPitchLevel_ = 0.0f;
-    float smoothedSpeechLevelGain_ = 1.0f;
-    float previousFrameEnergy_ = 0.0f;
-    float speechPitchPhase_ = 0.25f;
-    float speechPitchPeriodSamples_ = 240.0f;
-    float speechPitchDelayRangeSamples_ = 768.0f;
-    float speechVoicingConfidence_ = 0.0f;
-    std::uint8_t speechVoicingHoldFrames_ = 0;
     float radioLowCutCoefficient_ = 1.0f;
     float radioHighCutCoefficient_ = 1.0f;
     float radioLowCutStateOne_ = 0.0f;

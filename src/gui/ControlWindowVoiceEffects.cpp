@@ -1,12 +1,15 @@
 #include "gui/ControlWindow.hpp"
 
 #include "audio/Audio.hpp"
+#include "audio/VoiceEffectPresetFile.hpp"
+#include "audio/VoiceEngineSelfTest.hpp"
 #include "localization/Localization.hpp"
 
 #include <commctrl.h>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <iomanip>
 #include <iterator>
@@ -88,6 +91,24 @@ namespace
         return Localization::Text(L"Özel", L"Custom");
     }
 
+    std::wstring VoiceEffectRackModuleDisplayName(
+        const VoiceEffectRackModule module
+    )
+    {
+        switch (module)
+        {
+            case VoiceEffectRackModule::ParametricEq:
+                return Localization::Text(L"Parametrik EQ", L"Parametric EQ");
+            case VoiceEffectRackModule::DeEsser:
+                return L"De-esser";
+            case VoiceEffectRackModule::Gate:
+                return Localization::Text(L"Gate / Expander", L"Gate / Expander");
+            case VoiceEffectRackModule::Compressor:
+                return Localization::Text(L"Kompresör", L"Compressor");
+        }
+        return L"?";
+    }
+
     int ToTenths(const float value)
     {
         return static_cast<int>(std::lround(value * 10.0f));
@@ -106,6 +127,16 @@ namespace
         std::wostringstream stream;
         stream << std::showpos << std::fixed << std::setprecision(1)
             << value << suffix;
+        return stream.str();
+    }
+
+    std::wstring FormatTenths(
+        const float value,
+        const wchar_t* const suffix
+    )
+    {
+        std::wostringstream stream;
+        stream << std::fixed << std::setprecision(1) << value << suffix;
         return stream.str();
     }
 }
@@ -265,6 +296,93 @@ bool ControlWindow::CreateVoiceEffectsControls()
         10
     );
 
+    voiceEffectsRackCaption_ = createControl(
+        L"STATIC", L"", SS_LEFT, 0
+    );
+    voiceEffectsRackCombo_ = createControl(
+        L"COMBOBOX", L"",
+        CBS_DROPDOWNLIST | CBS_HASSTRINGS | WS_VSCROLL | WS_TABSTOP,
+        IdVoiceEffectsRack,
+        WS_EX_CLIENTEDGE
+    );
+    voiceEffectsRackUpButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
+        IdVoiceEffectsRackUp
+    );
+    voiceEffectsRackDownButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
+        IdVoiceEffectsRackDown
+    );
+
+    voiceEffectsEqEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
+    voiceEffectsDeEsserEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
+    voiceEffectsGateEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
+    voiceEffectsCompressorEnabledCheck_ = createControl(
+        L"BUTTON", L"", BS_AUTOCHECKBOX | WS_TABSTOP, 0
+    );
+    createSliderRow(
+        voiceEffectsEqLowCaption_, voiceEffectsEqLowSlider_,
+        voiceEffectsEqLowValue_, IdVoiceEffectsEqLowSlider,
+        -120, 120, 10
+    );
+    createSliderRow(
+        voiceEffectsEqLowFrequencyCaption_,
+        voiceEffectsEqLowFrequencySlider_,
+        voiceEffectsEqLowFrequencyValue_,
+        IdVoiceEffectsEqLowFrequencySlider,
+        60, 400, 10
+    );
+    createSliderRow(
+        voiceEffectsEqMidCaption_, voiceEffectsEqMidSlider_,
+        voiceEffectsEqMidValue_, IdVoiceEffectsEqMidSlider,
+        -120, 120, 10
+    );
+    createSliderRow(
+        voiceEffectsEqMidFrequencyCaption_,
+        voiceEffectsEqMidFrequencySlider_,
+        voiceEffectsEqMidFrequencyValue_,
+        IdVoiceEffectsEqMidFrequencySlider,
+        250, 5000, 100
+    );
+    createSliderRow(
+        voiceEffectsEqMidQCaption_, voiceEffectsEqMidQSlider_,
+        voiceEffectsEqMidQValue_, IdVoiceEffectsEqMidQSlider,
+        3, 40, 1
+    );
+    createSliderRow(
+        voiceEffectsEqHighCaption_, voiceEffectsEqHighSlider_,
+        voiceEffectsEqHighValue_, IdVoiceEffectsEqHighSlider,
+        -120, 120, 10
+    );
+    createSliderRow(
+        voiceEffectsEqHighFrequencyCaption_,
+        voiceEffectsEqHighFrequencySlider_,
+        voiceEffectsEqHighFrequencyValue_,
+        IdVoiceEffectsEqHighFrequencySlider,
+        3000, 12000, 100
+    );
+    createSliderRow(
+        voiceEffectsDeEsserCaption_, voiceEffectsDeEsserSlider_,
+        voiceEffectsDeEsserValue_, IdVoiceEffectsDeEsserSlider,
+        0, 100, 5
+    );
+    createSliderRow(
+        voiceEffectsGateCaption_, voiceEffectsGateSlider_,
+        voiceEffectsGateValue_, IdVoiceEffectsGateSlider,
+        0, 100, 5
+    );
+    createSliderRow(
+        voiceEffectsCompressorCaption_, voiceEffectsCompressorSlider_,
+        voiceEffectsCompressorValue_, IdVoiceEffectsCompressorSlider,
+        0, 100, 5
+    );
+
     voiceEffectsResetButton_ = createControl(
         L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP, IdVoiceEffectsReset
     );
@@ -279,6 +397,22 @@ bool ControlWindow::CreateVoiceEffectsControls()
         L"",
         BS_OWNERDRAW | WS_TABSTOP,
         IdVoiceEffectsDeletePreset
+    );
+    voiceEffectsOpenPresetFolderButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
+        IdVoiceEffectsOpenPresetFolder
+    );
+    voiceEffectsImportPresetButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
+        IdVoiceEffectsImportPresets
+    );
+    voiceEffectsExportPresetButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
+        IdVoiceEffectsExportPreset
+    );
+    voiceEffectsSelfTestButton_ = createControl(
+        L"BUTTON", L"", BS_OWNERDRAW | WS_TABSTOP,
+        IdVoiceEffectsSelfTest
     );
     voiceEffectsInfoCaption_ = createControl(
         L"STATIC", L"", SS_LEFT, 0
@@ -300,9 +434,32 @@ bool ControlWindow::CreateVoiceEffectsControls()
         voiceEffectsDriveValue_, voiceEffectsDryWetCaption_,
         voiceEffectsDryWetSlider_, voiceEffectsDryWetValue_,
         voiceEffectsOutputGainCaption_, voiceEffectsOutputGainSlider_,
-        voiceEffectsOutputGainValue_, voiceEffectsResetButton_,
+        voiceEffectsOutputGainValue_, voiceEffectsRackCaption_,
+        voiceEffectsRackCombo_, voiceEffectsRackUpButton_,
+        voiceEffectsRackDownButton_, voiceEffectsEqEnabledCheck_,
+        voiceEffectsDeEsserEnabledCheck_, voiceEffectsGateEnabledCheck_,
+        voiceEffectsCompressorEnabledCheck_, voiceEffectsEqLowCaption_,
+        voiceEffectsEqLowSlider_, voiceEffectsEqLowValue_,
+        voiceEffectsEqLowFrequencyCaption_,
+        voiceEffectsEqLowFrequencySlider_,
+        voiceEffectsEqLowFrequencyValue_, voiceEffectsEqMidCaption_,
+        voiceEffectsEqMidSlider_, voiceEffectsEqMidValue_,
+        voiceEffectsEqMidFrequencyCaption_,
+        voiceEffectsEqMidFrequencySlider_,
+        voiceEffectsEqMidFrequencyValue_, voiceEffectsEqMidQCaption_,
+        voiceEffectsEqMidQSlider_, voiceEffectsEqMidQValue_,
+        voiceEffectsEqHighCaption_, voiceEffectsEqHighSlider_,
+        voiceEffectsEqHighValue_, voiceEffectsEqHighFrequencyCaption_,
+        voiceEffectsEqHighFrequencySlider_,
+        voiceEffectsEqHighFrequencyValue_, voiceEffectsDeEsserCaption_, voiceEffectsDeEsserSlider_,
+        voiceEffectsDeEsserValue_, voiceEffectsGateCaption_,
+        voiceEffectsGateSlider_, voiceEffectsGateValue_,
+        voiceEffectsCompressorCaption_, voiceEffectsCompressorSlider_,
+        voiceEffectsCompressorValue_, voiceEffectsResetButton_,
         voiceEffectsSavePresetButton_, voiceEffectsDeletePresetButton_,
-        voiceEffectsInfoCaption_
+        voiceEffectsOpenPresetFolderButton_,
+        voiceEffectsImportPresetButton_, voiceEffectsExportPresetButton_,
+        voiceEffectsSelfTestButton_, voiceEffectsInfoCaption_
     };
 
     return std::all_of(
@@ -346,64 +503,51 @@ void ControlWindow::LayoutVoiceEffectsControls(
 
     const int innerX = contentX + 18;
     const int innerWidth = contentWidth - 36;
-    const int columnGap = 28;
+    const int columnGap = 24;
     const int columnWidth = (innerWidth - columnGap) / 2;
     const int rightX = innerX + columnWidth + columnGap;
-    const int valueWidth = 72;
-    const int captionWidth = 118;
+    const int valueWidth = 64;
+    const int captionWidth = 108;
     const int sliderWidth = std::max(
-        90,
-        columnWidth - captionWidth - valueWidth - 10
+        76,
+        columnWidth - captionWidth - valueWidth - 8
     );
-    int rowY = pageY + 34;
+    int rowY = pageY + 30;
 
+    moveWindow(voiceEffectsEnabledCheck_, innerX, rowY, 210, 20);
+    moveWindow(voiceEffectsBypassCheck_, innerX + 216, rowY, 110, 20);
+    moveWindow(voiceEffectsStatusCaption_, rightX, rowY + 1, 66, 18);
     moveWindow(
-        voiceEffectsEnabledCheck_, innerX, rowY, 210, 22
+        voiceEffectsStatusValue_, rightX + 66, rowY + 1,
+        columnWidth - 66, 18
     );
-    moveWindow(
-        voiceEffectsBypassCheck_, innerX + 220, rowY, 130, 22
-    );
-    moveWindow(
-        voiceEffectsStatusCaption_, rightX, rowY + 2, 76, 20
-    );
-    moveWindow(
-        voiceEffectsStatusValue_, rightX + 76, rowY + 2,
-        columnWidth - 76, 20
-    );
-    rowY += 36;
+    rowY += 31;
 
+    moveWindow(voiceEffectsPresetCaption_, innerX, rowY + 3, 78, 18);
     moveWindow(
-        voiceEffectsPresetCaption_, innerX, rowY + 4, 90, 20
+        voiceEffectsPresetCombo_, innerX + 78, rowY,
+        std::max(210, columnWidth - 78), 210
     );
     moveWindow(
-        voiceEffectsPresetCombo_, innerX + 90, rowY,
-        std::max(220, columnWidth - 90), 220
+        voiceEffectsPresetNameCaption_, rightX, rowY + 3, 88, 18
     );
     moveWindow(
-        voiceEffectsPresetNameCaption_, rightX, rowY + 4, 96, 20
+        voiceEffectsPresetNameEdit_, rightX + 88, rowY,
+        std::max(160, columnWidth - 88), 24
     );
-    moveWindow(
-        voiceEffectsPresetNameEdit_, rightX + 96, rowY,
-        std::max(180, columnWidth - 96), 26
-    );
-    rowY += 44;
+    rowY += 34;
 
-    const auto layoutSlider = [&](
-        const HWND caption,
-        const HWND slider,
-        const HWND value,
-        const int x,
-        const int y
-    )
+    const auto layoutSlider = [&](const HWND caption, const HWND slider,
+        const HWND value, const int x, const int y)
     {
-        moveWindow(caption, x, y + 5, captionWidth, 20);
-        moveWindow(slider, x + captionWidth, y, sliderWidth, 26);
+        moveWindow(caption, x, y + 3, captionWidth, 18);
+        moveWindow(slider, x + captionWidth, y, sliderWidth, 23);
         moveWindow(
             value,
-            x + captionWidth + sliderWidth + 10,
-            y + 5,
+            x + captionWidth + sliderWidth + 8,
+            y + 3,
             valueWidth,
-            20
+            18
         );
     };
 
@@ -415,8 +559,7 @@ void ControlWindow::LayoutVoiceEffectsControls(
         voiceEffectsFormantCaption_, voiceEffectsFormantSlider_,
         voiceEffectsFormantValue_, rightX, rowY
     );
-    rowY += 48;
-
+    rowY += 32;
     layoutSlider(
         voiceEffectsBodyCaption_, voiceEffectsBodySlider_,
         voiceEffectsBodyValue_, innerX, rowY
@@ -425,8 +568,7 @@ void ControlWindow::LayoutVoiceEffectsControls(
         voiceEffectsCharacterCaption_, voiceEffectsCharacterSlider_,
         voiceEffectsCharacterValue_, rightX, rowY
     );
-    rowY += 48;
-
+    rowY += 32;
     layoutSlider(
         voiceEffectsDriveCaption_, voiceEffectsDriveSlider_,
         voiceEffectsDriveValue_, innerX, rowY
@@ -435,46 +577,144 @@ void ControlWindow::LayoutVoiceEffectsControls(
         voiceEffectsDryWetCaption_, voiceEffectsDryWetSlider_,
         voiceEffectsDryWetValue_, rightX, rowY
     );
-    rowY += 48;
-
+    rowY += 32;
     layoutSlider(
         voiceEffectsOutputGainCaption_, voiceEffectsOutputGainSlider_,
         voiceEffectsOutputGainValue_, innerX, rowY
     );
-
-    const int buttonY = pageY + pageHeight - 48;
-    const int buttonGap = 8;
-    const int buttonWidth = 150;
-    moveWindow(
-        voiceEffectsResetButton_, innerX, buttonY, buttonWidth, 34
+    const int rackCaptionWidth = 66;
+    const int rackButtonWidth = 28;
+    const int rackButtonGap = 4;
+    const int rackComboWidth = std::max(
+        120,
+        columnWidth - rackCaptionWidth - rackButtonWidth * 2 -
+            rackButtonGap * 2
     );
     moveWindow(
-        voiceEffectsSavePresetButton_,
-        innerX + buttonWidth + buttonGap,
-        buttonY,
-        buttonWidth,
-        34
+        voiceEffectsRackCaption_, rightX, rowY + 3,
+        rackCaptionWidth, 18
+    );
+    moveWindow(
+        voiceEffectsRackCombo_, rightX + rackCaptionWidth, rowY,
+        rackComboWidth, 140
+    );
+    moveWindow(
+        voiceEffectsRackUpButton_,
+        rightX + rackCaptionWidth + rackComboWidth + rackButtonGap,
+        rowY, rackButtonWidth, 24
+    );
+    moveWindow(
+        voiceEffectsRackDownButton_,
+        rightX + rackCaptionWidth + rackComboWidth + rackButtonGap * 2 +
+            rackButtonWidth,
+        rowY, rackButtonWidth, 24
+    );
+    rowY += 29;
+
+    const int toggleWidth = innerWidth / 4;
+    moveWindow(voiceEffectsEqEnabledCheck_, innerX, rowY, toggleWidth, 20);
+    moveWindow(
+        voiceEffectsDeEsserEnabledCheck_, innerX + toggleWidth,
+        rowY, toggleWidth, 20
+    );
+    moveWindow(
+        voiceEffectsGateEnabledCheck_, innerX + toggleWidth * 2,
+        rowY, toggleWidth, 20
+    );
+    moveWindow(
+        voiceEffectsCompressorEnabledCheck_, innerX + toggleWidth * 3,
+        rowY, innerWidth - toggleWidth * 3, 20
+    );
+    rowY += 25;
+
+    layoutSlider(
+        voiceEffectsEqLowCaption_, voiceEffectsEqLowSlider_,
+        voiceEffectsEqLowValue_, innerX, rowY
+    );
+    layoutSlider(
+        voiceEffectsEqLowFrequencyCaption_,
+        voiceEffectsEqLowFrequencySlider_,
+        voiceEffectsEqLowFrequencyValue_, rightX, rowY
+    );
+    rowY += 30;
+    layoutSlider(
+        voiceEffectsEqMidCaption_, voiceEffectsEqMidSlider_,
+        voiceEffectsEqMidValue_, innerX, rowY
+    );
+    layoutSlider(
+        voiceEffectsEqMidFrequencyCaption_,
+        voiceEffectsEqMidFrequencySlider_,
+        voiceEffectsEqMidFrequencyValue_, rightX, rowY
+    );
+    rowY += 30;
+    layoutSlider(
+        voiceEffectsEqMidQCaption_, voiceEffectsEqMidQSlider_,
+        voiceEffectsEqMidQValue_, innerX, rowY
+    );
+    layoutSlider(
+        voiceEffectsEqHighCaption_, voiceEffectsEqHighSlider_,
+        voiceEffectsEqHighValue_, rightX, rowY
+    );
+    rowY += 30;
+    layoutSlider(
+        voiceEffectsEqHighFrequencyCaption_,
+        voiceEffectsEqHighFrequencySlider_,
+        voiceEffectsEqHighFrequencyValue_, innerX, rowY
+    );
+    layoutSlider(
+        voiceEffectsDeEsserCaption_, voiceEffectsDeEsserSlider_,
+        voiceEffectsDeEsserValue_, rightX, rowY
+    );
+    rowY += 30;
+    layoutSlider(
+        voiceEffectsGateCaption_, voiceEffectsGateSlider_,
+        voiceEffectsGateValue_, innerX, rowY
+    );
+    layoutSlider(
+        voiceEffectsCompressorCaption_, voiceEffectsCompressorSlider_,
+        voiceEffectsCompressorValue_, rightX, rowY
+    );
+
+    const int buttonY = pageY + pageHeight - 43;
+    const int buttonGap = 7;
+    const int buttonWidth = 142;
+    moveWindow(voiceEffectsResetButton_, innerX, buttonY, buttonWidth, 30);
+    moveWindow(
+        voiceEffectsSavePresetButton_, innerX + buttonWidth + buttonGap,
+        buttonY, buttonWidth, 30
     );
     moveWindow(
         voiceEffectsDeletePresetButton_,
         innerX + (buttonWidth + buttonGap) * 2,
-        buttonY,
-        buttonWidth,
-        34
+        buttonY, buttonWidth, 30
+    );
+    const int applyWidth = 170;
+    const int applyX = contentX + contentWidth - 18 - applyWidth;
+    moveWindow(applySettingsButton_, applyX, buttonY, applyWidth, 30);
+    const int fileButtonY = buttonY - 31;
+    const int fileButtonWidth = 118;
+    moveWindow(
+        voiceEffectsInfoCaption_, innerX, buttonY - 52,
+        innerWidth, 18
     );
     moveWindow(
-        applySettingsButton_,
-        contentX + contentWidth - 18 - 180,
-        buttonY,
-        180,
-        34
+        voiceEffectsOpenPresetFolderButton_, innerX, fileButtonY,
+        fileButtonWidth, 25
     );
     moveWindow(
-        voiceEffectsInfoCaption_,
-        innerX,
-        buttonY - 43,
-        innerWidth,
-        34
+        voiceEffectsImportPresetButton_,
+        innerX + fileButtonWidth + buttonGap, fileButtonY,
+        fileButtonWidth, 25
+    );
+    moveWindow(
+        voiceEffectsExportPresetButton_,
+        innerX + (fileButtonWidth + buttonGap) * 2, fileButtonY,
+        fileButtonWidth, 25
+    );
+    moveWindow(
+        voiceEffectsSelfTestButton_,
+        innerX + (fileButtonWidth + buttonGap) * 3, fileButtonY,
+        fileButtonWidth, 25
     );
 }
 
@@ -625,6 +865,63 @@ void ControlWindow::PopulateVoiceEffectsControls()
         voiceEffectsOutputGainSlider_, TBM_SETPOS, TRUE,
         ToTenths(settings.outputGainDb)
     );
+    SendMessageW(
+        voiceEffectsEqEnabledCheck_, BM_SETCHECK,
+        settings.parametricEqEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsDeEsserEnabledCheck_, BM_SETCHECK,
+        settings.deEsserEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsGateEnabledCheck_, BM_SETCHECK,
+        settings.gateEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsCompressorEnabledCheck_, BM_SETCHECK,
+        settings.compressorEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsEqLowSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings.eqLowGainDb)
+    );
+    SendMessageW(
+        voiceEffectsEqLowFrequencySlider_, TBM_SETPOS, TRUE,
+        static_cast<int>(std::lround(settings.eqLowFrequencyHz))
+    );
+    SendMessageW(
+        voiceEffectsEqMidSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings.eqMidGainDb)
+    );
+    SendMessageW(
+        voiceEffectsEqMidFrequencySlider_, TBM_SETPOS, TRUE,
+        static_cast<int>(std::lround(settings.eqMidFrequencyHz))
+    );
+    SendMessageW(
+        voiceEffectsEqMidQSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings.eqMidQ)
+    );
+    SendMessageW(
+        voiceEffectsEqHighSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings.eqHighGainDb)
+    );
+    SendMessageW(
+        voiceEffectsEqHighFrequencySlider_, TBM_SETPOS, TRUE,
+        static_cast<int>(std::lround(settings.eqHighFrequencyHz))
+    );
+    SendMessageW(
+        voiceEffectsDeEsserSlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings.deEsserAmount)
+    );
+    SendMessageW(
+        voiceEffectsGateSlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings.gateAmount)
+    );
+    SendMessageW(
+        voiceEffectsCompressorSlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings.compressorAmount)
+    );
+    PopulateVoiceEffectsRackOrder(settings.rackOrder);
 
     SetControlText(voiceEffectsPresetNameEdit_, L"");
     pendingVoiceEffectPreview_.reset();
@@ -723,6 +1020,63 @@ void ControlWindow::ApplySelectedVoiceEffectsPreset()
         voiceEffectsOutputGainSlider_, TBM_SETPOS, TRUE,
         ToTenths(settings->outputGainDb)
     );
+    SendMessageW(
+        voiceEffectsEqEnabledCheck_, BM_SETCHECK,
+        settings->parametricEqEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsDeEsserEnabledCheck_, BM_SETCHECK,
+        settings->deEsserEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsGateEnabledCheck_, BM_SETCHECK,
+        settings->gateEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsCompressorEnabledCheck_, BM_SETCHECK,
+        settings->compressorEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsEqLowSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings->eqLowGainDb)
+    );
+    SendMessageW(
+        voiceEffectsEqLowFrequencySlider_, TBM_SETPOS, TRUE,
+        static_cast<int>(std::lround(settings->eqLowFrequencyHz))
+    );
+    SendMessageW(
+        voiceEffectsEqMidSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings->eqMidGainDb)
+    );
+    SendMessageW(
+        voiceEffectsEqMidFrequencySlider_, TBM_SETPOS, TRUE,
+        static_cast<int>(std::lround(settings->eqMidFrequencyHz))
+    );
+    SendMessageW(
+        voiceEffectsEqMidQSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings->eqMidQ)
+    );
+    SendMessageW(
+        voiceEffectsEqHighSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings->eqHighGainDb)
+    );
+    SendMessageW(
+        voiceEffectsEqHighFrequencySlider_, TBM_SETPOS, TRUE,
+        static_cast<int>(std::lround(settings->eqHighFrequencyHz))
+    );
+    SendMessageW(
+        voiceEffectsDeEsserSlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings->deEsserAmount)
+    );
+    SendMessageW(
+        voiceEffectsGateSlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings->gateAmount)
+    );
+    SendMessageW(
+        voiceEffectsCompressorSlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings->compressorAmount)
+    );
+    PopulateVoiceEffectsRackOrder(settings->rackOrder);
     UpdateVoiceEffectsValueLabels();
     populatingVoiceEffectsControls_ = false;
     UpdateVoiceEffectsPresetButtons();
@@ -771,6 +1125,60 @@ void ControlWindow::MarkVoiceEffectsPresetCustom()
     UpdateVoiceEffectsPresetButtons();
 }
 
+void ControlWindow::RunVoiceEffectsSelfTest()
+{
+    if (voiceEffectsSelfTestButton_ == nullptr ||
+        voiceEffectsInfoCaption_ == nullptr)
+    {
+        return;
+    }
+
+    EnableWindow(voiceEffectsSelfTestButton_, FALSE);
+    voiceEffectsSelfTestSummary_ = Localization::Text(
+        L"Self-test çalışıyor...",
+        L"Self-test running..."
+    );
+    SetControlText(
+        voiceEffectsInfoCaption_,
+        voiceEffectsSelfTestSummary_
+    );
+    UpdateWindow(window_);
+
+    const auto startedAt = std::chrono::steady_clock::now();
+    const VoiceEngineSelfTestReport report = RunVoiceEngineSelfTest();
+    const auto elapsedMilliseconds =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - startedAt
+        ).count();
+
+    std::wostringstream stream;
+    if (report.Passed())
+    {
+        stream << Localization::Text(L"Self-test OK ", L"Self-test OK ")
+            << report.checkCount << L"/" << report.checkCount
+            << L" • " << elapsedMilliseconds << L" ms • "
+            << Localization::Text(L"tepe ", L"peak ")
+            << std::fixed << std::setprecision(2) << report.outputPeak;
+    }
+    else
+    {
+        stream << Localization::Text(
+            L"Self-test HATA ",
+            L"Self-test FAILED "
+        ) << (report.checkCount - report.failureCount) << L"/"
+            << report.checkCount << L" • "
+            << Localization::Text(L"kod 0x", L"code 0x")
+            << std::hex << std::uppercase << report.failedMask;
+    }
+
+    voiceEffectsSelfTestSummary_ = stream.str();
+    EnableWindow(voiceEffectsSelfTestButton_, TRUE);
+    SetControlText(
+        voiceEffectsInfoCaption_,
+        voiceEffectsSelfTestSummary_
+    );
+}
+
 void ControlWindow::UpdateVoiceEffectsRuntimeDiagnostics(
     const AudioLevelSnapshot& snapshot
 )
@@ -780,28 +1188,36 @@ void ControlWindow::UpdateVoiceEffectsRuntimeDiagnostics(
         return;
     }
 
-    if (!snapshot.microphoneAvailable)
+    const auto setDiagnosticsText = [this](const std::wstring& runtimeText)
     {
+        if (voiceEffectsSelfTestSummary_.empty())
+        {
+            SetControlText(voiceEffectsInfoCaption_, runtimeText);
+            return;
+        }
+
         SetControlText(
             voiceEffectsInfoCaption_,
-            Localization::Text(
-                L"Mikrofon kullanılamıyor. Voice Effects fiziksel testi başlatılamaz.",
-                L"Microphone unavailable. The Voice Effects physical test cannot start."
-            )
+            voiceEffectsSelfTestSummary_ + L" • " + runtimeText
         );
+    };
+
+    if (!snapshot.microphoneAvailable)
+    {
+        setDiagnosticsText(Localization::Text(
+            L"Mikrofon kullanılamıyor. Voice Effects fiziksel testi başlatılamaz.",
+            L"Microphone unavailable. The Voice Effects physical test cannot start."
+        ));
         return;
     }
 
     if (!snapshot.microphoneProcessingActive ||
         !snapshot.microphoneProcessingDiagnosticsAvailable)
     {
-        SetControlText(
-            voiceEffectsInfoCaption_,
-            Localization::Text(
-                L"48 kHz işleme runtime'ı kapalı. Voice Effects'i etkinleştirip Kaydet ve uygula'ya basın.",
-                L"The 48 kHz processing runtime is inactive. Enable Voice Effects and select Save and apply."
-            )
-        );
+        setDiagnosticsText(Localization::Text(
+            L"48 kHz işleme runtime'ı kapalı. Voice Effects'i etkinleştirip Kaydet ve uygula'ya basın.",
+            L"The 48 kHz processing runtime is inactive. Enable Voice Effects and select Save and apply."
+        ));
         return;
     }
 
@@ -870,7 +1286,7 @@ void ControlWindow::UpdateVoiceEffectsRuntimeDiagnostics(
         << Localization::Text(L"reddedilen ayar ", L"rejected updates ")
         << snapshot.microphoneRejectedVoiceEffectUpdateCount;
 
-    SetControlText(voiceEffectsInfoCaption_, stream.str());
+    setDiagnosticsText(stream.str());
 }
 
 void ControlWindow::UpdateVoiceEffectsValueLabels()
@@ -901,6 +1317,36 @@ void ControlWindow::UpdateVoiceEffectsValueLabels()
     const float outputGain = static_cast<float>(SendMessageW(
         voiceEffectsOutputGainSlider_, TBM_GETPOS, 0, 0
     )) / 10.0f;
+    const float eqLow = static_cast<float>(SendMessageW(
+        voiceEffectsEqLowSlider_, TBM_GETPOS, 0, 0
+    )) / 10.0f;
+    const int eqLowFrequency = static_cast<int>(SendMessageW(
+        voiceEffectsEqLowFrequencySlider_, TBM_GETPOS, 0, 0
+    ));
+    const float eqMid = static_cast<float>(SendMessageW(
+        voiceEffectsEqMidSlider_, TBM_GETPOS, 0, 0
+    )) / 10.0f;
+    const int eqMidFrequency = static_cast<int>(SendMessageW(
+        voiceEffectsEqMidFrequencySlider_, TBM_GETPOS, 0, 0
+    ));
+    const float eqMidQ = static_cast<float>(SendMessageW(
+        voiceEffectsEqMidQSlider_, TBM_GETPOS, 0, 0
+    )) / 10.0f;
+    const float eqHigh = static_cast<float>(SendMessageW(
+        voiceEffectsEqHighSlider_, TBM_GETPOS, 0, 0
+    )) / 10.0f;
+    const int eqHighFrequency = static_cast<int>(SendMessageW(
+        voiceEffectsEqHighFrequencySlider_, TBM_GETPOS, 0, 0
+    ));
+    const int deEsser = static_cast<int>(SendMessageW(
+        voiceEffectsDeEsserSlider_, TBM_GETPOS, 0, 0
+    ));
+    const int gate = static_cast<int>(SendMessageW(
+        voiceEffectsGateSlider_, TBM_GETPOS, 0, 0
+    ));
+    const int compressor = static_cast<int>(SendMessageW(
+        voiceEffectsCompressorSlider_, TBM_GETPOS, 0, 0
+    ));
 
     SetControlText(
         voiceEffectsPitchValue_, FormatSignedTenths(pitch, L" st")
@@ -923,6 +1369,39 @@ void ControlWindow::UpdateVoiceEffectsValueLabels()
     SetControlText(
         voiceEffectsOutputGainValue_,
         FormatSignedTenths(outputGain, L" dB")
+    );
+    SetControlText(
+        voiceEffectsEqLowValue_, FormatSignedTenths(eqLow, L" dB")
+    );
+    SetControlText(
+        voiceEffectsEqLowFrequencyValue_,
+        std::to_wstring(eqLowFrequency) + L" Hz"
+    );
+    SetControlText(
+        voiceEffectsEqMidValue_, FormatSignedTenths(eqMid, L" dB")
+    );
+    SetControlText(
+        voiceEffectsEqMidFrequencyValue_,
+        std::to_wstring(eqMidFrequency) + L" Hz"
+    );
+    SetControlText(
+        voiceEffectsEqMidQValue_, FormatTenths(eqMidQ, L"")
+    );
+    SetControlText(
+        voiceEffectsEqHighValue_, FormatSignedTenths(eqHigh, L" dB")
+    );
+    SetControlText(
+        voiceEffectsEqHighFrequencyValue_,
+        std::to_wstring(eqHighFrequency) + L" Hz"
+    );
+    SetControlText(
+        voiceEffectsDeEsserValue_, std::to_wstring(deEsser) + L"%"
+    );
+    SetControlText(
+        voiceEffectsGateValue_, std::to_wstring(gate) + L"%"
+    );
+    SetControlText(
+        voiceEffectsCompressorValue_, std::to_wstring(compressor) + L"%"
     );
 }
 
@@ -985,6 +1464,64 @@ bool ControlWindow::ReadVoiceEffectSettingsFromControls(
     settings.outputGainDb = static_cast<float>(SendMessageW(
         voiceEffectsOutputGainSlider_, TBM_GETPOS, 0, 0
     )) / 10.0f;
+    settings.parametricEqEnabled = SendMessageW(
+        voiceEffectsEqEnabledCheck_, BM_GETCHECK, 0, 0
+    ) == BST_CHECKED;
+    settings.deEsserEnabled = SendMessageW(
+        voiceEffectsDeEsserEnabledCheck_, BM_GETCHECK, 0, 0
+    ) == BST_CHECKED;
+    settings.gateEnabled = SendMessageW(
+        voiceEffectsGateEnabledCheck_, BM_GETCHECK, 0, 0
+    ) == BST_CHECKED;
+    settings.compressorEnabled = SendMessageW(
+        voiceEffectsCompressorEnabledCheck_, BM_GETCHECK, 0, 0
+    ) == BST_CHECKED;
+    settings.eqLowGainDb = static_cast<float>(SendMessageW(
+        voiceEffectsEqLowSlider_, TBM_GETPOS, 0, 0
+    )) / 10.0f;
+    settings.eqLowFrequencyHz = static_cast<float>(SendMessageW(
+        voiceEffectsEqLowFrequencySlider_, TBM_GETPOS, 0, 0
+    ));
+    settings.eqMidGainDb = static_cast<float>(SendMessageW(
+        voiceEffectsEqMidSlider_, TBM_GETPOS, 0, 0
+    )) / 10.0f;
+    settings.eqMidFrequencyHz = static_cast<float>(SendMessageW(
+        voiceEffectsEqMidFrequencySlider_, TBM_GETPOS, 0, 0
+    ));
+    settings.eqMidQ = static_cast<float>(SendMessageW(
+        voiceEffectsEqMidQSlider_, TBM_GETPOS, 0, 0
+    )) / 10.0f;
+    settings.eqHighGainDb = static_cast<float>(SendMessageW(
+        voiceEffectsEqHighSlider_, TBM_GETPOS, 0, 0
+    )) / 10.0f;
+    settings.eqHighFrequencyHz = static_cast<float>(SendMessageW(
+        voiceEffectsEqHighFrequencySlider_, TBM_GETPOS, 0, 0
+    ));
+    settings.deEsserAmount = static_cast<float>(SendMessageW(
+        voiceEffectsDeEsserSlider_, TBM_GETPOS, 0, 0
+    )) / 100.0f;
+    settings.gateAmount = static_cast<float>(SendMessageW(
+        voiceEffectsGateSlider_, TBM_GETPOS, 0, 0
+    )) / 100.0f;
+    settings.compressorAmount = static_cast<float>(SendMessageW(
+        voiceEffectsCompressorSlider_, TBM_GETPOS, 0, 0
+    )) / 100.0f;
+    if (!ReadVoiceEffectsRackOrder(settings.rackOrder))
+    {
+        if (showErrors)
+        {
+            MessageBoxW(
+                window_,
+                Localization::Text(
+                    L"Voice Effects rack sırası geçersiz.",
+                    L"The Voice Effects rack order is invalid."
+                ),
+                L"SoundBoardFasaFiso",
+                MB_OK | MB_ICONWARNING
+            );
+        }
+        return false;
+    }
 
     if (!IsValidVoiceEffectSettings(settings))
     {
@@ -1213,10 +1750,417 @@ void ControlWindow::ResetVoiceEffectsControls()
         voiceEffectsOutputGainSlider_, TBM_SETPOS, TRUE,
         ToTenths(settings.outputGainDb)
     );
+    SendMessageW(
+        voiceEffectsEqEnabledCheck_, BM_SETCHECK,
+        settings.parametricEqEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsDeEsserEnabledCheck_, BM_SETCHECK,
+        settings.deEsserEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsGateEnabledCheck_, BM_SETCHECK,
+        settings.gateEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsCompressorEnabledCheck_, BM_SETCHECK,
+        settings.compressorEnabled ? BST_CHECKED : BST_UNCHECKED, 0
+    );
+    SendMessageW(
+        voiceEffectsEqLowSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings.eqLowGainDb)
+    );
+    SendMessageW(
+        voiceEffectsEqLowFrequencySlider_, TBM_SETPOS, TRUE,
+        static_cast<int>(std::lround(settings.eqLowFrequencyHz))
+    );
+    SendMessageW(
+        voiceEffectsEqMidSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings.eqMidGainDb)
+    );
+    SendMessageW(
+        voiceEffectsEqMidFrequencySlider_, TBM_SETPOS, TRUE,
+        static_cast<int>(std::lround(settings.eqMidFrequencyHz))
+    );
+    SendMessageW(
+        voiceEffectsEqMidQSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings.eqMidQ)
+    );
+    SendMessageW(
+        voiceEffectsEqHighSlider_, TBM_SETPOS, TRUE,
+        ToTenths(settings.eqHighGainDb)
+    );
+    SendMessageW(
+        voiceEffectsEqHighFrequencySlider_, TBM_SETPOS, TRUE,
+        static_cast<int>(std::lround(settings.eqHighFrequencyHz))
+    );
+    SendMessageW(
+        voiceEffectsDeEsserSlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings.deEsserAmount)
+    );
+    SendMessageW(
+        voiceEffectsGateSlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings.gateAmount)
+    );
+    SendMessageW(
+        voiceEffectsCompressorSlider_, TBM_SETPOS, TRUE,
+        ToPercent(settings.compressorAmount)
+    );
+    PopulateVoiceEffectsRackOrder(settings.rackOrder);
     UpdateVoiceEffectsValueLabels();
     populatingVoiceEffectsControls_ = false;
     UpdateVoiceEffectsPresetButtons();
     SubmitVoiceEffectsPreview();
+}
+
+void ControlWindow::PopulateVoiceEffectsRackOrder(
+    const VoiceEffectRackOrder& order,
+    const std::optional<VoiceEffectRackModule> selected
+)
+{
+    if (voiceEffectsRackCombo_ == nullptr ||
+        !IsValidVoiceEffectRackOrder(order))
+    {
+        return;
+    }
+
+    std::optional<VoiceEffectRackModule> selectedModule = selected;
+    if (!selectedModule.has_value())
+    {
+        const int previousIndex = static_cast<int>(SendMessageW(
+            voiceEffectsRackCombo_, CB_GETCURSEL, 0, 0
+        ));
+        if (previousIndex != CB_ERR)
+        {
+            const LRESULT previousData = SendMessageW(
+                voiceEffectsRackCombo_, CB_GETITEMDATA,
+                static_cast<WPARAM>(previousIndex), 0
+            );
+            if (previousData != CB_ERR)
+            {
+                selectedModule = static_cast<VoiceEffectRackModule>(
+                    static_cast<int>(previousData)
+                );
+            }
+        }
+    }
+
+    SendMessageW(voiceEffectsRackCombo_, CB_RESETCONTENT, 0, 0);
+    int selectedIndex = 0;
+    for (std::size_t index = 0; index < order.size(); ++index)
+    {
+        const VoiceEffectRackModule module = order[index];
+        std::wostringstream text;
+        text << (index + 1U) << L". "
+            << VoiceEffectRackModuleDisplayName(module);
+        const std::wstring displayText = text.str();
+        const LRESULT itemIndex = SendMessageW(
+            voiceEffectsRackCombo_, CB_ADDSTRING, 0,
+            reinterpret_cast<LPARAM>(displayText.c_str())
+        );
+        if (itemIndex != CB_ERR && itemIndex != CB_ERRSPACE)
+        {
+            SendMessageW(
+                voiceEffectsRackCombo_, CB_SETITEMDATA,
+                static_cast<WPARAM>(itemIndex),
+                static_cast<LPARAM>(static_cast<int>(module))
+            );
+            if (selectedModule.has_value() && module == *selectedModule)
+            {
+                selectedIndex = static_cast<int>(itemIndex);
+            }
+        }
+    }
+
+    SendMessageW(
+        voiceEffectsRackCombo_, CB_SETCURSEL,
+        static_cast<WPARAM>(selectedIndex), 0
+    );
+    UpdateVoiceEffectsRackButtons();
+}
+
+bool ControlWindow::ReadVoiceEffectsRackOrder(
+    VoiceEffectRackOrder& order
+) const noexcept
+{
+    if (voiceEffectsRackCombo_ == nullptr ||
+        SendMessageW(voiceEffectsRackCombo_, CB_GETCOUNT, 0, 0) !=
+            static_cast<LRESULT>(VoiceEffectRackModuleCount))
+    {
+        return false;
+    }
+
+    for (std::size_t index = 0; index < order.size(); ++index)
+    {
+        const LRESULT itemData = SendMessageW(
+            voiceEffectsRackCombo_, CB_GETITEMDATA,
+            static_cast<WPARAM>(index), 0
+        );
+        if (itemData == CB_ERR)
+        {
+            return false;
+        }
+        order[index] = static_cast<VoiceEffectRackModule>(
+            static_cast<int>(itemData)
+        );
+    }
+    return IsValidVoiceEffectRackOrder(order);
+}
+
+void ControlWindow::MoveSelectedVoiceEffectsRackModule(
+    const int direction
+)
+{
+    if (populatingVoiceEffectsControls_ || voiceEffectsRackCombo_ == nullptr)
+    {
+        return;
+    }
+
+    const int selectedIndex = static_cast<int>(SendMessageW(
+        voiceEffectsRackCombo_, CB_GETCURSEL, 0, 0
+    ));
+    VoiceEffectRackOrder order{};
+    if (selectedIndex == CB_ERR || !ReadVoiceEffectsRackOrder(order))
+    {
+        return;
+    }
+
+    const VoiceEffectRackModule selectedModule =
+        order[static_cast<std::size_t>(selectedIndex)];
+    if (!MoveVoiceEffectRackModule(
+            order,
+            static_cast<std::size_t>(selectedIndex),
+            direction
+        ))
+    {
+        UpdateVoiceEffectsRackButtons();
+        return;
+    }
+
+    PopulateVoiceEffectsRackOrder(order, selectedModule);
+    MarkVoiceEffectsPresetCustom();
+    SubmitVoiceEffectsPreview();
+}
+
+void ControlWindow::UpdateVoiceEffectsRackButtons()
+{
+    if (voiceEffectsRackCombo_ == nullptr ||
+        voiceEffectsRackUpButton_ == nullptr ||
+        voiceEffectsRackDownButton_ == nullptr)
+    {
+        return;
+    }
+
+    const int selection = static_cast<int>(SendMessageW(
+        voiceEffectsRackCombo_, CB_GETCURSEL, 0, 0
+    ));
+    const int count = static_cast<int>(SendMessageW(
+        voiceEffectsRackCombo_, CB_GETCOUNT, 0, 0
+    ));
+    EnableWindow(
+        voiceEffectsRackUpButton_,
+        selection > 0 ? TRUE : FALSE
+    );
+    EnableWindow(
+        voiceEffectsRackDownButton_,
+        selection >= 0 && selection + 1 < count ? TRUE : FALSE
+    );
+}
+
+std::filesystem::path ControlWindow::VoiceEffectPresetFolder() const
+{
+    std::filesystem::path root = configPath_.parent_path();
+    if (root.empty())
+    {
+        root = L".";
+    }
+    return root / L"voice-presets";
+}
+
+void ControlWindow::OpenVoiceEffectPresetFolder()
+{
+    const std::filesystem::path folder = VoiceEffectPresetFolder();
+    std::error_code error;
+    std::filesystem::create_directories(folder, error);
+    if (error)
+    {
+        SetControlText(
+            voiceEffectsStatusValue_,
+            Localization::Text(
+                L"Preset klasörü oluşturulamadı",
+                L"Preset folder could not be created"
+            )
+        );
+        return;
+    }
+    OpenPath(folder);
+}
+
+void ControlWindow::ImportVoiceEffectPresetFiles()
+{
+    const std::filesystem::path folder = VoiceEffectPresetFolder();
+    std::error_code error;
+    std::filesystem::create_directories(folder, error);
+    if (error)
+    {
+        SetControlText(
+            voiceEffectsStatusValue_,
+            Localization::Text(
+                L"Preset klasörü oluşturulamadı",
+                L"Preset folder could not be created"
+            )
+        );
+        return;
+    }
+
+    const auto files = DiscoverVoiceEffectPresetFiles(folder);
+    if (files.empty())
+    {
+        SetControlText(
+            voiceEffectsStatusValue_,
+            Localization::Text(
+                L"Klasörde .sbffvoice bulunamadı",
+                L"No .sbffvoice files found in the folder"
+            )
+        );
+        return;
+    }
+
+    Config candidate = currentConfig_;
+    std::size_t importedCount = 0;
+    std::size_t rejectedCount = 0;
+    std::optional<std::string> lastImportedName;
+    for (const std::filesystem::path& file : files)
+    {
+        const VoiceEffectPresetFileLoadResult loaded =
+            LoadVoiceEffectPresetFile(file);
+        if (!loaded.preset.has_value() ||
+            !candidate.AddOrUpdateVoiceEffectUserPreset(*loaded.preset))
+        {
+            ++rejectedCount;
+            continue;
+        }
+        ++importedCount;
+        lastImportedName = loaded.preset->name;
+    }
+
+    if (importedCount == 0U || !candidate.Save(configPath_))
+    {
+        SetControlText(
+            voiceEffectsStatusValue_,
+            Localization::Text(
+                L"Preset içe aktarılamadı",
+                L"Preset import failed"
+            )
+        );
+        return;
+    }
+
+    currentConfig_ = candidate;
+    PopulateVoiceEffectsPresetCombo();
+    if (lastImportedName.has_value())
+    {
+        const auto& presets = currentConfig_.GetVoiceEffectUserPresets();
+        const auto imported = std::find_if(
+            presets.begin(), presets.end(),
+            [&lastImportedName](const VoiceEffectUserPreset& preset)
+            {
+                return VoiceEffectUserPresetNamesEqual(
+                    preset.name, *lastImportedName
+                );
+            }
+        );
+        if (imported != presets.end())
+        {
+            SendMessageW(
+                voiceEffectsPresetCombo_, CB_SETCURSEL,
+                static_cast<WPARAM>(
+                    BuiltInVoiceEffectPresetCount +
+                    static_cast<int>(std::distance(presets.begin(), imported))
+                ),
+                0
+            );
+            SetControlText(
+                voiceEffectsPresetNameEdit_, Utf8ToWide(imported->name)
+            );
+        }
+    }
+    UpdateVoiceEffectsPresetButtons();
+
+    std::wostringstream status;
+    status << importedCount << Localization::Text(
+        L" preset içe aktarıldı", L" preset(s) imported"
+    );
+    if (rejectedCount != 0U)
+    {
+        status << L" • " << rejectedCount << Localization::Text(
+            L" reddedildi", L" rejected"
+        );
+    }
+    SetControlText(voiceEffectsStatusValue_, status.str());
+    SetStatus(status.str());
+}
+
+void ControlWindow::ExportVoiceEffectPresetFile()
+{
+    VoiceEffectSettings settings;
+    if (!ReadVoiceEffectSettingsFromControls(settings, false))
+    {
+        SetControlText(
+            voiceEffectsStatusValue_,
+            Localization::Text(
+                L"Dışa aktarılacak ayarlar geçersiz",
+                L"Settings are invalid for export"
+            )
+        );
+        return;
+    }
+
+    VoiceEffectUserPreset preset;
+    preset.name = WideToUtf8(GetControlText(voiceEffectsPresetNameEdit_));
+    preset.settings = settings;
+    preset.settings.enabled = false;
+    preset.settings.bypassed = false;
+    if (!IsValidVoiceEffectUserPreset(preset))
+    {
+        SetControlText(
+            voiceEffectsStatusValue_,
+            Localization::Text(
+                L"Önce geçerli bir preset adı yazın",
+                L"Enter a valid preset name first"
+            )
+        );
+        return;
+    }
+
+    const std::filesystem::path folder = VoiceEffectPresetFolder();
+    const std::filesystem::path path = BuildVoiceEffectPresetFilePath(
+        folder, preset
+    );
+    std::string errorMessage;
+    if (!SaveVoiceEffectPresetFile(path, preset, errorMessage))
+    {
+        SetControlText(
+            voiceEffectsStatusValue_,
+            Localization::Text(
+                L"Preset dosyası yazılamadı",
+                L"Preset file could not be written"
+            )
+        );
+        return;
+    }
+
+    SetControlText(
+        voiceEffectsStatusValue_,
+        Localization::Text(
+            L"Preset .sbffvoice olarak dışa aktarıldı",
+            L"Preset exported as .sbffvoice"
+        )
+    );
+    SetStatus(Localization::Text(
+        L"Voice Effects preset dosyası dışa aktarıldı.",
+        L"The Voice Effects preset file was exported."
+    ));
 }
 
 std::optional<std::size_t>
@@ -1539,5 +2483,15 @@ bool ControlWindow::IsVoiceEffectsSlider(const HWND control) const noexcept
         control == voiceEffectsCharacterSlider_ ||
         control == voiceEffectsDriveSlider_ ||
         control == voiceEffectsDryWetSlider_ ||
-        control == voiceEffectsOutputGainSlider_;
+        control == voiceEffectsOutputGainSlider_ ||
+        control == voiceEffectsEqLowSlider_ ||
+        control == voiceEffectsEqLowFrequencySlider_ ||
+        control == voiceEffectsEqMidSlider_ ||
+        control == voiceEffectsEqMidFrequencySlider_ ||
+        control == voiceEffectsEqMidQSlider_ ||
+        control == voiceEffectsEqHighSlider_ ||
+        control == voiceEffectsEqHighFrequencySlider_ ||
+        control == voiceEffectsDeEsserSlider_ ||
+        control == voiceEffectsGateSlider_ ||
+        control == voiceEffectsCompressorSlider_;
 }

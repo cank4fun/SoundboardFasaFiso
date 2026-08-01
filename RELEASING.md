@@ -2,7 +2,9 @@
 
 The public version is defined by `SOUNDBOARD_VERSION` in `CMakeLists.txt`. The
 Git tag must match it exactly, including prerelease suffixes such as `-rc.1`.
-Existing release tags are immutable and must never be moved or reused.
+The `version-string` in `vcpkg.json` must carry the same value; CMake rejects a
+configuration when those two release metadata sources drift. Existing release
+tags are immutable and must never be moved or reused.
 
 Official builds are currently unsigned. Code signing is not a release blocker;
 every release must preserve the GitHub Actions build record, immutable tag and
@@ -65,8 +67,18 @@ Confirm that:
 - no developer config, logs, build files or personal paths are present;
 - audio playback, microphone routing, AEC, RNNoise, AGC, tray behavior,
   hotkeys, config rollback and device recovery work;
-- Voice Effects presets, independent pitch/formant controls, dry/wet, bypass,
-  user presets and preset hotkeys work without deadline misses or dropped frames;
+- Voice Effects presets, independent pitch/formant controls, Vocal Weight,
+  dry/wet, bypass, user presets and preset hotkeys work without sustained
+  deadline misses or dropped frames;
+- the inline Voice Engine self-test reports `7/7` before and after the physical
+  listening session;
+- parametric EQ, de-esser, gate/expander and compressor work independently,
+  the modular rack can be reordered live without a click/pop, and bypass returns
+  to the clean aligned signal;
+- `.sbffvoice` export/import survives an application restart, restores every
+  parameter and rack order, and rejects a deliberately corrupted test copy;
+- bypass, core-only, each built-in voice preset and the complete rack are
+  recorded with the same microphone position and gain for physical comparison;
 - AEC safely bypasses when the physical monitor reference is unavailable;
 - the update check opens only the official GitHub Release page;
 - the unsigned-build and Smart App Control limitation is present in both
